@@ -1,264 +1,268 @@
-[tool.poetry]
+[project]
 name = "voice-doc-intelligence"
 version = "0.1.0"
 description = "Voice-enabled document intelligence system"
-authors = ["Nikhil Bindal <nikhil.bindal@outlook.com>"]
+authors = [{name = "Nikhil Bindal", email = "nikhil.bindal@outlook.com"}]
 readme = "README.md"
-packages = [{include = "apps"}]
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    # Core Framework
+    "fastapi",
+    "uvicorn[standard]",
+    "starlette",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "pydantic-core",
 
-[tool.poetry.dependencies]
-python = ">=3.13,<3.14"
+    # AI/LLM
+    "openai",
+    "llama-index-core",
+    "sentence-transformers",
+    "transformers",
+    "tokenizers",
+    "tiktoken",
 
-# Core Framework
-fastapi = "0.121.1"
-uvicorn = {extras = ["standard"], version = "0.38.0"}
-starlette = "0.49.3"
-pydantic = "2.12.4"
-pydantic-settings = "2.12.0"
-pydantic-core = "2.41.5"
+    # Voice Processing & Real-time Communication
+    "livekit",
+    "livekit-agents",
+    "livekit-api",
+    "livekit-protocol",
+    "deepgram-sdk",
+    "cartesia",
+    "sounddevice",
+    "pydub",
+    "audioop-lts",
+    "av",
+    "livekit-plugins-deepgram",
+    "livekit-plugins-cartesia",
+    "livekit-plugins-openai",
+    "livekit-plugins-silero",
 
-# AI/LLM
-openai = "1.109.1"
-llama-index-core = "0.12.0"
-sentence-transformers = "5.1.2"
-transformers = "4.57.1"
-tokenizers = "0.22.1"
-tiktoken = "0.12.0"
+    # Document Processing
+    "docling",
+    "docling-core",
+    "docling-ibm-models",
+    "docling-parse",
+    "unstructured",
+    "unstructured-client",
+    "pypdf",
+    "pypdf2",
+    "pypdfium2",
+    "pdfplumber",
+    "pdfminer-six",
+    "python-docx",
+    "python-pptx",
+    "openpyxl",
+    "xlsxwriter",
+    "python-oxmsg",
+    "easyocr",
+    "ocrmac",
 
-# Voice Processing & Real-time Communication
-livekit = "1.0.19"
-livekit-agents = "^1.2.18"
-livekit-api = "1.0.7"
-livekit-protocol = "1.1.0"
-deepgram-sdk = "5.3.0"
-cartesia = "2.0.15"
-sounddevice = "0.5.3"
-pydub = "0.25.1"
-audioop-lts = "0.2.1"
-av = "^15.0.0"
+    # Vector Store & Database
+    "qdrant-client",
+    "asyncpg",
+    "redis",
+    "sqlalchemy",
 
-# Document Processing
-docling = "2.61.2"
-docling-core = "2.51.0"
-docling-ibm-models = "3.10.2"
-docling-parse = "4.7.1"
-unstructured = "0.18.18"
-unstructured-client = "0.42.3"
-pypdf = "6.2.0"
-pypdf2 = "3.0.1"
-pypdfium2 = "4.30.0"
-pdfplumber = "0.11.8"
-pdfminer-six = "20251107"
-python-docx = "1.2.0"
-python-pptx = "1.0.2"
-openpyxl = "3.1.5"
-xlsxwriter = "3.2.9"
-python-oxmsg = "0.0.2"
-easyocr = "1.7.2"
-ocrmac = "1.0.0"
+    # NLP & Text Processing
+    "spacy>=3.8.0",
+    "nltk",
+    "semchunk",
+    "langdetect",
+    "python-bidi",
+    "emoji",
+    "marko",
+    "beautifulsoup4",
+    "soupsieve",
+    "lxml",
+    "html5lib",
 
-# Vector Store & Database
-qdrant-client = "1.15.1"
-asyncpg = "0.30.0"
-redis = "7.0.1"
-sqlalchemy = "2.0.44"
+    # ML/AI Libraries
+    "torch",
+    "torchvision",
+    "accelerate",
+    "safetensors",
+    "huggingface-hub",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scikit-image",
+    "scipy",
+    "joblib",
+    "threadpoolctl",
 
-# NLP & Text Processing
-spacy = "^3.8.0"
-nltk = "3.9.2"
-semchunk = "2.2.2"
-langdetect = "1.0.9"
-python-bidi = "0.6.7"
-emoji = "2.15.0"
-marko = "2.2.1"
-beautifulsoup4 = "4.14.2"
-soupsieve = "2.8"
-lxml = "6.0.2"
-html5lib = "1.1"
+    # Computer Vision & Image Processing
+    "pillow",
+    "opencv-python-headless",
+    "imageio",
+    "tifffile",
+    "pyclipper",
+    "shapely",
+    "rtree",
 
-# ML/AI Libraries
-torch = "2.9.1"
-torchvision = "0.24.1"
-accelerate = "1.11.0"
-safetensors = "0.6.2"
-huggingface-hub = "0.36.0"
-numpy = "2.2.6"
-pandas = "2.3.3"
-scikit-learn = "1.7.2"
-scikit-image = "0.25.2"
-scipy = "1.16.3"
-joblib = "1.5.2"
-threadpoolctl = "3.6.0"
+    # HTTP & Networking
+    "httpx",
+    "httpx-sse",
+    "httpcore",
+    "httptools",
+    "aiohttp",
+    "aiohappyeyeballs",
+    "requests",
+    "requests-toolbelt",
+    "urllib3",
+    "websockets",
+    "h11",
+    "h2",
+    "hpack",
+    "hyperframe",
 
-# Computer Vision & Image Processing
-pillow = "11.3.0"
-opencv-python-headless = "4.12.0.88"
-imageio = "2.37.2"
-tifffile = "2025.10.16"
-pyclipper = "1.3.0.post6"
-shapely = "2.1.2"
-rtree = "1.4.1"
+    # Async & Concurrency
+    "aiofiles",
+    "aiolimiter",
+    "aiosignal",
+    "anyio",
+    "nest-asyncio",
+    "backoff",
 
-# HTTP & Networking
-httpx = "0.28.1"
-httpx-sse = "0.4.0"
-httpcore = "1.0.9"
-httptools = "0.7.1"
-aiohttp = "3.13.2"
-aiohappyeyeballs = "2.6.1"
-requests = "2.32.5"
-requests-toolbelt = "1.0.0"
-urllib3 = "2.5.0"
-websockets = "15.0.1"
-h11 = "0.16.0"
-h2 = "4.3.0"
-hpack = "4.1.0"
-hyperframe = "6.1.0"
+    # Data Storage & File Handling
+    "minio",
+    "python-multipart",
+    "python-dotenv",
+    "filetype",
+    "python-magic",
+    "portalocker",
+    "olefile",
 
-# Async & Concurrency
-aiofiles = "25.1.0"
-aiolimiter = "1.2.1"
-aiosignal = "1.4.0"
-anyio = "4.11.0"
-nest-asyncio = "1.6.0"
-backoff = "2.2.1"
+    # Security & Cryptography
+    "cryptography",
+    "pyjwt",
+    "argon2-cffi",
+    "argon2-cffi-bindings",
+    "pycryptodome",
 
-# Data Storage & File Handling
-minio = "7.2.18"
-python-multipart = "0.0.20"
-python-dotenv = "1.2.1"
-filetype = "1.2.0"
-python-magic = "0.4.27"
-portalocker = "2.7.0"
-olefile = "0.47"
+    # Utilities
+    "click",
+    "typer",
+    "rich",
+    "tqdm",
+    "tenacity",
+    "python-dateutil",
+    "pytz",
+    "tzdata",
+    "faker",
+    "tabulate",
 
-# Security & Cryptography
-cryptography = "46.0.3"
-pyjwt = "2.10.1"
-argon2-cffi = "25.1.0"
-argon2-cffi-bindings = "25.1.0"
-pycryptodome = "3.23.0"
+    # JSON & Data Serialization
+    "pyyaml",
+    "jsonlines",
+    "jsonref",
+    "jsonschema",
+    "jsonschema-specifications",
+    "dirtyjson",
+    "dataclasses-json",
 
-# Utilities
-click = "8.3.0"
-typer = "0.19.2"
-rich = "14.2.0"
-tqdm = "4.67.1"
-tenacity = "8.5.0"
-python-dateutil = "2.9.0.post0"
-pytz = "2025.2"
-tzdata = "2025.2"
-faker = "38.0.0"
-tabulate = "0.9.0"
+    # Code Parsing & Tree-sitter
+    "tree-sitter",
+    "tree-sitter-c",
+    "tree-sitter-java",
+    "tree-sitter-javascript",
+    "tree-sitter-python",
+    "tree-sitter-typescript",
 
-# JSON & Data Serialization
-pyyaml = "6.0.3"
-jsonlines = "4.0.0"
-jsonref = "1.1.0"
-jsonschema = "4.25.1"
-jsonschema-specifications = "2025.9.1"
-dirtyjson = "1.0.8"
-dataclasses-json = "0.6.7"
+    # Protobuf & gRPC
+    "protobuf",
+    "grpcio",
 
-# Code Parsing & Tree-sitter
-tree-sitter = "0.23.2"
-tree-sitter-c = "0.23.6"
-tree-sitter-java = "0.23.5"
-tree-sitter-javascript = "0.23.1"
-tree-sitter-python = "0.23.6"
-tree-sitter-typescript = "0.23.2"
+    # Additional utilities
+    "jinja2",
+    "markupsafe",
+    "markdown-it-py",
+    "mdurl",
+    "pygments",
+    "annotated-types",
+    "annotated-doc",
+    "attrs",
+    "certifi",
+    "cffi",
+    "pycparser",
+    "charset-normalizer",
+    "colorama",
+    "deprecated",
+    "dill",
+    "distro",
+    "docstring-parser",
+    "et-xmlfile",
+    "eval-type-backport",
+    "filelock",
+    "frozenlist",
+    "fsspec",
+    "greenlet",
+    "hf-xet",
+    "idna",
+    "iterators",
+    "jiter",
+    "latex2mathml",
+    "lazy-loader",
+    "marshmallow",
+    "mpire",
+    "mpmath",
+    "multidict",
+    "multiprocess",
+    "mypy-extensions",
+    "networkx",
+    "ninja",
+    "packaging",
+    "pluggy",
+    "polyfactory",
+    "propcache",
+    "psutil",
+    "pylatexenc",
+    "pyobjc-core",
+    "pyobjc-framework-cocoa",
+    "pyobjc-framework-coreml",
+    "pyobjc-framework-quartz",
+    "pyobjc-framework-vision",
+    "python-iso639",
+    "rapidfuzz",
+    "referencing",
+    "regex",
+    "rpds-py",
+    "setuptools",
+    "shellingham",
+    "six",
+    "sniffio",
+    "sympy",
+    "types-protobuf",
+    "typing-inspect",
+    "typing-inspection",
+    "typing-extensions",
+    "uvloop",
+    "voyageai",
+    "watchfiles",
+    "webencodings",
+    "wrapt",
+    "yarl",
+    "chardet",
+]
 
-# Protobuf & gRPC
-protobuf = "6.33.0"
-grpcio = "1.76.0"
-
-# Additional utilities
-jinja2 = "3.1.6"
-markupsafe = "3.0.3"
-markdown-it-py = "4.0.0"
-mdurl = "0.1.2"
-pygments = "2.19.2"
-annotated-types = "0.7.0"
-annotated-doc = "0.0.4"
-attrs = "25.4.0"
-certifi = "2025.11.12"
-cffi = "2.0.0"
-pycparser = "2.23"
-charset-normalizer = "3.4.4"
-colorama = "0.4.6"
-deprecated = "1.3.1"
-dill = "0.4.0"
-distro = "1.9.0"
-docstring-parser = "0.17.0"
-et-xmlfile = "2.0.0"
-eval-type-backport = "0.2.2"
-filelock = "3.20.0"
-frozenlist = "1.8.0"
-fsspec = "2025.10.0"
-greenlet = "3.2.4"
-hf-xet = "1.2.0"
-idna = "3.11"
-iterators = "0.2.0"
-jiter = "0.12.0"
-latex2mathml = "3.78.1"
-lazy-loader = "0.4"
-marshmallow = "3.26.1"
-mpire = "2.10.2"
-mpmath = "1.3.0"
-multidict = "6.7.0"
-multiprocess = "0.70.18"
-mypy-extensions = "1.1.0"
-networkx = "3.5"
-ninja = "1.13.0"
-packaging = "25.0"
-pluggy = "1.6.0"
-polyfactory = "2.22.4"
-propcache = "0.4.1"
-psutil = "7.1.3"
-pylatexenc = "2.10"
-pyobjc-core = "12.0"
-pyobjc-framework-cocoa = "12.0"
-pyobjc-framework-coreml = "12.0"
-pyobjc-framework-quartz = "12.0"
-pyobjc-framework-vision = "12.0"
-python-iso639 = "2025.11.11"
-rapidfuzz = "3.14.3"
-referencing = "0.37.0"
-regex = "2025.11.3"
-rpds-py = "0.28.0"
-setuptools = "80.9.0"
-shellingham = "1.5.4"
-six = "1.17.0"
-sniffio = "1.3.1"
-sympy = "1.14.0"
-types-protobuf = "4.25.0.20240417"
-typing-inspect = "0.9.0"
-typing-inspection = "0.4.2"
-typing-extensions = "4.15.0"
-uvloop = "0.22.1"
-voyageai = "0.2.4"
-watchfiles = "1.1.1"
-webencodings = "0.5.1"
-wrapt = "2.0.1"
-yarl = "1.22.0"
-livekit-plugins-deepgram = "^1.2.18"
-livekit-plugins-cartesia = "^1.2.18"
-livekit-plugins-openai = "^1.2.18"
-livekit-plugins-silero = "^1.2.18"
-chardet = "^5.2.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
-pytest-asyncio = "^0.24.0"
-black = "^25.0.0"
-ruff = "^0.9.0"
-mypy = "^1.15.0"
-ipython = "^8.30.0"
-pre-commit = "^4.0.0"
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "black>=25.0.0",
+    "ruff>=0.9.0",
+    "mypy>=1.15.0",
+    "ipython>=8.30.0",
+    "pre-commit>=4.0.0",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps"]
+
 
 [tool.ruff]
 line-length = 88

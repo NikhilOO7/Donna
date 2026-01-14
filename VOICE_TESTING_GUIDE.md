@@ -30,7 +30,7 @@ docker ps
 # You should see:
 # - voice-doc-livekit (port 7880) - MUST be healthy
 # - voice-doc-redis (port 6379) - MUST be healthy
-# - voice-doc-postgres (port 5433)
+# - voice-doc-postgres (port 5432)
 # - voice-doc-qdrant (port 6333)
 ```
 

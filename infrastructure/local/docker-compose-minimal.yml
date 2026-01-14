@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"  # Changed to 5433 to avoid conflict
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U voicedoc"]
       interval: 10s

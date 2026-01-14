@@ -51,8 +51,8 @@ Five specialized AI agents working together:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Frontend (Next.js + React)                │
-│              TypeScript • Tailwind • LiveKit                 │
+│                    Frontend (Next.js + React)               │
+│              TypeScript • Tailwind • LiveKit                │
 └───────────────────────┬─────────────────────────────────────┘
                         │
             ┌───────────┼───────────┐
@@ -60,12 +60,12 @@ Five specialized AI agents working together:
             │ HTTP/REST │ WebSocket │ LiveKit/WebRTC
             │           │           │
 ┌───────────▼───────────▼───────────▼─────────────────────────┐
-│                Backend API (FastAPI)                         │
-│         Python • Async • Multi-Agent System                  │
+│                Backend API (FastAPI)                        │
+│         Python • Async • Multi-Agent System                 │
 └───────────┬───────────────────────────────────────┬─────────┘
             │                                       │
     ┌───────┴───────┐                       ┌──────┴──────┐
-    │ Infrastructure │                       │  AI Services │
+    │ Infrastructure│                       │  AI Services│
     └───────┬───────┘                       └──────┬──────┘
             │                                       │
     ┌───────▼────────────────┐              ┌──────▼──────────────┐
