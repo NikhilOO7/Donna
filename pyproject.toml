@@ -14,6 +14,10 @@ dependencies = [
     "pydantic-settings",
     "pydantic-core",
 
+    # Multi-Agent Framework (CrewAI)
+    "crewai",
+    "crewai-tools",
+
     # AI/LLM
     "openai",
     "llama-index-core",
@@ -63,6 +67,7 @@ dependencies = [
     "asyncpg",
     "redis",
     "sqlalchemy",
+    "alembic",
 
     # NLP & Text Processing
     "spacy>=3.8.0",
@@ -88,6 +93,7 @@ dependencies = [
     "scikit-learn",
     "scikit-image",
     "scipy",
+    "seaborn",
     "joblib",
     "threadpoolctl",
 
@@ -99,6 +105,7 @@ dependencies = [
     "pyclipper",
     "shapely",
     "rtree",
+    "matplotlib",
 
     # HTTP & Networking
     "httpx",

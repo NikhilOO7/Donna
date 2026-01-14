@@ -7,7 +7,7 @@ Manages real-time voice interactions and conversation flow
 import asyncio
 import json
 import logging
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, AsyncIterator
 from datetime import datetime
 from dataclasses import dataclass, field
 
@@ -20,7 +20,8 @@ from apps.api.core.config import settings
 # LiveKit imports
 from livekit import rtc, api
 from livekit.agents import (
-    VoiceAssistant, stt, tts, llm,
+    Agent as VoiceAssistant,  # Renamed in newer livekit-agents
+    stt, tts, llm,
     AutoSubscribe, JobContext
 )
 from livekit.plugins import deepgram, cartesia, silero

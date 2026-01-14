@@ -20,7 +20,7 @@ class DocumentIntelligenceAgents:
     """Enhanced DocumentIntelligenceAgents preserving all original functionality"""
     
     def __init__(self):
-        self.llm = OpenAI(api_key=settings.openai_api_key, model="gpt-4-turbo", temperature=0.1)
+        self.llm = OpenAI(api_key=settings.openai_api_key)
         
         # Enhanced services
         self.modern_rag = ModernRAGService()

@@ -24,7 +24,7 @@ from sqlalchemy import select, and_
 
 # Core imports
 from apps.api.core.config import settings
-from apps.api.core.database import init_db, get_db, Base
+from apps.api.core.database import init_db, get_db, Base, AsyncSessionLocal
 from apps.api.core.connections import init_redis, init_qdrant, init_storage, get_redis_client, get_qdrant_client, get_storage_service
 
 # Document processing services
@@ -44,8 +44,9 @@ from apps.api.services.voice.enhanced_livekit_service import (
     entrypoint
 )
 
-# Agents - Disabled due to crewai dependency conflicts
-# from apps.api.services.agents.crew_setup import DocumentIntelligenceAgents
+# Agents - Multi-Agent System with CrewAI
+from apps.api.services.agents.crew_setup import DocumentIntelligenceAgents
+from apps.api.services.agents.agent_coordinator import DocumentIntelligenceCoordinator
 
 # Models
 from apps.api.models.document import Document, DocumentChunk, DocumentCreate, DocumentResponse, DocumentStats
@@ -122,10 +123,8 @@ rag_service: RAGService = None
 modern_rag_service: ModernRAGService = None
 voice_service: VoiceService = None
 enhanced_voice_service: EnhancedVoiceService = None
-# doc_intelligence_agents: DocumentIntelligenceAgents = None  # Disabled - crewai conflicts
-
-# In-memory document store (replace with database in production)
-documents_store: Dict[str, Dict] = {}
+doc_intelligence_agents: DocumentIntelligenceAgents = None
+doc_intelligence_coordinator: DocumentIntelligenceCoordinator = None
 
 # WebSocket connections for real-time updates
 active_connections: List[WebSocket] = []
@@ -151,7 +150,7 @@ async def lifespan(app: FastAPI):
         # Initialize services
         global doc_processor, modern_doc_processor, embedding_service, contextual_embedding_generator
         global vector_store, modern_vector_store, rag_service, modern_rag_service
-        global voice_service, enhanced_voice_service  # , doc_intelligence_agents
+        global voice_service, enhanced_voice_service, doc_intelligence_agents, doc_intelligence_coordinator
         
         # Document processing
         doc_processor = DocumentProcessor()
@@ -179,12 +178,13 @@ async def lifespan(app: FastAPI):
         enhanced_voice_service = EnhancedVoiceService()
         logger.info("✅ Voice services initialized")
 
-        # Agents - Disabled due to crewai dependency conflicts
-        # doc_intelligence_agents = DocumentIntelligenceAgents()
-        # logger.info("✅ Document intelligence agents initialized")
+        # Multi-Agent System (CrewAI)
+        doc_intelligence_agents = DocumentIntelligenceAgents()
+        doc_intelligence_coordinator = DocumentIntelligenceCoordinator()
+        logger.info("✅ Multi-agent system initialized (CrewAI)")
 
         logger.info("🚀 All services initialized successfully!")
-        logger.info("🎙️  Voice worker must be started separately - see START_VOICE.md")
+        logger.info("🎙️  Voice worker must be started separately")
 
     except Exception as e:
         logger.error(f"❌ Initialization failed: {e}")
@@ -323,73 +323,96 @@ async def health_check():
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    use_enhanced: bool = Query(True, description="Use enhanced processing with contextual embeddings")
+    use_enhanced: bool = Query(True, description="Use enhanced processing with contextual embeddings"),
+    session: AsyncSession = Depends(get_db)
 ):
     """Upload and process a document with contextual embeddings"""
+    from apps.api.services.document.document_service import (
+        document_service,
+        DocumentAlreadyExistsError,
+        DocumentProcessingError
+    )
+
     try:
         # Validate file
         if file.size > settings.max_file_size:
             raise HTTPException(400, f"File too large. Maximum size: {settings.max_file_size} bytes")
-        
-        # Generate document ID
-        document_id = str(uuid.uuid4())
-        
+
         # Read file content
         content = await file.read()
-        
+
         # Get storage service
         storage_service = get_storage_service()
-        
+
+        # Create document in database (with deduplication)
+        try:
+            document = await document_service.create_document(
+                session=session,
+                filename=file.filename,
+                file_content=content,
+                file_type=file.content_type,
+                user_metadata={
+                    "use_enhanced": use_enhanced,
+                    "uploaded_by": "api"
+                }
+            )
+        except DocumentAlreadyExistsError as e:
+            raise HTTPException(409, f"Document already exists: {str(e)}")
+
         # Upload to storage (local or MinIO based on config)
         storage_result = await storage_service.upload_file(
             file_content=content,
             filename=file.filename,
-            document_id=document_id,
+            document_id=str(document.id),
             metadata={
                 "uploaded_by": "api",
                 "use_enhanced": use_enhanced
             }
         )
-        
-        # Create document record
-        doc_record = {
-            "id": document_id,
-            "filename": file.filename,
-            "content_type": storage_result["content_type"],
-            "file_size": storage_result["file_size"],
-            "file_path": storage_result["file_path"],
-            "file_hash": storage_result["file_hash"],
-            "uploaded_at": datetime.utcnow().isoformat(),
-            "processing_status": "pending",
-            "use_enhanced": use_enhanced,
-            "storage_type": storage_result["storage_type"]
-        }
-        
-        documents_store[document_id] = doc_record
-        
+
+        # Update document with storage metadata
+        await document_service.update_document_metadata(
+            session=session,
+            document_id=document.id,
+            extracted_metadata={
+                "file_path": storage_result["file_path"],
+                "storage_type": storage_result["storage_type"],
+                "content_type": storage_result["content_type"]
+            }
+        )
+
+        # Update status to processing
+        await document_service.update_document_status(
+            session=session,
+            document_id=document.id,
+            status="processing"
+        )
+
         # Process document in background
         background_tasks.add_task(
             process_document_task,
-            document_id,
+            str(document.id),
             storage_result["file_path"],
             storage_result["content_type"],
             use_enhanced
         )
-        
+
         # Notify WebSocket clients
         await notify_clients({
             "type": "document_uploaded",
-            "document_id": document_id,
+            "document_id": str(document.id),
             "filename": file.filename
         })
-        
+
         return {
-            "document_id": document_id,
+            "document_id": str(document.id),
             "filename": file.filename,
             "status": "processing",
             "message": "Document uploaded successfully and is being processed"
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Document upload failed: {e}")
         raise HTTPException(500, f"Upload failed: {str(e)}")
@@ -402,98 +425,155 @@ async def process_document_task(
     use_enhanced: bool = True
 ):
     """Background task to process document with contextual embeddings"""
-    try:
-        logger.info(f"Processing document {document_id} with enhanced={use_enhanced}")
+    from apps.api.services.document.document_service import document_service
+    from uuid import UUID
+
+    # Convert document_id to UUID
+    doc_uuid = UUID(document_id)
+
+    # Create a new database session for background task
+    async with AsyncSessionLocal() as session:
+        try:
+            logger.info(f"Processing document {document_id} with enhanced={use_enhanced}")
+
+            # Get document from database
+            document = await document_service.get_document(session, doc_uuid)
+            if not document:
+                logger.error(f"Document {document_id} not found in database")
+                return
+
+            await notify_clients({
+                "type": "processing_started",
+                "document_id": document_id
+            })
         
-        # Update status
-        if document_id in documents_store:
-            documents_store[document_id]["processing_status"] = "processing"
-        
-        await notify_clients({
-            "type": "processing_started",
-            "document_id": document_id
-        })
-        
-        if use_enhanced:
-            # Enhanced processing with contextual embeddings
-            
-            # 1. Process document with intelligent chunking
-            processing_result = await modern_doc_processor.process_document(
-                file_path,
-                content_type,
-                metadata={"document_id": document_id}
+            if use_enhanced:
+                # Enhanced processing with contextual embeddings
+
+                # 1. Process document with intelligent chunking
+                processing_result = await modern_doc_processor.process_document(
+                    file_path,
+                    content_type,
+                    metadata={"document_id": document_id}
+                )
+
+                # 2. Generate contextual embeddings (3 levels)
+                embeddings_data = await contextual_embedding_generator.generate_embeddings(
+                    chunks=processing_result["chunks"],
+                    document_metadata={
+                        "document_id": document_id,
+                        "title": document.filename,
+                        **processing_result["metadata"]
+                    },
+                    use_voyage=bool(settings.voyage_api_key)
+                )
+
+                # 3. Store in vector database with context
+                await modern_vector_store.store_contextual_embeddings(
+                    document_id,
+                    embeddings_data,
+                    processing_result["structure"]
+                )
+
+                # 4. Add chunks to database
+                chunk_dicts = []
+                for chunk in processing_result["chunks"]:
+                    chunk_dicts.append({
+                        "content": chunk.get("content", ""),
+                        "token_count": chunk.get("token_count"),
+                        "start_char": chunk.get("start_char"),
+                        "end_char": chunk.get("end_char"),
+                        "start_page": chunk.get("start_page"),
+                        "end_page": chunk.get("end_page"),
+                        "metadata": chunk.get("metadata", {})
+                    })
+
+                await document_service.add_chunks(session, doc_uuid, chunk_dicts)
+
+                # 5. Update document metadata and status
+                await document_service.update_document_metadata(
+                    session=session,
+                    document_id=doc_uuid,
+                    doc_metadata={
+                        "structure": processing_result["structure"].__dict__ if hasattr(processing_result["structure"], "__dict__") else {},
+                        "processing_method": "enhanced_contextual",
+                        "chunk_count": len(processing_result["chunks"])
+                    }
+                )
+
+                await document_service.update_document_status(
+                    session=session,
+                    document_id=doc_uuid,
+                    status="completed"
+                )
+            else:
+                # Basic processing (backward compatibility)
+                chunks = await doc_processor.process_document(file_path)
+
+                embeddings_data = []
+                chunk_dicts = []
+
+                for i, chunk in enumerate(chunks):
+                    embedding = await embedding_service.generate_embedding(chunk["content"])
+                    embeddings_data.append({
+                        "chunk_id": f"{document_id}_chunk_{i}",
+                        "content": chunk["content"],
+                        "metadata": chunk.get("metadata", {}),
+                        "embedding": embedding
+                    })
+
+                    chunk_dicts.append({
+                        "content": chunk["content"],
+                        "token_count": chunk.get("token_count"),
+                        "metadata": chunk.get("metadata", {})
+                    })
+
+                await vector_store.store_embeddings(document_id, embeddings_data)
+                await document_service.add_chunks(session, doc_uuid, chunk_dicts)
+
+                await document_service.update_document_metadata(
+                    session=session,
+                    document_id=doc_uuid,
+                    doc_metadata={
+                        "processing_method": "basic",
+                        "chunk_count": len(chunks)
+                    }
+                )
+
+                await document_service.update_document_status(
+                    session=session,
+                    document_id=doc_uuid,
+                    status="completed"
+                )
+
+            logger.info(f"✅ Document {document_id} processed successfully")
+
+            # Get updated document for chunk count
+            document = await document_service.get_document(session, doc_uuid)
+            chunk_count = len(document.chunks) if document else 0
+
+            await notify_clients({
+                "type": "processing_completed",
+                "document_id": document_id,
+                "chunk_count": chunk_count
+            })
+
+        except Exception as e:
+            logger.error(f"❌ Document processing failed for {document_id}: {e}")
+
+            # Update document status to failed
+            await document_service.update_document_status(
+                session=session,
+                document_id=doc_uuid,
+                status="failed",
+                error={"message": str(e), "type": type(e).__name__}
             )
-            
-            # 2. Generate contextual embeddings (3 levels)
-            embeddings_data = await contextual_embedding_generator.generate_embeddings(
-                chunks=processing_result["chunks"],
-                document_metadata={
-                    "document_id": document_id,
-                    "title": documents_store[document_id]["filename"],
-                    **processing_result["metadata"]
-                },
-                use_voyage=bool(settings.voyage_api_key)
-            )
-            
-            # 3. Store in vector database with context
-            await modern_vector_store.store_contextual_embeddings(
-                document_id,
-                embeddings_data,
-                processing_result["structure"]
-            )
-            
-            # 4. Update document store
-            if document_id in documents_store:
-                documents_store[document_id].update({
-                    "processing_status": "completed",
-                    "chunk_count": len(processing_result["chunks"]),
-                    "structure": processing_result["structure"].__dict__,
-                    "processed_at": datetime.utcnow().isoformat(),
-                    "processing_method": "enhanced_contextual"
-                })
-        else:
-            # Basic processing (backward compatibility)
-            chunks = await doc_processor.process_document(file_path)
-            
-            embeddings_data = []
-            for i, chunk in enumerate(chunks):
-                embedding = await embedding_service.generate_embedding(chunk["content"])
-                embeddings_data.append({
-                    "chunk_id": f"{document_id}_chunk_{i}",
-                    "content": chunk["content"],
-                    "metadata": chunk.get("metadata", {}),
-                    "embedding": embedding
-                })
-            
-            await vector_store.store_embeddings(document_id, embeddings_data)
-            
-            if document_id in documents_store:
-                documents_store[document_id].update({
-                    "processing_status": "completed",
-                    "chunk_count": len(chunks),
-                    "processed_at": datetime.utcnow().isoformat(),
-                    "processing_method": "basic"
-                })
-        
-        logger.info(f"✅ Document {document_id} processed successfully")
-        
-        await notify_clients({
-            "type": "processing_completed",
-            "document_id": document_id,
-            "chunk_count": documents_store[document_id].get("chunk_count", 0)
-        })
-        
-    except Exception as e:
-        logger.error(f"❌ Document processing failed for {document_id}: {e}")
-        if document_id in documents_store:
-            documents_store[document_id]["processing_status"] = "failed"
-            documents_store[document_id]["error"] = str(e)
-        
-        await notify_clients({
-            "type": "processing_failed",
-            "document_id": document_id,
-            "error": str(e)
-        })
+
+            await notify_clients({
+                "type": "processing_failed",
+                "document_id": document_id,
+                "error": str(e)
+            })
 
 # Query endpoint with contextual search
 @app.post("/api/v1/query", response_model=QueryResponse)
@@ -545,24 +625,46 @@ async def query_documents(request: QueryRequest):
 async def list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    session: AsyncSession = Depends(get_db)
 ):
     """List all documents with pagination"""
-    documents = list(documents_store.values())
-    
-    # Filter by status if provided
+    from apps.api.services.document.document_service import document_service
+
+    documents = await document_service.list_documents(
+        session=session,
+        skip=skip,
+        limit=limit,
+        status=status
+    )
+
+    # Convert to dict for response
+    documents_list = [
+        {
+            "id": str(doc.id),
+            "filename": doc.filename,
+            "file_type": doc.file_type,
+            "file_size": doc.file_size,
+            "processing_status": doc.processing_status,
+            "created_at": doc.created_at.isoformat(),
+            "chunk_count": len(doc.chunks) if doc.chunks else 0,
+            "metadata": doc.doc_metadata
+        }
+        for doc in documents
+    ]
+
+    # Get total count
+    from sqlalchemy import func, select as sql_select
+    from apps.api.models.document import Document as DocumentModel
+
+    total_query = sql_select(func.count()).select_from(DocumentModel).where(DocumentModel.deleted_at.is_(None))
     if status:
-        documents = [doc for doc in documents if doc.get("processing_status") == status]
-    
-    # Sort by upload time
-    documents.sort(key=lambda x: x.get("uploaded_at", ""), reverse=True)
-    
-    # Paginate
-    total = len(documents)
-    documents = documents[skip:skip + limit]
-    
+        total_query = total_query.where(DocumentModel.processing_status == status)
+
+    total = await session.scalar(total_query) or 0
+
     return {
-        "documents": documents,
+        "documents": documents_list,
         "total": total,
         "skip": skip,
         "limit": limit
@@ -570,34 +672,91 @@ async def list_documents(
 
 # Get document details
 @app.get("/api/v1/documents/{document_id}")
-async def get_document(document_id: str):
+async def get_document(
+    document_id: str,
+    session: AsyncSession = Depends(get_db)
+):
     """Get document details including structure"""
-    if document_id not in documents_store:
+    from apps.api.services.document.document_service import document_service
+    from uuid import UUID
+
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid document ID format")
+
+    document = await document_service.get_document(
+        session=session,
+        document_id=doc_uuid,
+        include_chunks=True
+    )
+
+    if not document:
         raise HTTPException(404, "Document not found")
-    
-    return documents_store[document_id]
+
+    return {
+        "id": str(document.id),
+        "filename": document.filename,
+        "file_type": document.file_type,
+        "file_size": document.file_size,
+        "processing_status": document.processing_status,
+        "processing_started_at": document.processing_started_at.isoformat() if document.processing_started_at else None,
+        "processing_completed_at": document.processing_completed_at.isoformat() if document.processing_completed_at else None,
+        "processing_error": document.processing_error,
+        "created_at": document.created_at.isoformat(),
+        "updated_at": document.updated_at.isoformat(),
+        "chunk_count": len(document.chunks) if document.chunks else 0,
+        "metadata": document.doc_metadata,
+        "extracted_metadata": document.extracted_metadata
+    }
 
 # Delete document
 @app.delete("/api/v1/documents/{document_id}")
-async def delete_document(document_id: str):
+async def delete_document(
+    document_id: str,
+    session: AsyncSession = Depends(get_db)
+):
     """Delete a document and its embeddings"""
-    if document_id not in documents_store:
-        raise HTTPException(404, "Document not found")
-    
+    from apps.api.services.document.document_service import document_service
+    from uuid import UUID
+
     try:
-        # Delete from vector store
-        if documents_store[document_id].get("use_enhanced"):
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid document ID format")
+
+    # Get document first to check if it exists and get metadata
+    document = await document_service.get_document(session=session, document_id=doc_uuid)
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    try:
+        # Delete from vector store (check metadata for processing method)
+        processing_method = document.doc_metadata.get("processing_method", "basic")
+        if processing_method == "enhanced_contextual":
             await modern_vector_store.delete_document(document_id)
         else:
             await vector_store.delete_document(document_id)
-        
+
         # Delete from storage
         storage_service = get_storage_service()
-        filename = documents_store[document_id]["filename"]
-        await storage_service.delete_file(document_id, filename)
-        
-        # Remove from store
-        del documents_store[document_id]
+        filename = document.filename
+        file_path = document.extracted_metadata.get("file_path")
+        if file_path:
+            try:
+                await storage_service.delete_file(document_id, filename)
+            except Exception as e:
+                logger.warning(f"Failed to delete file from storage: {e}")
+
+        # Soft delete from database
+        success = await document_service.delete_document(
+            session=session,
+            document_id=doc_uuid,
+            soft_delete=True
+        )
+
+        if not success:
+            raise HTTPException(500, "Failed to delete document from database")
         
         await notify_clients({
             "type": "document_deleted",

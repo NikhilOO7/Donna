@@ -119,7 +119,7 @@ class DocumentIntelligenceCoordinator:
                 self.context_agent.get_crew_agent()
             ],
             tasks=[],
-            process=Process.parallel,
+            process=Process.sequential,
             verbose=True
         )
         self.crews["voice_interaction"] = voice_crew

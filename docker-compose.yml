@@ -1,0 +1,247 @@
+# Complete Docker Compose for Voice Document Intelligence System
+# Includes: PostgreSQL, Redis, Qdrant, MinIO, LiveKit, Backend API, Frontend, Voice Worker
+
+version: '3.8'
+
+services:
+  # ====================
+  # Infrastructure Services
+  # ====================
+
+  # PostgreSQL - Document metadata and user data
+  postgres:
+    image: postgres:15-alpine
+    container_name: voice-doc-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voicedoc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voicedoc123}
+      POSTGRES_DB: ${POSTGRES_DB:-voice_doc_intel}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/local/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voicedoc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voice-doc-network
+
+  # Redis - Caching and real-time features
+  redis:
+    image: redis:7-alpine
+    container_name: voice-doc-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voice-doc-network
+
+  # Qdrant - Vector database for embeddings
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: voice-doc-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voice-doc-network
+
+  # MinIO - Object storage for documents
+  minio:
+    image: minio/minio:latest
+    container_name: voice-doc-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-voicedoc}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-voicedoc123}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voice-doc-network
+
+  # LiveKit - Real-time voice server
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: voice-doc-livekit
+    command: --dev
+    restart: unless-stopped
+    ports:
+      - "7880:7880"  # HTTP API
+      - "7881:7881"  # RTC/TCP
+      - "7882:7882"  # RTC/UDP
+    environment:
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7880/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voice-doc-network
+
+  # ====================
+  # Application Services
+  # ====================
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: voice-doc-backend
+    environment:
+      # App Config
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+
+      # Database
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-voicedoc}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-voicedoc123}
+      - POSTGRES_DB=${POSTGRES_DB:-voice_doc_intel}
+
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+
+      # Qdrant
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_GRPC_PORT=6334
+
+      # MinIO
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-voicedoc}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-voicedoc123}
+      - MINIO_SECURE=false
+
+      # LiveKit
+      - LIVEKIT_URL=http://livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+
+      # AI APIs (from .env file)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY}
+      - VOYAGEAI_API_KEY=${VOYAGEAI_API_KEY}
+
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./static:/app/static
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: voice-doc-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      - NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
+  # LiveKit Voice Worker
+  voice-worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: voice-doc-worker
+    environment:
+      # Database
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
+
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+
+      # Qdrant
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+
+      # LiveKit
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+
+      # AI APIs
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY}
+
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+      - livekit
+      - backend
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
+networks:
+  voice-doc-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  minio_data:

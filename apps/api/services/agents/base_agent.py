@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime
 import time
 
-from crewai import Agent as CrewAgent, Task, Tool
+from crewai import Agent as CrewAgent, Task
 from openai import AsyncOpenAI
 
 from apps.api.core.config import settings
@@ -63,7 +63,7 @@ class BaseAgent(ABC):
         self.backstory = backstory
         self.metrics = AgentMetrics()
         self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self._tools: List[Tool] = []
+        self._tools: List[Any] = []  # CrewAI tools (decorated functions)
         self._crew_agent: Optional[CrewAgent] = None
         
         # Initialize agent-specific components
@@ -79,10 +79,11 @@ class BaseAgent(ABC):
         """Main processing method for the agent"""
         pass
     
-    def register_tool(self, tool: Tool):
+    def register_tool(self, tool: Any):
         """Register a tool for the agent to use"""
         self._tools.append(tool)
-        logger.info(f"Tool '{tool.name}' registered for agent '{self.name}'")
+        tool_name = getattr(tool, 'name', getattr(tool, '__name__', 'unknown'))
+        logger.info(f"Tool '{tool_name}' registered for agent '{self.name}'")
     
     def get_crew_agent(self) -> CrewAgent:
         """Get or create CrewAI agent instance"""
