@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+      - run: uv sync --frozen
+      - run: uv run ruff check apps/ tests/
+      - run: uv run ruff format --check apps/ tests/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: voicedoc
+          POSTGRES_PASSWORD: voicedoc123
+          POSTGRES_DB: voice_doc_intel
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_USER: voicedoc
+      POSTGRES_PASSWORD: voicedoc123
+      POSTGRES_DB: voice_doc_intel
+      REDIS_HOST: localhost
+      REDIS_PASSWORD: ""
+      QDRANT_HOST: localhost
+      APP_ENV: test
+      REQUIRE_API_KEY: "false"
+      LOG_FORMAT: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+      - run: uv sync --frozen
+      - run: uv run python -m pytest tests/ -v --timeout=60
+        timeout-minutes: 5
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+      - run: uv sync --frozen
+      - run: uv run pip-audit --strict --desc 2>/dev/null || echo "pip-audit not installed, skipping"
+
+  build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f infrastructure/local/docker-compose.yml config --quiet

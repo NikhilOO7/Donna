@@ -205,7 +205,7 @@ class DocumentProcessor:
             
             try:
                 return json.loads(result)
-            except:
+            except Exception:
                 return {"error": "Failed to parse AI response", "raw_response": result}
                 
         except Exception as e:
@@ -229,7 +229,7 @@ class ModernDocumentProcessor:
         # Initialize sentence splitter
         try:
             nltk.download('punkt', quiet=True)
-        except:
+        except Exception:
             pass
     
     async def process_document(self, file_path: str, file_type: str) -> Dict[str, Any]:

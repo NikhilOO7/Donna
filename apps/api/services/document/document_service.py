@@ -423,5 +423,52 @@ class DocumentService:
             raise DocumentProcessingError(f"Failed to add chunks: {str(e)}")
 
 
+    async def add_entities(
+        self,
+        session: AsyncSession,
+        document_id: UUID,
+        entities: List[Dict[str, Any]],
+        chunk_id: Optional[UUID] = None,
+    ) -> int:
+        """Persist extracted named entities to the database.
+
+        Args:
+            session: Database session
+            document_id: Parent document UUID
+            entities: List of entity dicts with keys: entity_type, entity_value, confidence_score
+            chunk_id: Optional chunk UUID this entity was extracted from
+
+        Returns:
+            Number of entities created
+        """
+        try:
+            count = 0
+            for ent in entities:
+                entity = Entity(
+                    id=uuid4(),
+                    document_id=document_id,
+                    chunk_id=chunk_id,
+                    entity_type=ent.get("entity_type", "UNKNOWN"),
+                    entity_value=ent.get("entity_value", ""),
+                    entity_normalized=ent.get("entity_normalized"),
+                    confidence_score=ent.get("confidence_score"),
+                    extraction_method=ent.get("extraction_method", "spacy"),
+                    start_offset=ent.get("start_offset"),
+                    end_offset=ent.get("end_offset"),
+                    entity_metadata=ent.get("metadata", {}),
+                )
+                session.add(entity)
+                count += 1
+
+            await session.commit()
+            self.logger.info(f"Added {count} entities for document {document_id}")
+            return count
+
+        except Exception as e:
+            await session.rollback()
+            self.logger.error(f"Failed to add entities: {e}")
+            return 0
+
+
 # Global service instance
 document_service = DocumentService()

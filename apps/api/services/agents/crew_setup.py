@@ -273,12 +273,17 @@ class DocumentIntelligenceAgents:
         """Analyze information across multiple documents"""
         try:
             # Use enhanced RAG for cross-document analysis
-            analysis_result = asyncio.run(
-                self.modern_rag.process_query(
-                    query=f"Cross-document analysis: {query}",
-                    context_types=["document", "global", "semantic"]
+            # Use new_event_loop to avoid crash when called inside running loop
+            loop = asyncio.new_event_loop()
+            try:
+                analysis_result = loop.run_until_complete(
+                    self.modern_rag.process_query(
+                        query=f"Cross-document analysis: {query}",
+                        context_types=["document", "global", "semantic"]
+                    )
                 )
-            )
+            finally:
+                loop.close()
             
             synthesis_prompt = f"""
             Synthesize cross-document analysis:
@@ -417,15 +422,19 @@ class DocumentIntelligenceAgents:
             
             for context_type in context_types:
                 try:
-                    # This would integrate with the enhanced RAG system
-                    result = asyncio.run(
-                        self.modern_rag.process_query(
-                            query=query,
-                            context_types=[context_type]
+                    # Use new_event_loop to avoid crash when called inside running loop
+                    loop = asyncio.new_event_loop()
+                    try:
+                        result = loop.run_until_complete(
+                            self.modern_rag.process_query(
+                                query=query,
+                                context_types=[context_type]
+                            )
                         )
-                    )
+                    finally:
+                        loop.close()
                     analysis_results[context_type] = result.get('answer', 'No result')[:200]
-                except:
+                except Exception:
                     analysis_results[context_type] = "Analysis unavailable"
             
             synthesis_prompt = f"""

@@ -24,8 +24,11 @@ from sqlalchemy import select, and_
 
 # Core imports
 from apps.api.core.config import settings
-from apps.api.core.database import init_db, get_db, Base, AsyncSessionLocal
+from apps.api.core.database import init_db, get_db, Base, AsyncSessionLocal, check_db_health
 from apps.api.core.connections import init_redis, init_qdrant, init_storage, get_redis_client, get_qdrant_client, get_storage_service
+from apps.api.core.auth import verify_api_key
+from apps.api.services.analytics_service import track_event, get_event_stats, append_message, get_conversation_history
+from apps.api.core.cache import get_cached_response, set_cached_response, invalidate_document_cache
 
 # Document processing services
 from apps.api.services.document.processor import DocumentProcessor
@@ -50,67 +53,15 @@ from apps.api.services.agents.agent_coordinator import DocumentIntelligenceCoord
 
 # Models
 from apps.api.models.document import Document, DocumentChunk, DocumentCreate, DocumentResponse, DocumentStats
+from apps.api.models.requests import QueryRequest
+from apps.api.models.responses import QueryResponse
 from pydantic import BaseModel
 
-# Configure logging with file handlers
-from logging.handlers import RotatingFileHandler
-import sys
+# Structured logging (structlog + stdlib)
+from apps.api.core.logging import configure_logging, get_logger
 
-# Create logs directory if it doesn't exist
-logs_dir = Path("logs")
-logs_dir.mkdir(exist_ok=True)
-
-# Create formatters
-detailed_formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-simple_formatter = logging.Formatter(
-    '%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-# Configure root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(getattr(logging, settings.log_level))
-
-# Console handler (stdout)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(simple_formatter)
-root_logger.addHandler(console_handler)
-
-# All logs file handler (rotating)
-all_logs_handler = RotatingFileHandler(
-    logs_dir / "app.log",
-    maxBytes=10*1024*1024,  # 10MB
-    backupCount=5
-)
-all_logs_handler.setLevel(logging.DEBUG)
-all_logs_handler.setFormatter(detailed_formatter)
-root_logger.addHandler(all_logs_handler)
-
-# Error logs file handler (rotating) - only errors and critical
-error_logs_handler = RotatingFileHandler(
-    logs_dir / "error.log",
-    maxBytes=10*1024*1024,  # 10MB
-    backupCount=5
-)
-error_logs_handler.setLevel(logging.ERROR)
-error_logs_handler.setFormatter(detailed_formatter)
-root_logger.addHandler(error_logs_handler)
-
-# Access logs file handler (for API requests)
-access_logs_handler = RotatingFileHandler(
-    logs_dir / "access.log",
-    maxBytes=10*1024*1024,  # 10MB
-    backupCount=5
-)
-access_logs_handler.setLevel(logging.INFO)
-access_logs_handler.setFormatter(detailed_formatter)
-
-logger = logging.getLogger(__name__)
-logger.info("Logging configured - logs will be written to ./logs/ directory")
+configure_logging()
+logger = get_logger(__name__)
 
 # Global service instances
 doc_processor: DocumentProcessor = None
@@ -213,60 +164,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add request logging middleware
+# Request middleware: correlation-id propagation + structured logging + Prometheus metrics
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+import structlog
 import time
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
+from apps.api.core.metrics import (
+    HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION,
+    metrics_response, metrics_content_type,
+)
+from apps.api.core.resilience import get_all_breaker_states
+
+
+class ObservabilityMiddleware(BaseHTTPMiddleware):
+    """Middleware that adds request-id propagation, structured logging, and Prometheus metrics."""
+
     async def dispatch(self, request: Request, call_next):
-        # Log request
-        request_id = str(uuid.uuid4())[:8]
-        start_time = time.time()
+        # 1. Request-ID: read from header or generate
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
-        # Get request details
-        client_host = request.client.host if request.client else "unknown"
-
-        # Log incoming request
-        access_logger = logging.getLogger("access")
-        access_logger.addHandler(access_logs_handler)
-        access_logger.info(
-            f"[{request_id}] {request.method} {request.url.path} - Client: {client_host}"
+        # 2. Bind into structlog contextvars (all downstream logs include it)
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
         )
 
-        # Process request and catch any errors
+        start_time = time.monotonic()
+        req_logger = get_logger("access")
+        req_logger.info("request_started", client=request.client.host if request.client else "unknown")
+
         try:
             response = await call_next(request)
+            duration = time.monotonic() - start_time
 
-            # Calculate request duration
-            duration = time.time() - start_time
+            # 3. Prometheus metrics
+            path_label = request.url.path.split("?")[0]
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method, path=path_label, status=response.status_code
+            ).inc()
+            HTTP_REQUEST_DURATION.labels(method=request.method, path=path_label).observe(duration)
 
-            # Log response
-            access_logger.info(
-                f"[{request_id}] {request.method} {request.url.path} - "
-                f"Status: {response.status_code} - Duration: {duration:.3f}s"
-            )
+            # 4. Structured log with duration
+            log_method = req_logger.warning if response.status_code >= 400 else req_logger.info
+            log_method("request_completed", status=response.status_code, duration_ms=round(duration * 1000, 1))
 
-            # Log errors for 4xx and 5xx responses
-            if response.status_code >= 400:
-                logger.warning(
-                    f"[{request_id}] Request failed - {request.method} {request.url.path} - "
-                    f"Status: {response.status_code}"
-                )
-
+            # 5. Propagate request-id to response
+            response.headers["X-Request-ID"] = request_id
             return response
 
-        except Exception as e:
-            # Log unhandled exceptions
-            duration = time.time() - start_time
-            logger.error(
-                f"[{request_id}] Unhandled exception in {request.method} {request.url.path} - "
-                f"Duration: {duration:.3f}s - Error: {str(e)}",
-                exc_info=True
-            )
+        except Exception as exc:
+            duration = time.monotonic() - start_time
+            req_logger.error("request_failed", duration_ms=round(duration * 1000, 1), error=str(exc), exc_info=True)
             raise
 
-app.add_middleware(RequestLoggingMiddleware)
+
+app.add_middleware(ObservabilityMiddleware)
 
 # Import and include routers
 from apps.api.routers import voice
@@ -275,46 +230,73 @@ app.include_router(voice.router)
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Request/Response models
-class QueryRequest(BaseModel):
-    query: str
-    conversation_id: Optional[str] = None
-    context_level: Optional[str] = "local"
-    max_results: Optional[int] = 5
-    use_enhanced: Optional[bool] = True
-
-class QueryResponse(BaseModel):
-    answer: str
-    sources: List[Dict[str, Any]]
-    conversation_id: str
-    context_level: str
-    metadata: Dict[str, Any]
+# Prometheus metrics endpoint
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Expose Prometheus metrics for scraping."""
+    from starlette.responses import Response
+    return Response(content=metrics_response(), media_type=metrics_content_type())
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    # Voice worker runs as separate process
-    # To check if it's running, the frontend can check LiveKit connectivity
-    voice_worker_status = "separate_process"
+    """Comprehensive health check with actual service verification"""
+    services_status = {}
 
-    services_status = {
-        "database": "healthy",
-        "redis": "healthy" if await get_redis_client() else "unhealthy",
-        "qdrant": "healthy" if await get_qdrant_client() else "unhealthy",
-        "embeddings": "healthy" if embedding_service else "unhealthy",
-        "voice": "healthy" if voice_service else "unhealthy",
-        "voice_worker": voice_worker_status,
-    }
+    # Check database
+    try:
+        db_healthy = await check_db_health()
+        services_status["database"] = "healthy" if db_healthy else "unhealthy"
+    except Exception as e:
+        services_status["database"] = f"unhealthy: {e}"
+
+    # Check Redis
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            await redis_client.ping()
+            services_status["redis"] = "healthy"
+        else:
+            services_status["redis"] = "unhealthy"
+    except Exception as e:
+        services_status["redis"] = f"unhealthy: {e}"
+
+    # Check Qdrant
+    try:
+        qdrant_client = await get_qdrant_client()
+        if qdrant_client:
+            collections = await qdrant_client.get_collections()
+            services_status["qdrant"] = {
+                "status": "healthy",
+                "collections": len(collections.collections)
+            }
+        else:
+            services_status["qdrant"] = "unhealthy"
+    except Exception as e:
+        services_status["qdrant"] = f"unhealthy: {e}"
+
+    # Check service instances
+    services_status["embeddings"] = "healthy" if embedding_service else "unavailable"
+    services_status["voice"] = "healthy" if voice_service else "unavailable"
+    services_status["voice_worker"] = "separate_process"
+
+    # Determine overall health
+    core_services = [services_status["database"], services_status["redis"]]
+    qdrant_status = services_status["qdrant"]
+    if isinstance(qdrant_status, dict):
+        core_services.append(qdrant_status["status"])
+    else:
+        core_services.append(qdrant_status)
 
     overall_health = "healthy" if all(
-        status in ["healthy", "running", "disabled"] for status in services_status.values()
+        s == "healthy" for s in core_services
     ) else "degraded"
 
     return {
         "status": overall_health,
         "services": services_status,
-        "version": "2.0.0",
+        "circuit_breakers": get_all_breaker_states(),
+        "version": settings.app_version,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -324,7 +306,8 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     use_enhanced: bool = Query(True, description="Use enhanced processing with contextual embeddings"),
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key)
 ):
     """Upload and process a document with contextual embeddings"""
     from apps.api.services.document.document_service import (
@@ -403,6 +386,17 @@ async def upload_document(
             "document_id": str(document.id),
             "filename": file.filename
         })
+
+        # Invalidate query cache since document corpus changed
+        await invalidate_document_cache()
+
+        # Track upload event
+        await track_event(
+            session,
+            event_type="document_upload",
+            document_id=str(document.id),
+            event_data={"filename": file.filename, "file_size": len(content)},
+        )
 
         return {
             "document_id": str(document.id),
@@ -490,6 +484,20 @@ async def process_document_task(
 
                 await document_service.add_chunks(session, doc_uuid, chunk_dicts)
 
+                # 4.5. Extract and persist named entities from chunks
+                all_entities = []
+                for chunk in processing_result["chunks"]:
+                    chunk_entities = chunk.get("metadata", {}).get("entities", [])
+                    for ent in chunk_entities:
+                        all_entities.append({
+                            "entity_type": ent.get("type", ent.get("label", "UNKNOWN")),
+                            "entity_value": ent.get("text", ent.get("value", "")),
+                            "confidence_score": ent.get("confidence"),
+                            "extraction_method": "spacy",
+                        })
+                if all_entities:
+                    await document_service.add_entities(session, doc_uuid, all_entities)
+
                 # 5. Update document metadata and status
                 await document_service.update_document_metadata(
                     session=session,
@@ -558,6 +566,14 @@ async def process_document_task(
                 "chunk_count": chunk_count
             })
 
+            # Track document processing analytics
+            await track_event(
+                session,
+                event_type="document_processed",
+                document_id=document_id,
+                event_data={"chunk_count": chunk_count, "method": "enhanced" if use_enhanced else "basic"},
+            )
+
         except Exception as e:
             logger.error(f"❌ Document processing failed for {document_id}: {e}")
 
@@ -577,47 +593,90 @@ async def process_document_task(
 
 # Query endpoint with contextual search
 @app.post("/api/v1/query", response_model=QueryResponse)
-async def query_documents(request: QueryRequest):
+async def query_documents(
+    request: QueryRequest,
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+):
     """Query documents using contextual embeddings"""
+    import time as _time
+    query_start = _time.monotonic()
+    conversation_id = request.conversation_id or f"api-{uuid.uuid4()}"
+
     try:
+        # Check Redis cache first (skip for conversations with history)
+        context_level = request.context_level or "document"
+        if not request.conversation_id:
+            cached = await get_cached_response(request.query, context_level)
+            if cached:
+                return QueryResponse(**cached)
+
+        # Load conversation history from DB for context
+        history = await get_conversation_history(session, conversation_id, last_n=5)
+
         if request.use_enhanced:
-            # Create voice agent for query processing
             voice_agent = DocumentIntelligenceVoiceAgent()
-            
-            # Process query with contextual understanding
             result = await voice_agent.process_voice_query(
                 query=request.query,
-                conversation_id=request.conversation_id or f"api-{uuid.uuid4()}",
+                conversation_id=conversation_id,
                 audio_metadata={"source": "api", "context_level": request.context_level}
             )
-            
-            return QueryResponse(
-                answer=result["answer"],
-                sources=result["sources"],
-                conversation_id=result["conversation_id"],
-                context_level=result["context_level"],
-                metadata={
-                    "metrics": result.get("metrics", {}),
-                    "context_info": result.get("context_info", {})
-                }
-            )
+            answer = result["answer"]
+            sources = result["sources"]
+            context_level = result["context_level"]
+            metadata = {
+                "metrics": result.get("metrics", {}),
+                "context_info": result.get("context_info", {}),
+            }
         else:
-            # Basic RAG query
             result = await rag_service.process_query(
                 query=request.query,
-                conversation_id=request.conversation_id
+                conversation_id=conversation_id,
             )
-            
-            return QueryResponse(
-                answer=result["answer"],
-                sources=result.get("sources", []),
-                conversation_id=request.conversation_id or "basic",
-                context_level="document",
-                metadata={}
-            )
-            
+            answer = result["answer"]
+            sources = result.get("sources", [])
+            context_level = "document"
+            metadata = {}
+
+        latency_ms = int((_time.monotonic() - query_start) * 1000)
+
+        # Persist conversation turn to DB
+        await append_message(session, conversation_id, request.query, answer)
+
+        # Track analytics event
+        await track_event(
+            session,
+            event_type="query",
+            session_id=conversation_id,
+            event_data={
+                "query": request.query,
+                "context_level": context_level,
+                "enhanced": request.use_enhanced,
+                "source_count": len(sources),
+            },
+            latency_ms=latency_ms,
+        )
+
+        # Record Prometheus metric
+        from apps.api.core.metrics import RAG_QUERY_DURATION
+        RAG_QUERY_DURATION.observe(latency_ms / 1000.0)
+
+        response = QueryResponse(
+            answer=answer,
+            sources=sources,
+            conversation_id=conversation_id,
+            context_level=context_level,
+            metadata=metadata,
+        )
+
+        # Cache the response for future identical queries
+        if not request.conversation_id:
+            await set_cached_response(request.query, context_level, response.model_dump())
+
+        return response
+
     except Exception as e:
-        logger.error(f"Query processing failed: {e}")
+        logger.error("query_failed", error=str(e), query=request.query)
         raise HTTPException(500, f"Query failed: {str(e)}")
 
 # List documents endpoint
@@ -626,7 +685,8 @@ async def list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key)
 ):
     """List all documents with pagination"""
     from apps.api.services.document.document_service import document_service
@@ -674,7 +734,8 @@ async def list_documents(
 @app.get("/api/v1/documents/{document_id}")
 async def get_document(
     document_id: str,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key)
 ):
     """Get document details including structure"""
     from apps.api.services.document.document_service import document_service
@@ -714,7 +775,8 @@ async def get_document(
 @app.delete("/api/v1/documents/{document_id}")
 async def delete_document(
     document_id: str,
-    session: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key)
 ):
     """Delete a document and its embeddings"""
     from apps.api.services.document.document_service import document_service
@@ -827,7 +889,7 @@ async def notify_clients(message: Dict[str, Any]):
     for connection in active_connections:
         try:
             await connection.send_text(message_json)
-        except:
+        except Exception:
             disconnected.append(connection)
     
     # Remove disconnected clients
@@ -836,52 +898,50 @@ async def notify_clients(message: Dict[str, Any]):
 
 # Analytics endpoints
 @app.get("/api/v1/analytics/usage")
-async def get_usage_analytics():
-    """Get usage analytics"""
-    total_docs = len(documents_store)
-    completed_docs = len([d for d in documents_store.values() if d.get("processing_status") == "completed"])
-    failed_docs = len([d for d in documents_store.values() if d.get("processing_status") == "failed"])
-    
-    # Calculate total chunks
-    total_chunks = sum(doc.get("chunk_count", 0) for doc in documents_store.values())
-    
-    # Processing methods breakdown
-    enhanced_docs = len([d for d in documents_store.values() if d.get("processing_method") == "enhanced_contextual"])
-    basic_docs = len([d for d in documents_store.values() if d.get("processing_method") == "basic"])
-    
+async def get_usage_analytics(session: AsyncSession = Depends(get_db)):
+    """Get usage analytics from database"""
+    from apps.api.services.document.document_service import document_service
+    stats = await document_service.get_document_stats(session)
+    status_counts = stats.processing_status_counts
+
+    total_docs = stats.total_documents
+    completed_docs = status_counts.get("completed", 0)
+    failed_docs = status_counts.get("failed", 0)
+    processing_docs = status_counts.get("processing", 0) + status_counts.get("pending", 0)
+
     return {
         "documents": {
             "total": total_docs,
             "completed": completed_docs,
             "failed": failed_docs,
-            "processing": total_docs - completed_docs - failed_docs
+            "processing": processing_docs
         },
         "chunks": {
-            "total": total_chunks,
-            "average_per_doc": total_chunks / completed_docs if completed_docs > 0 else 0
+            "total": stats.total_chunks,
+            "average_per_doc": stats.total_chunks / completed_docs if completed_docs > 0 else 0
         },
-        "processing_methods": {
-            "enhanced_contextual": enhanced_docs,
-            "basic": basic_docs
+        "entities": {
+            "total": stats.total_entities
         },
         "timestamp": datetime.utcnow().isoformat()
     }
 
 @app.get("/api/v1/analytics/performance")
-async def get_performance_analytics():
-    """Get performance analytics from voice sessions"""
-    # This would aggregate metrics from actual sessions
+async def get_performance_analytics(session: AsyncSession = Depends(get_db)):
+    """Get performance analytics from real tracked events."""
+    stats = await get_event_stats(session, hours=24)
+    latencies = stats.get("latencies", {})
+
     return {
         "average_latencies": {
-            "stt": 150,  # ms
-            "llm": 800,  # ms
-            "tts": 100,  # ms
-            "rag": 200,  # ms
-            "total": 1250  # ms
+            "query": latencies.get("query", {}).get("avg_ms", 0),
+            "query_p95": latencies.get("query", {}).get("p95_ms", 0),
+            "document_upload": latencies.get("document_upload", {}).get("avg_ms", 0),
         },
-        "success_rate": 0.95,
+        "event_counts": stats.get("event_counts", {}),
         "active_sessions": len(enhanced_voice_service.sessions) if enhanced_voice_service else 0,
-        "timestamp": datetime.utcnow().isoformat()
+        "period_hours": stats.get("period_hours", 24),
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 # Test endpoints for development
@@ -905,54 +965,56 @@ async def demo_test():
     }
 
 @app.post("/api/v1/test/process-sample")
-async def process_sample_document(background_tasks: BackgroundTasks):
+async def process_sample_document(
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db)
+):
     """Process a sample document for testing"""
     sample_content = """
     # Sample Document: Voice Document Intelligence System
-    
+
     ## Introduction
     This is a sample document to test the contextual embedding system.
-    
+
     ## Features
     - Intelligent document chunking that preserves semantic boundaries
     - Three-level contextual embeddings (local, document, global)
     - Real-time voice interaction with document search
     - Advanced RAG with context-aware retrieval
-    
+
     ## Architecture
     The system uses a microservices architecture with the following components:
     1. Document Processor: Handles intelligent chunking
     2. Embedding Generator: Creates contextual embeddings
     3. Vector Store: Manages embeddings with metadata
     4. Voice Service: Handles real-time voice interactions
-    
+
     ## Implementation Details
     The contextual embedding approach ensures that each chunk maintains awareness of its surrounding context,
     document structure, and relationships to other documents in the system.
     """
-    
-    # Save sample document
-    document_id = str(uuid.uuid4())
-    file_path = Path("uploads") / f"{document_id}_sample.txt"
+
+    # Save sample document to storage
+    file_path = Path("uploads") / "sample_document.txt"
     file_path.parent.mkdir(exist_ok=True)
-    
     with open(file_path, "w") as f:
         f.write(sample_content)
-    
-    # Create document record
-    doc_record = {
-        "id": document_id,
-        "filename": "sample_document.txt",
-        "content_type": "text/plain",
-        "file_size": len(sample_content),
-        "file_path": str(file_path),
-        "uploaded_at": datetime.utcnow().isoformat(),
-        "processing_status": "pending",
-        "use_enhanced": True
-    }
-    
-    documents_store[document_id] = doc_record
-    
+
+    # Create document in database
+    content_bytes = sample_content.encode("utf-8")
+    try:
+        document = await document_service.create_document(
+            session=session,
+            filename="sample_document.txt",
+            file_content=content_bytes,
+            file_type="text/plain",
+            user_metadata={"source": "sample", "use_enhanced": True}
+        )
+    except DocumentAlreadyExistsError:
+        return {"message": "Sample document already exists", "document_id": None}
+
+    document_id = str(document.id)
+
     # Process in background
     background_tasks.add_task(
         process_document_task,
@@ -961,7 +1023,7 @@ async def process_sample_document(background_tasks: BackgroundTasks):
         "text/plain",
         True
     )
-    
+
     return {
         "document_id": document_id,
         "message": "Sample document created and processing started"

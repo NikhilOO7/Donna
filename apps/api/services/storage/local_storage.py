@@ -233,7 +233,7 @@ class LocalStorageService:
             try:
                 mime = magic.Magic(mime=True)
                 content_type = mime.from_buffer(file_content)
-            except:
+            except Exception:
                 # Fallback to extension-based detection
                 content_type_map = {
                     ".pdf": "application/pdf",

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", env="APP_ENV")
     debug: bool = Field(default=False, env="APP_DEBUG")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    log_format: str = Field(default="json", env="LOG_FORMAT")  # "json" for prod, "console" for dev
     
     # API Settings
     api_prefix: str = "/api/v1"
@@ -69,7 +70,8 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4-turbo", env="OPENAI_MODEL")
     chat_model: str = Field(default="gpt-4", env="CHAT_MODEL")
-    embedding_model: str = Field(default="text-embedding-3-large", env="EMBEDDING_MODEL")
+    embedding_model: str = Field(default="text-embedding-3-small", env="EMBEDDING_MODEL")
+    embedding_dimensions: int = Field(default=1536, env="EMBEDDING_DIMENSIONS")
     
     # Deepgram Settings
     deepgram_api_key: Optional[str] = Field(default=None, env="DEEPGRAM_API_KEY")
@@ -84,8 +86,8 @@ class Settings(BaseSettings):
     
     # Voice Processing Settings
     livekit_url: str = Field(default="ws://localhost:7880", env="LIVEKIT_URL")
-    livekit_api_key: str = Field(default="APIXjm39Ra3J5e2", env="LIVEKIT_API_KEY")
-    livekit_api_secret: str = Field(default="z9vkfnS7YzWkzEjtzjDxmgxgu45i20P4ki61Vm3u4eT", env="LIVEKIT_API_SECRET")
+    livekit_api_key: str = Field(default="", env="LIVEKIT_API_KEY")
+    livekit_api_secret: str = Field(default="", env="LIVEKIT_API_SECRET")
     
     # Voice Pipeline Settings
     vad_threshold: float = Field(default=0.5, env="VAD_THRESHOLD")
@@ -120,6 +122,10 @@ class Settings(BaseSettings):
     voyage_api_key: Optional[str] = Field(default=None, env="VOYAGE_API_KEY")
     voyage_model: str = Field(default="voyage-3-large", env="VOYAGE_MODEL")
     
+    # Authentication
+    api_key: Optional[str] = Field(default=None, env="API_KEY")
+    require_api_key: bool = Field(default=False, env="REQUIRE_API_KEY")
+
     # Latency Targets
     target_stt_latency_ms: int = Field(default=100, env="TARGET_STT_LATENCY_MS")
     target_tts_latency_ms: int = Field(default=80, env="TARGET_TTS_LATENCY_MS")

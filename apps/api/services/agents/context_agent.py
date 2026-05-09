@@ -427,7 +427,7 @@ class ContextAgent(BaseAgent):
         # Extract chunk index from ID
         try:
             chunk_index = int(chunk_id.split("_")[-1])
-        except:
+        except Exception:
             return surrounding
         
         # Get previous and next chunks
@@ -598,7 +598,7 @@ class ContextAgent(BaseAgent):
             recency_score = max(0.5, 1.0 - (days_old * decay_factor))
             
             return recency_score
-        except:
+        except Exception:
             return 1.0
     
     def _calculate_authority_score(self, result: Dict[str, Any]) -> float:

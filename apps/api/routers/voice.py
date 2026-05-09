@@ -106,7 +106,7 @@ async def get_voice_token(
         try:
             room = await lk_api.room.get_room(api.GetRoomRequest(room=room_name))
             logger.info(f"✅ Room {room_name} already exists")
-        except:
+        except Exception:
             # Room doesn't exist, create it
             room_options = api.CreateRoomRequest(
                 name=room_name,

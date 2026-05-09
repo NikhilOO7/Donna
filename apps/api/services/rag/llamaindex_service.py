@@ -43,9 +43,9 @@ class RAGService:
             query_embedding = await self.embedding_service.generate_embedding(enhanced_query)
             
             # Search for relevant chunks
-            search_results = await self.vector_store.search_similar(
+            search_results = await self.vector_store.search(
                 query_embedding=query_embedding,
-                limit=5
+                top_k=5
             )
             
             # Generate answer using retrieved context
@@ -221,10 +221,20 @@ class ModernRAGService:
             # Generate contextual query embeddings
             query_embeddings = await self._generate_query_embeddings(query, query_analysis)
             
+            # Pick best available embedding (OpenAI > Voyage > Local)
+            query_embedding = (
+                query_embeddings.get("openai")
+                or query_embeddings.get("voyage")
+                or query_embeddings.get("local")
+            )
+            if not query_embedding:
+                raise ValueError("No query embedding could be generated")
+
             # Multi-context search
-            search_results = await self.vector_store.search(
-                query_embeddings=query_embeddings,
-                context_types=context_types,
+            context_level = context_types[0] if context_types else "auto"
+            search_results = await self.vector_store.search_with_context(
+                query_embedding=query_embedding,
+                context_level=context_level,
                 top_k=8
             )
             
@@ -283,7 +293,7 @@ class ModernRAGService:
             
             try:
                 return json.loads(response.choices[0].message.content)
-            except:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 return {
                     "intent_type": "factual",
                     "key_entities": [],
@@ -318,45 +328,37 @@ class ModernRAGService:
         return embedding_result
     
     async def _rerank_results(
-        self, 
-        results: List[Dict[str, Any]], 
+        self,
+        results: List[Any],
         analysis: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Any]:
         """Re-rank results based on query analysis"""
-        # Simple re-ranking based on context type preferences
         context_preferences = analysis.get("context_requirements", ["document"])
-        
+
         def get_rank_score(result):
-            base_score = result["score"]
-            context_boost = 0.1 if result["context_type"] in context_preferences else 0
-            return base_score + context_boost
-        
-        # Sort by enhanced score
+            base_score = result.score if hasattr(result, 'score') else result.get("score", 0)
+            return base_score
+
         results.sort(key=get_rank_score, reverse=True)
-        
+
         return results
     
     async def _generate_enhanced_answer(
         self,
         query: str,
         analysis: Dict[str, Any],
-        results: List[Dict[str, Any]]
+        results: List[Any]
     ) -> str:
         """Generate enhanced answer using analysis and results"""
         try:
             if not results:
                 return "I couldn't find relevant information to answer your query."
-            
-            # Prepare enhanced context
+
+            # Prepare enhanced context - handle both SearchResult dataclass and dict
             context_parts = []
             for i, result in enumerate(results[:5]):  # Top 5 results
-                payload = result["payload"]
-                context_type = result["context_type"]
-                model_used = result["model_used"]
-                
-                context_parts.append(
-                    f"[Context: {context_type}] {payload['chunk_content']}"
-                )
+                content = result.content if hasattr(result, 'content') else result.get("payload", {}).get("chunk_content", "")
+                context_parts.append(f"[Source {i+1}] {content}")
             
             context_text = "\n\n".join(context_parts)
             
@@ -422,19 +424,30 @@ class ModernRAGService:
         if len(self.conversation_memory[conversation_id]) > 10:
             self.conversation_memory[conversation_id] = self.conversation_memory[conversation_id][-10:]
     
-    def _format_enhanced_sources(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Format enhanced source information"""
+    def _format_enhanced_sources(self, results: List[Any]) -> List[Dict[str, Any]]:
+        """Format enhanced source information - handles SearchResult dataclass"""
         sources = []
         for result in results:
-            payload = result["payload"]
-            sources.append({
-                "document_id": payload.get("document_id", ""),
-                "chunk_index": payload.get("chunk_index", 0),
-                "content": payload.get("chunk_content", "")[:200] + "..." if len(payload.get("chunk_content", "")) > 200 else payload.get("chunk_content", ""),
-                "similarity_score": result.get("score", 0),
-                "context_type": result.get("context_type", ""),
-                "model_used": result.get("model_used", ""),
-                "metadata": payload.get("metadata", {})
-            })
+            if hasattr(result, 'content'):
+                # SearchResult dataclass
+                content = result.content or ""
+                sources.append({
+                    "document_id": result.document_id or "",
+                    "chunk_id": result.chunk_id or "",
+                    "content": content[:200] + "..." if len(content) > 200 else content,
+                    "similarity_score": result.score,
+                    "metadata": result.metadata or {}
+                })
+            else:
+                # Dict format fallback
+                payload = result.get("payload", result)
+                content = payload.get("chunk_content", payload.get("content", ""))
+                sources.append({
+                    "document_id": payload.get("document_id", ""),
+                    "chunk_id": payload.get("chunk_id", ""),
+                    "content": content[:200] + "..." if len(content) > 200 else content,
+                    "similarity_score": result.get("score", 0),
+                    "metadata": payload.get("metadata", {})
+                })
         
         return sources

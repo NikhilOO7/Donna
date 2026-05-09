@@ -56,7 +56,7 @@ class VectorStoreService:
     
     def __init__(self):
         self.collection_name = settings.qdrant_collection_name
-        self.vector_size = 1024  # Default for all-MiniLM-L6-v2
+        self.vector_size = settings.embedding_dimensions
         
     async def initialize(self):
         """Initialize vector store"""
@@ -175,14 +175,8 @@ class ModernVectorStore:
             "global": f"{settings.qdrant_collection_name}_global",
             "unified": f"{settings.qdrant_collection_name}_unified"
         }
-        # Dynamic vector size based on embedding model
-        # text-embedding-3-small: 1536, text-embedding-ada-002: 1536, all-MiniLM-L6-v2: 1024
-        if "text-embedding-3-large" in settings.embedding_model:
-            self.vector_size = 3072
-        elif "text-embedding" in settings.embedding_model:
-            self.vector_size = 1536
-        else:
-            self.vector_size = 1024
+        # Use standardized embedding dimensions from config
+        self.vector_size = settings.embedding_dimensions
         self.cache_ttl = 3600  # 1 hour cache
         
     async def initialize(self):

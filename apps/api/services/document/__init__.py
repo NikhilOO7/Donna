@@ -47,7 +47,7 @@ async def upload_document(
         try:
             import json
             user_metadata = json.loads(metadata)
-        except:
+        except Exception:
             pass
     
     # Save file to storage
@@ -100,7 +100,7 @@ async def upload_document(
         # Clean up on error
         try:
             await storage_service.delete_file(file_id, file.filename)
-        except:
+        except Exception:
             pass
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 

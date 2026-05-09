@@ -110,14 +110,21 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
 
 # Initialize database
 async def init_db():
-    """Initialize database tables (SQLAlchemy 2.0 pattern)"""
+    """Verify database connectivity and schema.
+
+    Schema evolution is managed by Alembic migrations (see /alembic/).
+    Run `alembic upgrade head` to apply pending migrations.
+    In development, we still create_all as a convenience fallback.
+    """
     try:
         async with engine.begin() as conn:
             await conn.execute(text("CREATE SCHEMA IF NOT EXISTS doc_intel"))
+            # In production, rely on Alembic migrations exclusively.
+            # create_all is a dev convenience that only creates missing tables.
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("✅ Database tables initialized (SQLAlchemy 2.0)")
+        logger.info("Database initialized (run 'alembic upgrade head' for migrations)")
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}", exc_info=True)
+        logger.error(f"Database initialization failed: {e}", exc_info=True)
         raise
 
 # Cleanup

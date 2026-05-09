@@ -49,7 +49,7 @@ class QueryAgent(BaseAgent):
         # Load spaCy model for NLP
         try:
             self.nlp = spacy.load("en_core_web_sm")
-        except:
+        except Exception:
             logger.warning("spaCy model not found, using basic processing")
             self.nlp = None
         
@@ -375,7 +375,7 @@ Return as JSON array of strings."""
                 variations.extend(result["variations"])
             elif isinstance(result, list):
                 variations.extend(result)
-        except:
+        except Exception:
             logger.warning("Failed to parse query variations")
         
         # Ensure uniqueness
@@ -424,7 +424,7 @@ Return as JSON array with 'text', 'type', and 'importance' for each."""
                 entities.extend(result["entities"])
             elif isinstance(result, list):
                 entities.extend(result)
-        except:
+        except Exception:
             logger.warning("Failed to parse entities from GPT-4")
         
         # Remove duplicates

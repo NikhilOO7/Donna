@@ -223,13 +223,63 @@ class ContextualEmbeddingGenerator:
         return " | ".join(context_parts)
     
     async def _create_global_context(
-        self, 
-        chunk: Dict[str, Any], 
+        self,
+        chunk: Dict[str, Any],
         document_context: str
     ) -> str:
-        """Create global context"""
-        # For now, use document context
-        # In a full implementation, this would consider other documents
+        """Create global context by finding thematically related content across documents.
+
+        Searches the vector store for similar content from OTHER documents to establish
+        cross-document relationships in the embedding.
+        """
+        try:
+            from apps.api.core.connections import get_qdrant_client
+
+            # Generate a quick embedding of the chunk to search for related content
+            chunk_text = chunk.get("content", "")[:200]
+            quick_embedding = await self._generate_embedding(chunk_text, use_voyage=False)
+            embedding_vector = quick_embedding.get("openai") or quick_embedding.get("local")
+
+            if not embedding_vector:
+                return document_context
+
+            client = await get_qdrant_client()
+            if not client:
+                return document_context
+
+            # Search the unified collection for related chunks from other documents
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            from apps.api.core.config import settings
+
+            collection_name = f"{settings.qdrant_collection_name}_unified"
+            current_doc_id = chunk.get("document_id", "")
+
+            try:
+                results = await client.search(
+                    collection_name=collection_name,
+                    query_vector=embedding_vector,
+                    limit=3,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+
+                # Filter out results from the same document and build context
+                related_parts = []
+                for r in results:
+                    if r.payload.get("document_id") != current_doc_id and r.score > 0.6:
+                        content = r.payload.get("content", "")[:100]
+                        doc_id = r.payload.get("document_id", "unknown")
+                        related_parts.append(f"Related[{doc_id[:8]}]: {content}")
+
+                if related_parts:
+                    return document_context + " | " + " | ".join(related_parts)
+
+            except Exception:
+                pass  # Collection may not exist yet during first document processing
+
+        except Exception as e:
+            logger.debug(f"Global context creation failed (non-critical): {e}")
+
         return document_context
     
     async def _extract_semantic_context(self, chunk: Dict[str, Any]) -> str:
@@ -276,11 +326,12 @@ class ContextualEmbeddingGenerator:
         
         embeddings = {}
         
-        # Generate OpenAI embedding
+        # Generate OpenAI embedding with standardized dimensions
         try:
             response = await self.openai_client.embeddings.create(
                 input=text,
-                model=settings.embedding_model  # text-embedding-3-large
+                model=settings.embedding_model,
+                dimensions=settings.embedding_dimensions
             )
             embeddings["openai"] = response.data[0].embedding
         except Exception as e:

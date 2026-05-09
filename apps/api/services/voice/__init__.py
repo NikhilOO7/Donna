@@ -267,7 +267,7 @@ async def get_room_status(room_name: str) -> Dict[str, Any]:
         # Get room info
         try:
             room = await room_service.get_room(api.GetRoomRequest(room=room_name))
-        except:
+        except Exception:
             raise HTTPException(status_code=404, detail="Room not found")
         
         # Get participants

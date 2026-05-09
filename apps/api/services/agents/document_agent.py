@@ -417,42 +417,100 @@ Provide as JSON."""
         return metadata
     
     async def _map_document_relationships(
-        self, 
-        raw_content: Dict[str, Any], 
+        self,
+        raw_content: Dict[str, Any],
         context: AgentContext
     ) -> Dict[str, Any]:
-        """Map relationships to other documents"""
+        """Map relationships to other documents using vector similarity + GPT-4.
+
+        Strategy 1: Vector search for semantically similar chunks in other documents.
+        Strategy 2: GPT-4 analysis for explicit references and thematic connections.
+        """
         content = raw_content["content"][:2000]
-        
-        # Look for references to other documents
-        prompt = f"""Identify potential relationships to other documents in this text:
+        current_doc_id = context.metadata.get("document_id", "")
 
-{content}
+        relationships = {
+            "related_documents": [],
+            "shared_topics": [],
+            "references": [],
+        }
 
-Look for:
-1. Direct references to other documents
-2. Shared topics or themes that might connect to other documents
-3. Cross-references or citations
-4. Related concepts that might appear in other documents
-5. Sequential or hierarchical relationships
+        # Strategy 1: Vector similarity search for related documents
+        try:
+            from apps.api.services.document.embeddings import ContextualEmbeddingGenerator
+            from apps.api.core.connections import get_qdrant_client
+            from apps.api.core.config import settings
 
-Provide analysis as JSON."""
+            embedding_gen = ContextualEmbeddingGenerator()
+            snippet = content[:500]
+            emb_result = await embedding_gen._generate_embedding(snippet, use_voyage=False)
+            query_vector = emb_result.get("openai") or emb_result.get("local")
 
-        response = await self.openai_client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            response_format={"type": "json_object"}
-        )
-        
-        relationships = json.loads(response.choices[0].message.content)
-        
-        # Add context-based relationships
+            if query_vector:
+                client = await get_qdrant_client()
+                if client:
+                    collection = f"{settings.qdrant_collection_name}_unified"
+                    try:
+                        results = await client.search(
+                            collection_name=collection,
+                            query_vector=query_vector,
+                            limit=10,
+                            with_payload=True,
+                            with_vectors=False,
+                        )
+
+                        doc_scores: Dict[str, float] = {}
+                        doc_snippets: Dict[str, list] = {}
+                        for r in results:
+                            doc_id = r.payload.get("document_id", "")
+                            if doc_id and doc_id != current_doc_id and r.score > 0.5:
+                                if doc_id not in doc_scores or r.score > doc_scores[doc_id]:
+                                    doc_scores[doc_id] = r.score
+                                if doc_id not in doc_snippets:
+                                    doc_snippets[doc_id] = []
+                                doc_snippets[doc_id].append(
+                                    r.payload.get("content", "")[:100]
+                                )
+
+                        for doc_id, score in sorted(doc_scores.items(), key=lambda x: -x[1])[:5]:
+                            relationships["related_documents"].append({
+                                "document_id": doc_id,
+                                "similarity_score": round(score, 3),
+                                "matching_snippets": doc_snippets.get(doc_id, [])[:2],
+                            })
+                    except Exception:
+                        pass  # Collection may not exist yet
+        except Exception as e:
+            logger.debug(f"Vector relationship search failed: {e}")
+
+        # Strategy 2: GPT-4 analysis for explicit references
+        try:
+            prompt = f"""Analyze this text and identify:
+1. Direct references to other documents (e.g. "as described in the safety manual")
+2. Key topics/themes that could connect to other documents
+Return JSON with keys: "references" (list of strings), "shared_topics" (list of strings)
+
+Text:
+{content[:1000]}"""
+
+            response = await self.openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=300,
+                response_format={"type": "json_object"}
+            )
+            gpt_result = json.loads(response.choices[0].message.content)
+            relationships["references"] = gpt_result.get("references", [])
+            relationships["shared_topics"] = gpt_result.get("shared_topics", [])
+        except Exception as e:
+            logger.debug(f"GPT-4 relationship analysis failed: {e}")
+
         relationships["conversation_context"] = {
             "conversation_id": context.conversation_id,
-            "related_queries": context.metadata.get("queries", [])
+            "related_queries": context.metadata.get("queries", []),
         }
-        
+
         return relationships
     
     def _generate_document_id(self, raw_content: Dict[str, Any]) -> str:
