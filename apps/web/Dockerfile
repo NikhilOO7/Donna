@@ -20,7 +20,13 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY apps/web ./
+# Copy source files (node_modules excluded via .dockerignore)
+COPY apps/web/package.json apps/web/tsconfig.json apps/web/next.config.* apps/web/tailwind.config.* apps/web/postcss.config.* ./
+COPY apps/web/app ./app
+COPY apps/web/components ./components
+COPY apps/web/lib ./lib
+COPY apps/web/types ./types
+COPY apps/web/public ./public
 
 # Install pnpm in builder
 RUN npm install -g pnpm

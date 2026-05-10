@@ -1,8 +1,6 @@
 # Complete Docker Compose for Voice Document Intelligence System
 # Includes: PostgreSQL, Redis, Qdrant, MinIO, LiveKit, Backend API, Frontend, Voice Worker
 
-version: '3.8'
-
 services:
   # ====================
   # Infrastructure Services
@@ -33,7 +31,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: voice-doc-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    command: redis-server
     ports:
       - "6379:6379"
     volumes:
@@ -60,7 +58,7 @@ services:
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__LOG_LEVEL=INFO
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:6333/health"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -101,7 +99,7 @@ services:
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7880/"]
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:7880/"]
       interval: 10s
       timeout: 5s
       retries: 5

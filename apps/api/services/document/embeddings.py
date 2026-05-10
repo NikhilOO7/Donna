@@ -176,12 +176,42 @@ class ContextualEmbeddingGenerator:
             for context_type, context_text in contexts.items():
                 combined_text = f"{context_text} {chunk['content']}"
                 embedding_result = await self._generate_embedding(combined_text, use_voyage)
-                embeddings[context_type] = embedding_result
-            
-            # Create result
+                # Pick the best embedding that matches expected dimensions
+                target_dim = settings.embedding_dimensions  # 1536
+                best = None
+                for provider in ("openai", "voyage", "local"):
+                    vec = embedding_result.get(provider)
+                    if vec and len(vec) == target_dim:
+                        best = vec
+                        break
+                if best is None:
+                    # Fall back to any available, even wrong dim (will be caught later)
+                    best = next(
+                        (v for v in embedding_result.values() if v), None
+                    )
+                    if best and len(best) != target_dim:
+                        logger.warning(
+                            f"Embedding dim mismatch: got {len(best)}, expected {target_dim}. "
+                            "Padding/truncating to target."
+                        )
+                        if len(best) < target_dim:
+                            best = best + [0.0] * (target_dim - len(best))
+                        else:
+                            best = best[:target_dim]
+                embeddings[context_type] = best
+
+            # Use the local-context embedding as the canonical single vector
+            canonical_embedding = embeddings.get("local") or next(
+                (v for v in embeddings.values() if v), None
+            )
+
+            # Create result (keys match what ModernVectorStore.store_contextual_embeddings expects)
+            chunk_id = f"{document_context}_{absolute_idx}"
             batch_results.append({
+                "chunk_id": chunk_id,
                 "chunk_index": chunk.get("chunk_index", absolute_idx),
-                "chunk_content": chunk["content"],
+                "content": chunk["content"],
+                "embedding": canonical_embedding,
                 "embeddings": embeddings,
                 "contexts": contexts,
                 "metadata": chunk.get("metadata", {})
@@ -339,6 +369,8 @@ class ContextualEmbeddingGenerator:
             embeddings["openai"] = None
         
         # Generate Voyage embedding (if available and requested)
+        # Note: voyage-3-large produces 1024-dim which may not match Qdrant's
+        # configured dimensions (1536). Only use if dimensions match.
         if use_voyage and self.voyage_client:
             try:
                 result = self.voyage_client.embed(
@@ -346,19 +378,40 @@ class ContextualEmbeddingGenerator:
                     model=getattr(settings, 'voyage_model', 'voyage-3-large'),
                     input_type="document"
                 )
-                embeddings["voyage"] = result.embeddings[0]
+                voyage_vec = result.embeddings[0]
+                if len(voyage_vec) == settings.embedding_dimensions:
+                    embeddings["voyage"] = voyage_vec
+                else:
+                    logger.debug(
+                        f"Voyage embedding dim {len(voyage_vec)} != target {settings.embedding_dimensions}, skipping"
+                    )
+                    embeddings["voyage"] = None
             except Exception as e:
                 logger.warning(f"Voyage embedding failed: {e}")
                 embeddings["voyage"] = None
         
-        # Always generate local embedding as fallback
-        if self.local_model:
+        # Generate local embedding as fallback (384-dim, needs projection to match Qdrant)
+        if self.local_model and settings.allow_local_embedding_fallback:
             try:
                 local_embedding = self.local_model.encode(text, convert_to_tensor=True)
-                embeddings["local"] = local_embedding.cpu().numpy().tolist()
+                local_list = local_embedding.cpu().numpy().tolist()
+                # Pad 384-dim to target dimensions so it can be stored in Qdrant
+                target_dim = settings.embedding_dimensions
+                if len(local_list) < target_dim:
+                    logger.warning(
+                        f"Local embedding is {len(local_list)}-dim, zero-padding to {target_dim}-dim. "
+                        "Quality will be degraded compared to OpenAI/Voyage embeddings."
+                    )
+                    local_list.extend([0.0] * (target_dim - len(local_list)))
+                embeddings["local"] = local_list
             except Exception as e:
                 logger.warning(f"Local embedding failed: {e}")
                 embeddings["local"] = None
+        elif self.local_model:
+            logger.debug(
+                "Local embedding model available but disabled (ALLOW_LOCAL_EMBEDDING_FALLBACK=false). "
+                "384-dim embeddings are incompatible with 1536-dim Qdrant collections."
+            )
         
         # Cache result
         self._embedding_cache[cache_key] = embeddings

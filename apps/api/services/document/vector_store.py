@@ -221,6 +221,9 @@ class ModernVectorStore:
         
         for idx, data in enumerate(embeddings_data):
             chunk_id = data["chunk_id"]
+            # Pick the canonical embedding vector; prefer per-level if available
+            level_embeddings = data.get("embeddings", {})
+            default_vec = data.get("embedding")
             base_payload = {
                 "document_id": document_id,
                 "chunk_index": idx,
@@ -250,7 +253,7 @@ class ModernVectorStore:
             points_by_level["local"].append(
                 PointStruct(
                     id=generate_point_id(chunk_id, "local"),
-                    vector=data["embedding"],
+                    vector=level_embeddings.get("local") or default_vec,
                     payload=local_payload
                 )
             )
@@ -259,7 +262,7 @@ class ModernVectorStore:
             doc_payload = {
                 **base_payload,
                 "context_level": "document",
-                "original_chunk_id": chunk_id  # Store original for reference
+                "original_chunk_id": chunk_id
             }
             if "document_context" in data["metadata"]:
                 doc_payload["document_context"] = data["metadata"]["document_context"]
@@ -267,7 +270,7 @@ class ModernVectorStore:
             points_by_level["document"].append(
                 PointStruct(
                     id=generate_point_id(chunk_id, "document"),
-                    vector=data["embedding"],
+                    vector=level_embeddings.get("document") or default_vec,
                     payload=doc_payload
                 )
             )
@@ -276,7 +279,7 @@ class ModernVectorStore:
             global_payload = {
                 **base_payload,
                 "context_level": "global",
-                "original_chunk_id": chunk_id  # Store original for reference
+                "original_chunk_id": chunk_id
             }
             if "global_context" in data["metadata"]:
                 global_payload["global_context"] = data["metadata"]["global_context"]
@@ -284,16 +287,16 @@ class ModernVectorStore:
             points_by_level["global"].append(
                 PointStruct(
                     id=generate_point_id(chunk_id, "global"),
-                    vector=data["embedding"],
+                    vector=level_embeddings.get("global") or default_vec,
                     payload=global_payload
                 )
             )
-            
+
             # Unified point with all contexts
             unified_payload = {
                 **base_payload,
                 "context_level": "unified",
-                "original_chunk_id": chunk_id,  # Store original for reference
+                "original_chunk_id": chunk_id,
                 "all_contexts": {
                     "local": data["metadata"].get("local_context"),
                     "document": data["metadata"].get("document_context"),
@@ -304,7 +307,7 @@ class ModernVectorStore:
             points_by_level["unified"].append(
                 PointStruct(
                     id=generate_point_id(chunk_id, "unified"),
-                    vector=data["embedding"],
+                    vector=default_vec,
                     payload=unified_payload
                 )
             )

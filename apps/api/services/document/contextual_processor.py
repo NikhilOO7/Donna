@@ -458,7 +458,7 @@ class ModernDocumentProcessor:
         
         for section in sections:
             section_content = section["content"]
-            section_path = [section["heading"]]
+            section_path = [section["heading"] or "Untitled"]
             
             # Skip empty sections
             if not section_content.strip():
@@ -710,13 +710,15 @@ class ModernDocumentProcessor:
 
 class ContextualEmbeddingGenerator:
     """Generate contextual embeddings with 3-level context"""
-    
+
     def __init__(self):
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        from openai import AsyncOpenAI
+
+        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
         self.context_weights = {
             "local": 0.5,
             "document": 0.3,
-            "global": 0.2
+            "global": 0.2,
         }
     
     async def generate_embeddings(
@@ -853,60 +855,52 @@ class ContextualEmbeddingGenerator:
         local_context: str,
         document_context: str,
         global_context: str,
-        use_voyage: bool = False
+        use_voyage: bool = False,
     ) -> List[float]:
-        """Generate embedding with weighted context"""
-        
-        # Combine content with contexts
+        """Generate embedding using OpenAI (1536-dim)"""
+
         combined_text = f"{content} {local_context} {document_context} {global_context}"
-        
-        if use_voyage and hasattr(settings, 'voyage_api_key'):
-            # Use Voyage AI for embeddings
-            try:
-                import voyageai
-                voyage_client = voyageai.Client(api_key=settings.voyage_api_key)
-                result = voyage_client.embed(
-                    [combined_text],
-                    model="voyage-2"
-                )
-                embedding = result.embeddings[0]
-            except Exception as e:
-                logger.error(f"Voyage AI embedding failed: {e}")
-                # Fallback to local model
-                embedding = self.embedding_model.encode(combined_text).tolist()
-        else:
-            # Use local sentence transformer
-            embedding = self.embedding_model.encode(combined_text).tolist()
-        
-        return embedding
+
+        try:
+            response = await self.openai_client.embeddings.create(
+                input=combined_text,
+                model=settings.embedding_model,
+                dimensions=settings.embedding_dimensions,
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"OpenAI embedding failed: {e}")
+            raise
     
     async def generate_contextual_embedding(
         self,
         text: str,
         context_level: str = "local",
         conversation_history: Optional[List[Dict]] = None,
-        document_context: Optional[List[str]] = None
+        document_context: Optional[List[str]] = None,
     ) -> List[float]:
         """Generate a single contextual embedding for queries"""
-        
+
         context_parts = [text]
-        
-        # Add conversation context
+
         if conversation_history:
-            recent_messages = conversation_history[-3:]  # Last 3 messages
+            recent_messages = conversation_history[-3:]
             for msg in recent_messages:
                 context_parts.append(f"[{msg['role']}]: {msg['content'][:100]}")
-        
-        # Add document context
+
         if document_context:
             context_parts.append(f"[Documents]: {', '.join(document_context[:3])}")
-        
-        # Add context level indicator
+
         context_parts.append(f"[Level]: {context_level}")
-        
         combined_text = " ".join(context_parts)
-        
-        # Generate embedding
-        embedding = self.embedding_model.encode(combined_text).tolist()
-        
-        return embedding
+
+        try:
+            response = await self.openai_client.embeddings.create(
+                input=combined_text,
+                model=settings.embedding_model,
+                dimensions=settings.embedding_dimensions,
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"OpenAI embedding failed for query: {e}")
+            raise

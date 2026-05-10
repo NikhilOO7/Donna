@@ -4,10 +4,10 @@ Tests verify HTTP contracts (status codes, response shapes, validation).
 """
 
 import io
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
 
 # The service path for consistent mocking
 SVC = "apps.api.services.document.document_service"
@@ -25,7 +25,9 @@ class TestDocumentUpload:
     @pytest.mark.asyncio
     async def test_upload_rejects_duplicate(self, client):
         """Duplicate file upload should return 409."""
-        from apps.api.services.document.document_service import DocumentAlreadyExistsError
+        from apps.api.services.document.document_service import (
+            DocumentAlreadyExistsError,
+        )
 
         with patch(f"{SVC}.document_service") as mock_ds:
             mock_ds.create_document = AsyncMock(

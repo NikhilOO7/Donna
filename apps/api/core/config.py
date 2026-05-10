@@ -51,7 +51,9 @@ class Settings(BaseSettings):
     
     @property
     def redis_url(self) -> str:
-        return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
     
     # Vector Databases
     qdrant_host: str = Field(default="localhost", env="QDRANT_HOST")
@@ -125,6 +127,17 @@ class Settings(BaseSettings):
     # Authentication
     api_key: Optional[str] = Field(default=None, env="API_KEY")
     require_api_key: bool = Field(default=False, env="REQUIRE_API_KEY")
+
+    # Observability
+    enable_tracing: bool = Field(default=False, env="ENABLE_TRACING")
+    otlp_endpoint: str = Field(default="http://localhost:4317", env="OTLP_ENDPOINT")
+
+    # Resilience
+    allow_local_embedding_fallback: bool = Field(default=False, env="ALLOW_LOCAL_EMBEDDING_FALLBACK")
+
+    # Rate limiting
+    rate_limit_upload: str = Field(default="5/minute", env="RATE_LIMIT_UPLOAD")
+    rate_limit_query: str = Field(default="30/minute", env="RATE_LIMIT_QUERY")
 
     # Latency Targets
     target_stt_latency_ms: int = Field(default=100, env="TARGET_STT_LATENCY_MS")

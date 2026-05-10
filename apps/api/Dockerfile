@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy dependency files
-COPY pyproject.toml uv.lock* ./
+# Copy dependency files and README (required by hatchling build)
+COPY pyproject.toml uv.lock* README.md ./
 
 # Install Python dependencies
 RUN uv sync --no-dev

@@ -13,9 +13,14 @@ export default function ChatInterface() {
   const [conversationId, setConversationId] = useState<string>('');
   const [contextLevel, setContextLevel] = useState<'local' | 'document' | 'global'>('local');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setConversationId(`conv_${Date.now()}`);
+    return () => {
+      // Cancel any in-flight request on unmount
+      abortControllerRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -39,6 +44,11 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
+      // Cancel any previous in-flight request
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const startTime = Date.now();
 
       const response: QueryResponse = await apiClient.queryDocuments({
@@ -46,7 +56,7 @@ export default function ChatInterface() {
         conversation_id: conversationId,
         context_level: contextLevel,
         use_enhanced: true,
-      });
+      }, controller.signal);
 
       const latency = Date.now() - startTime;
 

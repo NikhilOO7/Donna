@@ -57,9 +57,9 @@ async def get_event_stats(
     hours: int = 24,
 ) -> Dict[str, Any]:
     """Get aggregated event statistics for the last N hours."""
-    since = datetime.now(timezone.utc).replace(
-        hour=datetime.now(timezone.utc).hour - min(hours, 23)
-    )
+    from datetime import timedelta
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # Count by event type
     type_query = (

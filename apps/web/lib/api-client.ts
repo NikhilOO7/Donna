@@ -98,8 +98,8 @@ class ApiClient {
   }
 
   // Query
-  async queryDocuments(request: QueryRequest): Promise<QueryResponse> {
-    const response = await this.client.post<QueryResponse>('/api/v1/query', request);
+  async queryDocuments(request: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> {
+    const response = await this.client.post<QueryResponse>('/api/v1/query', request, { signal });
     return response.data;
   }
 
@@ -133,43 +133,83 @@ class ApiClient {
     return response.data;
   }
 
-  // WebSocket
-  createWebSocket(onMessage: (message: any) => void, onError?: (error: Event) => void): WebSocket {
-    const ws = new WebSocket(`${this.wsUrl}/ws`);
+  // WebSocket with automatic reconnection
+  createWebSocket(
+    onMessage: (message: any) => void,
+    onError?: (error: Event) => void,
+    options?: { maxReconnectAttempts?: number }
+  ): { ws: WebSocket; close: () => void } {
+    const maxAttempts = options?.maxReconnectAttempts ?? 10;
+    let reconnectAttempts = 0;
+    let pingInterval: ReturnType<typeof setInterval> | null = null;
+    let intentionalClose = false;
+    let currentWs: WebSocket;
 
-    ws.onopen = () => {
-      console.log('[WebSocket] Connected');
-      // Send ping every 30 seconds to keep connection alive
-      setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send('ping');
+    const connect = (): WebSocket => {
+      const ws = new WebSocket(`${this.wsUrl}/ws`);
+
+      ws.onopen = () => {
+        console.log('[WebSocket] Connected');
+        reconnectAttempts = 0;
+
+        // Keep-alive ping
+        pingInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('ping');
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          if (event.data === 'pong') return;
+          const message = JSON.parse(event.data);
+          onMessage(message);
+        } catch (error) {
+          console.error('[WebSocket] Failed to parse message:', error);
         }
-      }, 30000);
-    };
+      };
 
-    ws.onmessage = (event) => {
-      try {
-        // Ignore pong responses from keepalive ping
-        if (event.data === 'pong') {
+      ws.onerror = () => {
+        // Suppressed — reconnection handles recovery automatically
+        if (onError) onError(new Event('error'));
+      };
+
+      ws.onclose = () => {
+        if (pingInterval) clearInterval(pingInterval);
+        pingInterval = null;
+
+        if (intentionalClose) {
+          console.log('[WebSocket] Closed intentionally');
           return;
         }
-        const message = JSON.parse(event.data);
-        onMessage(message);
-      } catch (error) {
-        console.error('[WebSocket] Failed to parse message:', error);
-      }
+
+        if (reconnectAttempts < maxAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+          reconnectAttempts++;
+          console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxAttempts})`);
+          setTimeout(() => {
+            currentWs = connect();
+          }, delay);
+        } else {
+          console.error('[WebSocket] Max reconnect attempts reached');
+        }
+      };
+
+      currentWs = ws;
+      return ws;
     };
 
-    ws.onerror = (error) => {
-      console.error('[WebSocket] Error:', error);
-      if (onError) onError(error);
-    };
+    currentWs = connect();
 
-    ws.onclose = () => {
-      console.log('[WebSocket] Disconnected');
+    return {
+      get ws() { return currentWs; },
+      close: () => {
+        intentionalClose = true;
+        if (pingInterval) clearInterval(pingInterval);
+        currentWs.close();
+      },
     };
-
-    return ws;
   }
 }
 

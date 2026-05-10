@@ -43,9 +43,17 @@ export default function AnalyticsDashboard() {
     );
   }
 
-  const successRate = usage
+  const successRate = usage?.documents
     ? (usage.documents.completed / usage.documents.total * 100) || 0
     : 0;
+
+  if (!usage || !performance) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-500">
+        No analytics data available yet
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -225,7 +233,7 @@ export default function AnalyticsDashboard() {
             <div className="p-4 bg-primary-50 rounded-lg">
               <p className="text-sm text-gray-600 mb-1">Enhanced Contextual</p>
               <p className="text-3xl font-bold text-primary-600">
-                {usage.processing_methods.enhanced_contextual}
+                {usage?.processing_methods?.enhanced_contextual ?? 0}
               </p>
               <p className="text-xs text-gray-500 mt-2">
                 3-level embeddings with full context
@@ -235,7 +243,7 @@ export default function AnalyticsDashboard() {
             <div className="p-4 bg-gray-100 rounded-lg">
               <p className="text-sm text-gray-600 mb-1">Basic Processing</p>
               <p className="text-3xl font-bold text-gray-700">
-                {usage.processing_methods.basic}
+                {usage?.processing_methods?.basic ?? 0}
               </p>
               <p className="text-xs text-gray-500 mt-2">
                 Standard document processing

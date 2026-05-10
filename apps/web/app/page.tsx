@@ -16,6 +16,7 @@ import DocumentList from '@/components/documents/DocumentList';
 import ChatInterface from '@/components/chat/ChatInterface';
 import VoiceInterface from '@/components/voice/VoiceInterface';
 import AnalyticsDashboard from '@/components/analytics/AnalyticsDashboard';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { apiClient } from '@/lib/api-client';
 import type { HealthStatus, WebSocketMessage } from '@/types';
 
@@ -45,12 +46,12 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // Setup WebSocket for real-time updates
+  // Setup WebSocket for real-time updates (with auto-reconnection)
   useEffect(() => {
-    let ws: WebSocket | null = null;
+    let wsHandle: { ws: WebSocket; close: () => void } | null = null;
 
     try {
-      ws = apiClient.createWebSocket(
+      wsHandle = apiClient.createWebSocket(
         (message: WebSocketMessage) => {
           console.log('WebSocket message:', message);
 
@@ -76,8 +77,8 @@ export default function Home() {
             }
           }
         },
-        (error) => {
-          console.error('WebSocket error:', error);
+        () => {
+          // Reconnection handles recovery automatically
         }
       );
     } catch (error) {
@@ -90,9 +91,7 @@ export default function Home() {
     }
 
     return () => {
-      if (ws) {
-        ws.close();
-      }
+      wsHandle?.close();
     };
   }, []);
 
@@ -268,7 +267,9 @@ export default function Home() {
                 </div>
 
                 <div className="h-[calc(100vh-12rem)]">
-                  <ChatInterface />
+                  <ErrorBoundary sectionName="Chat">
+                    <ChatInterface />
+                  </ErrorBoundary>
                 </div>
               </div>
             )}
@@ -285,7 +286,9 @@ export default function Home() {
                   </p>
                 </div>
 
-                <VoiceInterface />
+                <ErrorBoundary sectionName="Voice">
+                  <VoiceInterface />
+                </ErrorBoundary>
               </div>
             )}
 
@@ -301,7 +304,9 @@ export default function Home() {
                   </p>
                 </div>
 
-                <AnalyticsDashboard />
+                <ErrorBoundary sectionName="Analytics">
+                  <AnalyticsDashboard />
+                </ErrorBoundary>
               </div>
             )}
           </div>

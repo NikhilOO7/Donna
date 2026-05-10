@@ -61,7 +61,8 @@ export function truncateText(text: string, maxLength: number = 100): string {
   return text.substring(0, maxLength) + '...';
 }
 
-export function getFileIcon(contentType: string): string {
+export function getFileIcon(contentType?: string | null): string {
+  if (!contentType) return '📁';
   if (contentType.includes('pdf')) return '📄';
   if (contentType.includes('word') || contentType.includes('document')) return '📝';
   if (contentType.includes('text')) return '📃';

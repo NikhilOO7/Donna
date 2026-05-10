@@ -118,7 +118,7 @@ export default function DocumentList({ refreshTrigger, onDocumentSelect }: Docum
             {/* Document Info */}
             <div className="flex items-start gap-3 flex-1 min-w-0">
               <div className="text-2xl mt-1">
-                {getFileIcon(doc.content_type)}
+                {getFileIcon(doc.file_type || doc.content_type)}
               </div>
 
               <div className="flex-1 min-w-0">

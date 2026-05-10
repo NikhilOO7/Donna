@@ -53,8 +53,8 @@ class Document(Base):
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     # Relationships with modern typing
-    chunks: Mapped[List["DocumentChunk"]] = relationship(back_populates="document", cascade="all, delete-orphan", lazy="selectinload")
-    entities: Mapped[List["Entity"]] = relationship(back_populates="document", cascade="all, delete-orphan", lazy="selectinload")
+    chunks: Mapped[List["DocumentChunk"]] = relationship(back_populates="document", cascade="all, delete-orphan", lazy="selectin")
+    entities: Mapped[List["Entity"]] = relationship(back_populates="document", cascade="all, delete-orphan", lazy="selectin")
 
     def __repr__(self) -> str:
         return f"<Document(id={self.id}, filename='{self.filename}', status='{self.processing_status}')>"

@@ -44,11 +44,6 @@ function VoiceAssistantUI() {
             barCount={20}
             trackRef={audioTrack}
             className="h-32"
-            options={{
-              barWidth: 4,
-              barSpacing: 4,
-              minHeight: 4,
-            }}
           />
         )}
       </div>
