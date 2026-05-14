@@ -1109,6 +1109,14 @@ wheels = [
 ]
 
 [[package]]
+name = "en-core-web-sm"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+wheels = [
+    { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl", hash = "sha256:1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" },
+]
+
+[[package]]
 name = "et-xmlfile"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4772,6 +4780,15 @@ wheels = [
 ]
 
 [[package]]
+name = "structlog"
+version = "25.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/52/9ba0f43b686e7f3ddfeaa78ac3af750292662284b3661e91ad5494f21dbc/structlog-25.5.0.tar.gz", hash = "sha256:098522a3bebed9153d4570c6d0288abf80a031dfdb2048d59a49e9dc2190fc98", size = 1460830, upload-time = "2025-10-27T08:28:23.028Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/45/a132b9074aa18e799b891b91ad72133c98d8042c70f6240e4c5f9dabee2f/structlog-25.5.0-py3-none-any.whl", hash = "sha256:a8453e9b9e636ec59bd9e79bbd4a72f025981b3ba0f5837aebf48f02f37a7f9f", size = 72510, upload-time = "2025-10-27T08:28:21.535Z" },
+]
+
+[[package]]
 name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5450,6 +5467,7 @@ dependencies = [
     { name = "docstring-parser" },
     { name = "easyocr" },
     { name = "emoji" },
+    { name = "en-core-web-sm" },
     { name = "et-xmlfile" },
     { name = "eval-type-backport" },
     { name = "exa-py" },
@@ -5587,6 +5605,7 @@ dependencies = [
     { name = "spacy" },
     { name = "sqlalchemy" },
     { name = "starlette" },
+    { name = "structlog" },
     { name = "sympy" },
     { name = "tabulate" },
     { name = "tenacity" },
@@ -5680,6 +5699,7 @@ requires-dist = [
     { name = "docstring-parser" },
     { name = "easyocr" },
     { name = "emoji" },
+    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "et-xmlfile" },
     { name = "eval-type-backport" },
     { name = "exa-py", specifier = ">=2.12.1" },
@@ -5824,6 +5844,7 @@ requires-dist = [
     { name = "spacy", specifier = ">=3.8.0" },
     { name = "sqlalchemy" },
     { name = "starlette" },
+    { name = "structlog", specifier = ">=24.0.0" },
     { name = "sympy" },
     { name = "tabulate" },
     { name = "tenacity" },

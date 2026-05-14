@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 620" width="1140" height="620" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="#0a0f1c"/>
+  <style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseAmber{0%,100%{filter:drop-shadow(0 0 0 rgba(245,158,11,0))}50%{filter:drop-shadow(0 0 8px rgba(245,158,11,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.amber{animation-name:nodePulseAmber}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+          <defs>
+            <marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="fa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="fa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="fa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="fa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <radialGradient id="hub-glow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#8b5cf6" stop-opacity=".5"/>
+              <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+
+          <text x="570" y="28" class="lane-label" text-anchor="middle">PARALLEL 5-AGENT FAN-OUT · asyncio.gather(return_exceptions=True)</text>
+
+          <!-- Background glow under dispatcher -->
+          <ellipse cx="570" cy="160" rx="170" ry="80" fill="url(#hub-glow)"/>
+
+          <!-- ===== Utterance source ===== -->
+          <g transform="translate(220,140)">
+            <rect class="node-bg indigo" width="220" height="50" rx="10"/>
+            <text class="node-label" x="110" y="20">📥 New utterance arrives</text>
+            <text class="node-sub"   x="110" y="38">POST /utterances</text>
+          </g>
+
+          <!-- ===== Dispatcher (central hub) ===== -->
+          <g transform="translate(470,130)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="70" rx="14"/>
+            <text class="node-label" x="100" y="22">🎯 agent_dispatcher</text>
+            <text class="node-sub"   x="100" y="42">PARALLEL FAN-OUT</text>
+            <text class="node-tag"   x="100" y="58">asyncio.gather</text>
+          </g>
+
+          <!-- ===== 5 Agents ===== -->
+          <!-- Scribe -->
+          <g transform="translate(720,40)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">SCRIBE</text>
+            <text class="node-label" x="140" y="34">✍️ Decision detection</text>
+            <text class="node-sub"   x="140" y="54">REGEX GATE → GPT-4o-mini</text>
+            <text class="node-tag"   x="140" y="68">EMITS · decision_prompt</text>
+          </g>
+          <!-- Context -->
+          <g transform="translate(720,128)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">CONTEXT</text>
+            <text class="node-label" x="140" y="34">📚 RAG with re-rank</text>
+            <text class="node-sub"   x="140" y="54">EMBED → QDRANT TOP-K=5</text>
+            <text class="node-tag"   x="140" y="68">EMITS · context</text>
+          </g>
+          <!-- Insight -->
+          <g transform="translate(720,216)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">INSIGHT</text>
+            <text class="node-label" x="140" y="34">💡 Research match</text>
+            <text class="node-sub"   x="140" y="54">UTTERANCE ↔ research_brief</text>
+            <text class="node-tag"   x="140" y="68">EMITS · insight</text>
+          </g>
+          <!-- Fact-Check -->
+          <g transform="translate(720,304)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">FACT-CHECK</text>
+            <text class="node-label" x="140" y="34">🛡 Claim verification</text>
+            <text class="node-sub"   x="140" y="54">REGEX → EXA → GPT VERDICT</text>
+            <text class="node-tag"   x="140" y="68">COOLDOWN + DEDUP HASH</text>
+          </g>
+          <!-- KG Query -->
+          <g transform="translate(720,392)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">KG-QUERY</text>
+            <text class="node-label" x="140" y="34">🧠 Multi-hop traversal</text>
+            <text class="node-sub"   x="140" y="54">spaCy NER → CYPHER 1-2 HOP</text>
+            <text class="node-tag"   x="140" y="68">EMITS · knowledge_graph</text>
+          </g>
+
+          <!-- Edge: utterance → dispatcher -->
+          <path d="M440 165 L 470 165" class="edge flow accent" marker-end="url(#fa-v)"/>
+
+          <!-- Dispatcher → 5 agents (fan-out curves) -->
+          <path d="M670 145 C 690 145 700 78 720 78"  class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 155 C 690 155 700 166 720 166" class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 165 C 690 165 700 254 720 254" class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 175 C 690 175 700 342 720 342" class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 185 C 690 185 700 430 720 430" class="edge flow amber" marker-end="url(#fa-a)"/>
+
+          <!-- ===== Aggregation: 5 agents → persist ===== -->
+          <g transform="translate(420,490)" class="node-pulse">
+            <rect class="node-bg pink" width="300" height="50" rx="10"/>
+            <text class="node-label" x="150" y="20">💾 meeting_service.add_nudge</text>
+            <text class="node-sub"   x="150" y="38">FILTER NONE + EXCEPTIONS · PER NUDGE</text>
+          </g>
+          <!-- Each agent → aggregator (fan-in curves) -->
+          <path d="M860 116 C 860 130 800 480 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 204 C 860 220 770 480 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 292 C 860 320 700 480 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 380 C 860 430 670 510 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 468 L 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+
+          <!-- Broadcast -->
+          <g transform="translate(420,560)">
+            <rect class="node-bg emerald" width="300" height="50" rx="10"/>
+            <text class="node-label" x="150" y="20">📡 meeting_hub.broadcast</text>
+            <text class="node-sub"   x="150" y="38">PER-MEETING WS · type: nudge_created</text>
+          </g>
+          <path d="M570 540 L 570 560" class="edge flow emerald" marker-end="url(#fa-e)"/>
+
+          <!-- ===== Animated flow dots ===== -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M440 165 L 470 165');animation:flowA 0.9s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 145 C 690 145 700 78 720 78');animation:flowA 1.4s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 155 C 690 155 700 166 720 166');animation:flowA 1.4s linear infinite .15s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 165 C 690 165 700 254 720 254');animation:flowA 1.4s linear infinite .3s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 175 C 690 175 700 342 720 342');animation:flowA 1.4s linear infinite .45s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 185 C 690 185 700 430 720 430');animation:flowA 1.4s linear infinite .6s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M860 116 C 860 130 800 480 720 510');animation:flowA 2.2s linear infinite 1s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M860 380 C 860 430 670 510 720 510');animation:flowA 2.0s linear infinite 1.3s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M570 540 L 570 560');animation:flowA 0.8s linear infinite 1.6s"/>
+        </svg>

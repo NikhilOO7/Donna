@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 480" width="1140" height="480" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="#0a0f1c"/>
+  <style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseAmber{0%,100%{filter:drop-shadow(0 0 0 rgba(245,158,11,0))}50%{filter:drop-shadow(0 0 8px rgba(245,158,11,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.amber{animation-name:nodePulseAmber}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+          <defs>
+            <marker id="ta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="ta-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="ta-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <marker id="ta-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="ta-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+          </defs>
+
+          <text x="120" y="28" class="lane-label">USER + API</text>
+          <text x="430" y="28" class="lane-label">FAN-OUT</text>
+          <text x="900" y="28" class="lane-label">SIDE EFFECTS</text>
+
+          <line x1="290" y1="44" x2="290" y2="460" class="edge dashed" opacity=".3"/>
+          <line x1="620" y1="44" x2="620" y2="460" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== User ===== -->
+          <g transform="translate(50,170)">
+            <rect class="node-bg indigo" width="220" height="80" rx="12"/>
+            <text class="node-label" x="110" y="26">👤 User types</text>
+            <text class="node-sub"   x="110" y="46">"Let's pick Beacon Cloud"</text>
+            <text class="node-tag"   x="110" y="64">+ SEND</text>
+          </g>
+
+          <!-- ===== API endpoint ===== -->
+          <g transform="translate(330,170)" class="node-pulse violet">
+            <rect class="node-bg violet" width="240" height="80" rx="12"/>
+            <text class="node-label" x="120" y="22">POST /utterances</text>
+            <text class="node-sub"   x="120" y="42">{ speaker, text }</text>
+            <text class="node-tag"   x="120" y="62">RETURNS IN &lt; 50 MS</text>
+          </g>
+
+          <!-- ===== 3 parallel side effects ===== -->
+
+          <!-- 1. Persist -->
+          <g transform="translate(680,70)">
+            <rect class="node-bg emerald" width="200" height="58" rx="10"/>
+            <text class="node-tag"   x="100" y="14" style="fill:#34d399">① PERSIST</text>
+            <text class="node-label" x="100" y="36">append_utterance</text>
+            <text class="node-sub"   x="100" y="50">UPSERT TRANSCRIPT</text>
+          </g>
+          <g transform="translate(910,70)">
+            <rect class="node-bg emerald" width="200" height="58" rx="10"/>
+            <text class="node-label" x="100" y="22">🗄 PostgreSQL</text>
+            <text class="node-sub"   x="100" y="42">JSONB ARRAY APPEND</text>
+          </g>
+
+          <!-- 2. Broadcast -->
+          <g transform="translate(680,178)">
+            <rect class="node-bg pink" width="200" height="64" rx="10"/>
+            <text class="node-tag"   x="100" y="14" style="fill:#f472b6">② BROADCAST</text>
+            <text class="node-label" x="100" y="36">📡 meeting_hub</text>
+            <text class="node-sub"   x="100" y="54">PER-MEETING WS HUB</text>
+          </g>
+          <g transform="translate(910,178)" class="node-pulse">
+            <rect class="node-bg pink" width="200" height="64" rx="10"/>
+            <text class="node-label" x="100" y="22">🔌 WebSocket clients</text>
+            <text class="node-sub"   x="100" y="42">type: utterance_added</text>
+            <text class="node-tag"   x="100" y="58">OPTIMISTIC UI UPDATE</text>
+          </g>
+
+          <!-- 3. Dispatch -->
+          <g transform="translate(680,295)">
+            <rect class="node-bg amber" width="200" height="64" rx="10"/>
+            <text class="node-tag"   x="100" y="14" style="fill:#fbbf24">③ DISPATCH</text>
+            <text class="node-label" x="100" y="36">🔥 BackgroundTask</text>
+            <text class="node-sub"   x="100" y="54">NEVER BLOCKS RESPONSE</text>
+          </g>
+          <g transform="translate(910,295)" class="node-pulse amber">
+            <rect class="node-bg amber" width="200" height="64" rx="10"/>
+            <text class="node-label" x="100" y="22">agent_dispatcher</text>
+            <text class="node-sub"   x="100" y="42">5× PARALLEL · asyncio.gather</text>
+            <text class="node-tag"   x="100" y="58">SEE NEXT DIAGRAM ↓</text>
+          </g>
+
+          <!-- ===== Edges ===== -->
+          <!-- User → API -->
+          <path d="M270 210 L 330 210" class="edge flow accent" marker-end="url(#ta-v)"/>
+
+          <!-- API → 3 fan-out targets -->
+          <path d="M570 195 C 620 195 630 100 680 100" class="edge flow emerald" marker-end="url(#ta-e)"/>
+          <path d="M570 210 L 680 210" class="edge flow pink" marker-end="url(#ta-p)"/>
+          <path d="M570 225 C 620 225 630 327 680 327" class="edge flow amber" marker-end="url(#ta-a)"/>
+
+          <!-- Side-effect internal arrows -->
+          <path d="M880 100 L 910 100" class="edge flow emerald" marker-end="url(#ta-e)"/>
+          <path d="M880 210 L 910 210" class="edge flow pink" marker-end="url(#ta-p)"/>
+          <path d="M880 327 L 910 327" class="edge flow amber" marker-end="url(#ta-a)"/>
+
+          <!-- WS → User push back (curve) -->
+          <path d="M1010 178 C 1010 130 320 130 270 200" class="edge flow pink dashed" opacity=".6"/>
+          <text x="600" y="120" class="edge-label" style="fill:#ec4899">WebSocket push</text>
+
+          <!-- API → User 200 OK -->
+          <path d="M330 240 C 280 240 280 250 270 250" class="edge flow dashed" opacity=".5"/>
+          <text x="290" y="270" class="edge-label">200 OK · &lt; 50 ms</text>
+
+          <!-- Animated dots -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M270 210 L 330 210');animation:flowA 1.3s linear infinite"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M570 195 C 620 195 630 100 680 100');animation:flowA 1.6s linear infinite"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M570 210 L 680 210');animation:flowA 1.4s linear infinite .2s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M570 225 C 620 225 630 327 680 327');animation:flowA 1.6s linear infinite .4s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M880 100 L 910 100');animation:flowA 1.0s linear infinite .6s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M880 210 L 910 210');animation:flowA 1.0s linear infinite .6s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M880 327 L 910 327');animation:flowA 1.0s linear infinite .8s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M1010 178 C 1010 130 320 130 270 200');animation:flowA 3.0s linear infinite 1.2s"/>
+
+          <text x="570" y="445" class="node-sub" text-anchor="middle" opacity=".7">
+            One inbound POST · three parallel side-effects · sub-50ms response · WebSocket carries the push back to the UI
+          </text>
+        </svg>

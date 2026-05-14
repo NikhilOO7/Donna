@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 640" width="1140" height="640" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="#0a0f1c"/>
+  <style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseAmber{0%,100%{filter:drop-shadow(0 0 0 rgba(245,158,11,0))}50%{filter:drop-shadow(0 0 8px rgba(245,158,11,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.amber{animation-name:nodePulseAmber}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+          <defs>
+            <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="arr2-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="arr2-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="arr2-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+          </defs>
+
+          <!-- Stage band labels (left margin) -->
+          <text x="60" y="28" class="lane-label" text-anchor="start">STAGE 1 · PERSIST</text>
+          <text x="60" y="178" class="lane-label" text-anchor="start">STAGE 2 · MULTI-MODAL EXTRACTION</text>
+          <text x="60" y="358" class="lane-label" text-anchor="start">STAGE 3 · EMBED &amp; INDEX</text>
+          <text x="60" y="478" class="lane-label" text-anchor="start">STAGE 4 · KNOWLEDGE GRAPH</text>
+
+          <!-- Stage band backgrounds -->
+          <rect x="50" y="38" width="1040" height="110" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="188" width="1040" height="140" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="368" width="1040" height="90"  rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="488" width="1040" height="130" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+
+          <!-- ===== STAGE 1: Entry + Persist ===== -->
+          <g transform="translate(70,60)">
+            <rect class="node-bg indigo" width="180" height="68" rx="10"/>
+            <text class="node-label" x="90" y="26">👤 User drops PDF</text>
+            <text class="node-sub"   x="90" y="48">DRAG-DROP · BROWSE</text>
+          </g>
+          <g transform="translate(295,60)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">POST /documents/upload</text>
+            <text class="node-sub"   x="100" y="48">FASTAPI · MULTIPART</text>
+          </g>
+          <g transform="translate(545,60)">
+            <rect class="node-bg emerald" width="170" height="68" rx="10"/>
+            <text class="node-label" x="85" y="26">MinIO</text>
+            <text class="node-sub"   x="85" y="48">RAW PDF STORED</text>
+          </g>
+          <g transform="translate(740,60)">
+            <rect class="node-bg emerald" width="170" height="68" rx="10"/>
+            <text class="node-label" x="85" y="26">PostgreSQL</text>
+            <text class="node-sub"   x="85" y="48">STATUS = processing</text>
+          </g>
+          <g transform="translate(935,60)">
+            <rect class="node-bg" width="140" height="68" rx="10"/>
+            <text class="node-label" x="70" y="26">200 OK</text>
+            <text class="node-sub"   x="70" y="48">{ document_id }</text>
+          </g>
+          <path d="M250 94 L 295 94"  class="edge flow accent" marker-end="url(#arr2-violet)"/>
+          <path d="M495 84 L 545 84"  class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <path d="M495 104 L 545 104" class="edge flow emerald" marker-end="url(#arr2-emerald)" opacity=".0"/>
+          <path d="M495 104 L 740 104" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <path d="M495 94 C 800 94 800 94 935 94" class="edge flow dashed" opacity=".5"/>
+
+          <!-- ===== STAGE 2: Extraction ===== -->
+          <g transform="translate(70,215)" class="node-pulse amber">
+            <rect class="node-bg amber" width="220" height="86" rx="12"/>
+            <text class="node-label" x="110" y="26">🔍 LayoutAgent</text>
+            <text class="node-sub"   x="110" y="46">DOCLING · pdfplumber fallback</text>
+            <text class="node-tag"   x="110" y="68">DETECTS · TEXT · TABLES · IMAGES</text>
+          </g>
+          <g transform="translate(340,205)">
+            <rect class="node-bg" width="150" height="48" rx="8"/>
+            <text class="node-label" x="75" y="28">📄 text chunks</text>
+          </g>
+          <g transform="translate(340,253)">
+            <rect class="node-bg" width="150" height="48" rx="8"/>
+            <text class="node-label" x="75" y="28">📊 raw tables</text>
+          </g>
+          <g transform="translate(340,301)">
+            <rect class="node-bg" width="150" height="48" rx="8"/>
+            <text class="node-label" x="75" y="28">🖼 image regions</text>
+          </g>
+          <g transform="translate(540,253)">
+            <rect class="node-bg amber" width="220" height="48" rx="8"/>
+            <text class="node-label" x="110" y="20">📊 TableAgent</text>
+            <text class="node-sub"   x="110" y="38">GPT-4o-mini · MARKDOWN</text>
+          </g>
+          <g transform="translate(540,301)">
+            <rect class="node-bg amber" width="220" height="48" rx="8"/>
+            <text class="node-label" x="110" y="20">🖼 ImageAgent</text>
+            <text class="node-sub"   x="110" y="38">EASYOCR + CAPTIONS</text>
+          </g>
+          <g transform="translate(810,253)">
+            <rect class="node-bg" width="170" height="48" rx="8"/>
+            <text class="node-label" x="85" y="28">markdown tables</text>
+          </g>
+          <g transform="translate(810,301)">
+            <rect class="node-bg" width="170" height="48" rx="8"/>
+            <text class="node-label" x="85" y="28">OCR + captions</text>
+          </g>
+          <path d="M290 240 C 320 240 320 229 340 229" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M290 258 C 320 258 320 277 340 277" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M290 276 C 320 276 320 325 340 325" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M490 277 L 540 277" class="edge flow amber" marker-end="url(#arr2-amber)"/>
+          <path d="M490 325 L 540 325" class="edge flow amber" marker-end="url(#arr2-amber)"/>
+          <path d="M760 277 L 810 277" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M760 325 L 810 325" class="edge flow" marker-end="url(#arr2)"/>
+
+          <!-- ===== STAGE 3: Embed ===== -->
+          <g transform="translate(70,395)">
+            <rect class="node-bg violet" width="240" height="48" rx="8"/>
+            <text class="node-label" x="120" y="20">🧬 Append synthetic chunks</text>
+            <text class="node-sub"   x="120" y="38">TABLES + IMAGES AS TEXT</text>
+          </g>
+          <g transform="translate(380,395)" class="node-pulse violet">
+            <rect class="node-bg amber" width="240" height="48" rx="8"/>
+            <text class="node-label" x="120" y="20">⚡ ContextualEmbeddingGen</text>
+            <text class="node-sub"   x="120" y="38">3-LEVEL · OPENAI EMBEDDINGS</text>
+          </g>
+          <g transform="translate(690,395)">
+            <rect class="node-bg emerald" width="240" height="48" rx="8"/>
+            <text class="node-label" x="120" y="20">🔎 Qdrant</text>
+            <text class="node-sub"   x="120" y="38">LOCAL · DOCUMENT · GLOBAL</text>
+          </g>
+          <path d="M310 419 L 380 419" class="edge flow accent" marker-end="url(#arr2-violet)"/>
+          <path d="M620 419 L 690 419" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <!-- text/table/image → append -->
+          <path d="M415 229 C 440 229 60 380 145 395" class="edge flow dashed" opacity=".5"/>
+          <path d="M980 277 C 1010 277 60 395 190 395" class="edge flow dashed" opacity=".0"/>
+          <path d="M980 277 C 1010 320 60 380 190 410" class="edge flow dashed" opacity=".4"/>
+          <path d="M980 325 C 1010 360 60 410 190 425" class="edge flow dashed" opacity=".4"/>
+
+          <!-- ===== STAGE 4: KG ===== -->
+          <g transform="translate(70,510)">
+            <rect class="node-bg amber" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">🏷 Per-chunk entities</text>
+            <text class="node-sub"   x="100" y="48">SPACY NER · chunk_id LINKAGE</text>
+          </g>
+          <g transform="translate(320,510)" class="node-pulse amber">
+            <rect class="node-bg amber" width="240" height="68" rx="10"/>
+            <text class="node-label" x="120" y="26">🔗 RelationshipAgent</text>
+            <text class="node-sub"   x="120" y="48">GPT-4o-mini · ENTITY PAIRS</text>
+          </g>
+          <g transform="translate(610,510)">
+            <rect class="node-bg emerald" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">PostgreSQL</text>
+            <text class="node-sub"   x="100" y="48">entity_relationships</text>
+          </g>
+          <g transform="translate(860,510)" class="node-pulse emerald">
+            <rect class="node-bg emerald" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">🧠 Neo4j MERGE</text>
+            <text class="node-sub"   x="100" y="48">AUTO-DEDUP · CYPHER QUERIES</text>
+          </g>
+          <path d="M270 544 L 320 544" class="edge flow amber" marker-end="url(#arr2-amber)"/>
+          <path d="M560 544 L 610 544" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <path d="M560 530 C 600 530 800 530 860 530" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+
+          <!-- Text chunks feed entity extraction (cross-stage) -->
+          <path d="M415 229 C 50 350 30 540 70 544" class="edge flow dashed" opacity=".3"/>
+
+          <!-- ===== Animated flow dots ===== -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M250 94 L 295 94');animation:flowA 1.4s linear infinite"/>
+          <circle r="3"   fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M495 84 L 545 84');animation:flowA 1.5s linear infinite .2s"/>
+          <circle r="3"   fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M495 104 L 740 104');animation:flowA 2.2s linear infinite .4s"/>
+          <circle r="3.5" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M290 258 C 320 258 320 277 340 277');animation:flowA 1.6s linear infinite .3s"/>
+          <circle r="3"   fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M490 277 L 540 277');animation:flowA 1.4s linear infinite .8s"/>
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M310 419 L 380 419');animation:flowA 1.3s linear infinite"/>
+          <circle r="3.5" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M620 419 L 690 419');animation:flowA 1.3s linear infinite .6s"/>
+          <circle r="3.5" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M270 544 L 320 544');animation:flowA 1.4s linear infinite"/>
+          <circle r="3"   fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M560 530 C 600 530 800 530 860 530');animation:flowA 2.0s linear infinite .9s"/>
+        </svg>

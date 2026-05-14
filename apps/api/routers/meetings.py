@@ -436,6 +436,52 @@ async def get_meeting_voice_token(
     }
 
 
+@router.post("/{meeting_id}/speak")
+async def speak_in_meeting(
+    meeting_id: str,
+    body: dict,
+    _api_key: str = Depends(verify_api_key),
+):
+    """Send text to be spoken aloud by the meeting voice worker.
+
+    Publishes the text on the Redis channel ``meeting:{id}:speak``.
+    The LiveKit-side worker subscribes, synthesizes via Cartesia, and
+    pushes the audio back into the room. No-op (503) when Redis is
+    not configured.
+    """
+    import json as _json
+
+    from apps.api.core.connections import get_redis_client
+
+    try:
+        UUID(meeting_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid meeting ID format")
+
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Field 'text' is required")
+    if len(text) > 600:
+        raise HTTPException(400, "Text too long (max 600 chars)")
+
+    redis = await get_redis_client()
+    if redis is None:
+        raise HTTPException(503, "Redis unavailable — TTS pipeline disabled")
+
+    channel = f"meeting:{meeting_id}:speak"
+    try:
+        delivered = await redis.publish(channel, _json.dumps({"text": text}))
+    except Exception as e:
+        raise HTTPException(500, f"Publish failed: {e}")
+
+    return {
+        "status": "queued",
+        "channel": channel,
+        "subscribers": int(delivered),
+        "text_length": len(text),
+    }
+
+
 # -- Transcript / Utterance Endpoints --------------------------------------
 
 

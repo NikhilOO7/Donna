@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 580" width="1140" height="580" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="#0a0f1c"/>
+  <style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseAmber{0%,100%{filter:drop-shadow(0 0 0 rgba(245,158,11,0))}50%{filter:drop-shadow(0 0 8px rgba(245,158,11,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.amber{animation-name:nodePulseAmber}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+          <defs>
+            <marker id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="sa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="sa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <marker id="sa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="sa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+          </defs>
+
+          <text x="60" y="28" class="lane-label" text-anchor="start">STAGE 1 · AGGREGATE</text>
+          <text x="60" y="208" class="lane-label" text-anchor="start">STAGE 2 · SYNTHESIZE</text>
+          <text x="60" y="358" class="lane-label" text-anchor="start">STAGE 3 · DELIVER</text>
+
+          <!-- Stage backgrounds -->
+          <rect x="50" y="38" width="1040" height="155" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="218" width="1040" height="125" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="368" width="1040" height="160" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+
+          <!-- ===== STAGE 1: Aggregate ===== -->
+          <g transform="translate(70,60)">
+            <rect class="node-bg indigo" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">👤 User clicks</text>
+            <text class="node-sub"   x="100" y="38">GENERATE SUMMARY</text>
+          </g>
+          <g transform="translate(295,60)" class="node-pulse violet">
+            <rect class="node-bg violet" width="220" height="50" rx="10"/>
+            <text class="node-label" x="110" y="20">POST /summarize</text>
+            <text class="node-sub"   x="110" y="38">BACKGROUND TASK</text>
+          </g>
+          <g transform="translate(540,60)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">📚 DataAggregator</text>
+            <text class="node-sub"   x="100" y="38">LOAD FULL TREE</text>
+          </g>
+          <path d="M270 85 L 295 85" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M515 85 L 540 85" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M515 110 C 460 130 400 130 270 95" class="edge flow dashed" opacity=".5"/>
+          <text x="370" y="146" class="edge-label">200 OK · status: generating</text>
+
+          <!-- 6 data sources -->
+          <g transform="translate(770,55)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">📝 transcript</text>
+          </g>
+          <g transform="translate(900,55)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">💡 nudges</text>
+          </g>
+          <g transform="translate(770,98)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">✅ decisions</text>
+          </g>
+          <g transform="translate(900,98)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">📋 action items</text>
+          </g>
+          <g transform="translate(770,141)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">🔍 research brief</text>
+          </g>
+          <g transform="translate(900,141)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">🧠 KG snapshot</text>
+          </g>
+          <path d="M740 85 L 770 73"  class="edge flow emerald" marker-end="url(#sa-e)" opacity=".7"/>
+          <path d="M740 85 L 900 73"  class="edge flow emerald" marker-end="url(#sa-e)" opacity=".5"/>
+          <path d="M740 85 L 770 116" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".7"/>
+          <path d="M740 85 L 900 116" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".5"/>
+          <path d="M740 85 L 770 159" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".7"/>
+          <path d="M740 85 L 900 159" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".5"/>
+
+          <!-- ===== STAGE 2: Synthesize ===== -->
+          <g transform="translate(70,240)" class="node-pulse amber">
+            <rect class="node-bg amber" width="260" height="86" rx="12"/>
+            <text class="node-label" x="130" y="26">📝 SummaryAgent</text>
+            <text class="node-sub"   x="130" y="46">NUDGES AS 'AI INSIGHTS'</text>
+            <text class="node-tag"   x="130" y="66">JSON-MODE PROMPT</text>
+          </g>
+          <g transform="translate(360,240)">
+            <rect class="node-bg pink" width="230" height="86" rx="12"/>
+            <text class="node-label" x="115" y="26">🤖 GPT-4</text>
+            <text class="node-sub"   x="115" y="46">FULL MODEL · NOT MINI</text>
+            <text class="node-tag"   x="115" y="66">REPRODUCIBLE</text>
+          </g>
+          <g transform="translate(620,240)">
+            <rect class="node-bg" width="240" height="86" rx="12"/>
+            <text class="node-label" x="120" y="22">📑 Structured output</text>
+            <text class="node-sub"   x="120" y="42">summary_text</text>
+            <text class="node-sub"   x="120" y="58">decisions_summary</text>
+            <text class="node-sub"   x="120" y="74">key_insights · action_items</text>
+          </g>
+          <g transform="translate(890,240)">
+            <rect class="node-bg emerald" width="190" height="86" rx="12"/>
+            <text class="node-label" x="95" y="26">🗄 PostgreSQL</text>
+            <text class="node-sub"   x="95" y="46">INSERT INTO</text>
+            <text class="node-tag"   x="95" y="66">meeting_summaries</text>
+          </g>
+          <path d="M330 283 L 360 283" class="edge flow pink" marker-end="url(#sa-p)"/>
+          <path d="M590 283 L 620 283" class="edge flow" marker-end="url(#sa-a)"/>
+          <path d="M860 283 L 890 283" class="edge flow emerald" marker-end="url(#sa-e)"/>
+
+          <!-- Aggregator → SummaryAgent (cross-stage) -->
+          <path d="M640 110 C 640 200 200 220 200 240" class="edge flow amber dashed" opacity=".6"/>
+
+          <!-- ===== STAGE 3: Deliver ===== -->
+          <g transform="translate(70,400)">
+            <rect class="node-bg" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">✅ Summary ready</text>
+            <text class="node-sub"   x="100" y="38">UI SHOWS RESULT</text>
+          </g>
+          <g transform="translate(310,400)">
+            <rect class="node-bg indigo" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">👤 User clicks</text>
+            <text class="node-sub"   x="100" y="38">SEND SUMMARY EMAIL</text>
+          </g>
+          <g transform="translate(550,400)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">POST /send-summary</text>
+            <text class="node-sub"   x="100" y="38">TO ATTENDEES</text>
+          </g>
+          <g transform="translate(790,400)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">✉ DeliveryAgent</text>
+            <text class="node-sub"   x="100" y="38">RENDER HTML TEMPLATE</text>
+          </g>
+
+          <g transform="translate(550,470)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">📨 Postmark API</text>
+            <text class="node-sub"   x="100" y="38">RETURNS message_id</text>
+          </g>
+          <g transform="translate(790,470)">
+            <rect class="node-bg emerald" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🗄 update tracking</text>
+            <text class="node-sub"   x="100" y="38">email_sent_at · postmark_id</text>
+          </g>
+
+          <!-- Edges within stage 3 -->
+          <path d="M985 326 L 985 360 L 170 360 L 170 400" class="edge flow emerald" marker-end="url(#sa-e)"/>
+          <path d="M270 425 L 310 425" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M510 425 L 550 425" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M750 425 L 790 425" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M890 450 C 890 460 750 495 750 495" class="edge flow pink" marker-end="url(#sa-p)"/>
+          <path d="M750 495 L 790 495" class="edge flow emerald" marker-end="url(#sa-e)"/>
+          <path d="M650 495 C 600 495 600 470 650 470" class="edge flow pink dashed" opacity=".4"/>
+
+          <!-- Animated dots -->
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M270 85 L 295 85');animation:flowA 1.0s linear infinite"/>
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M515 85 L 540 85');animation:flowA 1.0s linear infinite .2s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M740 85 L 770 73');animation:flowA 1.8s linear infinite .4s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M740 85 L 900 159');animation:flowA 2.2s linear infinite .6s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M330 283 L 360 283');animation:flowA 1.0s linear infinite .8s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M590 283 L 620 283');animation:flowA 1.0s linear infinite 1.0s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M860 283 L 890 283');animation:flowA 1.0s linear infinite 1.2s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M985 326 L 985 360 L 170 360 L 170 400');animation:flowA 3.6s linear infinite 1.4s"/>
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M510 425 L 550 425');animation:flowA 1.0s linear infinite 1.8s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M890 450 C 890 460 750 495 750 495');animation:flowA 2.0s linear infinite 2.4s"/>
+
+          <text x="570" y="560" class="node-sub" text-anchor="middle" opacity=".7">
+            Summary references nudges + decisions · Weaves all three phases into a single narrative · Postmark delivery is optional
+          </text>
+        </svg>

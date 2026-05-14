@@ -31,7 +31,36 @@ _RECENT_EMITS: Dict[tuple, float] = {}
 _COOLDOWN_SECONDS = 90.0
 
 # Don't surface trivial neighbors that match the meeting's chitchat surface
-_STOP_WORDS = {"q", "ai", "team", "meeting"}
+_STOP_WORDS = {"q", "ai", "team", "meeting", "today", "yesterday", "tomorrow"}
+
+# Lazy-loaded spaCy NLP pipeline. Loading the model is ~1-2s, but it
+# happens at most once per worker process and gives us proper NER that
+# catches lowercase entities ("beacon cloud", "jane calder") which the
+# previous regex-only extractor missed.
+_NLP = None
+_NLP_LOAD_FAILED = False
+
+
+def _get_nlp():
+    global _NLP, _NLP_LOAD_FAILED
+    if _NLP is not None or _NLP_LOAD_FAILED:
+        return _NLP
+    try:
+        import spacy
+
+        _NLP = spacy.load("en_core_web_sm", disable=["lemmatizer", "textcat"])
+        logger.info("[KG] spaCy NER loaded for phrase extraction")
+    except Exception as e:
+        _NLP_LOAD_FAILED = True
+        logger.warning(
+            f"[KG] spaCy unavailable, falling back to regex-only extractor: {e}"
+        )
+    return _NLP
+
+
+# Regex fallback for capitalized proper nouns (used when spaCy is offline
+# or as a complement to NER).
+_CAP_PHRASE = re.compile(r"\b([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+){0,2})\b")
 
 
 class KGQueryAgent:
@@ -116,16 +145,50 @@ class KGQueryAgent:
 
     @staticmethod
     def _extract_candidate_phrases(text: str) -> Set[str]:
-        """Extract proper-noun-ish phrases. Cheap heuristic — we then
-        validate against real entities in Neo4j."""
-        # Capitalized words / multi-word phrases (e.g., "Beacon Cloud")
-        matches = re.findall(r"\b([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+){0,2})\b", text)
+        """Extract candidate entity mentions from utterance text.
+
+        Primary path uses spaCy NER + noun chunks — catches lowercase
+        entities like "beacon cloud" and "jane calder" that the
+        capitalization-based regex would miss. Falls back to the
+        regex when spaCy isn't installed (kept for resilience and so
+        the unit tests don't require the spaCy model on disk).
+        """
         out: Set[str] = set()
-        for m in matches:
+
+        nlp = _get_nlp()
+        if nlp is not None:
+            try:
+                doc = nlp(text)
+
+                # spaCy named entities
+                for ent in doc.ents:
+                    norm = ent.text.lower().strip()
+                    if 3 <= len(norm) <= 60 and norm not in _STOP_WORDS:
+                        out.add(norm)
+
+                # Noun chunks — strip leading determiners ("the", "a")
+                # so "the beacon cloud team" becomes "beacon cloud team"
+                for chunk in doc.noun_chunks:
+                    tokens = [
+                        t.text.lower()
+                        for t in chunk
+                        if not t.is_stop and not t.is_punct
+                    ]
+                    if not tokens:
+                        continue
+                    norm = " ".join(tokens).strip()
+                    if 3 <= len(norm) <= 60 and norm not in _STOP_WORDS:
+                        out.add(norm)
+            except Exception as e:
+                logger.debug(f"[KG] spaCy extraction failed: {e}")
+
+        # Always also run the regex pass — cheap, catches the cases
+        # where spaCy misclassifies a clearly-capitalized proper noun.
+        for m in _CAP_PHRASE.findall(text):
             norm = m.lower().strip()
-            if norm in _STOP_WORDS or len(norm) < 3:
-                continue
-            out.add(norm)
+            if 3 <= len(norm) <= 60 and norm not in _STOP_WORDS:
+                out.add(norm)
+
         return out
 
     async def _find_anchor_entity(

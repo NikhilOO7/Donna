@@ -201,6 +201,7 @@ dependencies = [
     "mypy-extensions",
     "networkx",
     "neo4j>=5.0",
+    "structlog>=24.0.0",
     "ninja",
     "packaging",
     "pluggy",
@@ -237,6 +238,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "exa-py>=2.12.1",
     "postmarker>=1.0",
+    "en-core-web-sm",
 ]
 
 [project.optional-dependencies]
@@ -283,3 +285,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

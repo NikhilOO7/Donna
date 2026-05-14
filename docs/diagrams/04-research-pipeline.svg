@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 580" width="1140" height="580" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="#0a0f1c"/>
+  <style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseAmber{0%,100%{filter:drop-shadow(0 0 0 rgba(245,158,11,0))}50%{filter:drop-shadow(0 0 8px rgba(245,158,11,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.amber{animation-name:nodePulseAmber}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+          <defs>
+            <marker id="ra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="ra-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="ra-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="ra-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="ra-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+          </defs>
+
+          <!-- Column labels -->
+          <text x="180" y="28" class="lane-label">AGENT</text>
+          <text x="490" y="28" class="lane-label">LLM / EXTERNAL</text>
+          <text x="870" y="28" class="lane-label">OUTPUT</text>
+
+          <!-- Lane separators -->
+          <line x1="340" y1="44" x2="340" y2="495" class="edge dashed" opacity=".3"/>
+          <line x1="710" y1="44" x2="710" y2="495" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== Header row: User → Endpoint ===== -->
+          <g transform="translate(70,60)">
+            <rect class="node-bg indigo" width="180" height="50" rx="10"/>
+            <text class="node-label" x="90" y="20">👤 User clicks</text>
+            <text class="node-sub"   x="90" y="38">RUN RESEARCH</text>
+          </g>
+          <g transform="translate(295,60)" class="node-pulse violet">
+            <rect class="node-bg violet" width="240" height="50" rx="10"/>
+            <text class="node-label" x="120" y="20">POST /meetings/id/research</text>
+            <text class="node-sub"   x="120" y="38">FASTAPI · BACKGROUND TASK</text>
+          </g>
+          <g transform="translate(580,60)">
+            <rect class="node-bg" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">200 OK</text>
+            <text class="node-sub"   x="100" y="38">STATUS: RESEARCHING</text>
+          </g>
+          <path d="M250 85 L 295 85" class="edge flow accent" marker-end="url(#ra-v)"/>
+          <path d="M535 85 L 580 85" class="edge flow dashed" opacity=".5"/>
+
+          <!-- ===== Stage 1: Topic extraction ===== -->
+          <g transform="translate(70,148)">
+            <rect class="node-tag" width="34" height="34" rx="17" fill="#1b1d3a" stroke="#8b5cf6" stroke-width="1.5"
+                  style="display:none"/>
+            <circle cx="17" cy="17" r="17" fill="#1b1d3a" stroke="#8b5cf6" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">1</text>
+          </g>
+          <g transform="translate(120,140)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🧭 TopicAgent</text>
+            <text class="node-sub"   x="100" y="38">EXTRACT RESEARCH TOPICS</text>
+          </g>
+          <g transform="translate(380,140)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🤖 GPT-4o-mini</text>
+            <text class="node-sub"   x="100" y="38">JSON · 3-5 TOPICS</text>
+          </g>
+          <g transform="translate(750,140)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">📋 topics + seed queries</text>
+            <text class="node-sub"   x="135" y="38">3-5 ITEMS</text>
+          </g>
+          <path d="M320 165 L 380 165" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 165 L 750 165" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Stage 2: Web search (parallel) ===== -->
+          <g transform="translate(70,238)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">2</text>
+          </g>
+          <g transform="translate(120,230)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🔍 SearchAgent</text>
+            <text class="node-sub"   x="100" y="38">FAN-OUT · ASYNCIO.GATHER</text>
+          </g>
+          <g transform="translate(380,220)">
+            <rect class="node-bg pink" width="200" height="70" rx="10"/>
+            <text class="node-label" x="100" y="22">🌐 Exa</text>
+            <text class="node-sub"   x="100" y="40">SEMANTIC SEARCH</text>
+            <text class="node-tag"   x="100" y="58">AUTOPROMPT</text>
+          </g>
+          <g transform="translate(750,230)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">📰 10 raw sources / topic</text>
+            <text class="node-sub"   x="135" y="38">URL · TITLE · 1500-CHAR SNIPPET</text>
+          </g>
+          <path d="M895 190 L 200 230" class="edge flow dashed" opacity=".4"/>
+          <path d="M320 255 L 380 255" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 255 L 750 255" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Stage 3: Validation ===== -->
+          <g transform="translate(70,328)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">3</text>
+          </g>
+          <g transform="translate(120,320)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">⚖ ValidationAgent</text>
+            <text class="node-sub"   x="100" y="38">TIER + CREDIBILITY</text>
+          </g>
+          <g transform="translate(380,320)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🤖 GPT-4o-mini</text>
+            <text class="node-sub"   x="100" y="38">CLASSIFY 1 · 2 · 3</text>
+          </g>
+          <g transform="translate(750,320)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">🏆 top 5 per topic</text>
+            <text class="node-sub"   x="135" y="38">TIER · SCORE · URL</text>
+          </g>
+          <path d="M895 280 L 200 320" class="edge flow dashed" opacity=".4"/>
+          <path d="M320 345 L 380 345" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 345 L 750 345" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Stage 4: Synthesis ===== -->
+          <g transform="translate(70,418)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">4</text>
+          </g>
+          <g transform="translate(120,410)" class="node-pulse amber">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">📝 SynthesisAgent</text>
+            <text class="node-sub"   x="100" y="38">EXECUTIVE BRIEF</text>
+          </g>
+          <g transform="translate(380,410)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🤖 GPT-4</text>
+            <text class="node-sub"   x="100" y="38">JSON MODE</text>
+          </g>
+          <g transform="translate(750,410)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">📑 research brief</text>
+            <text class="node-sub"   x="135" y="38">SUMMARY · FINDINGS · GAPS</text>
+          </g>
+          <path d="M895 370 L 200 410" class="edge flow dashed" opacity=".4"/>
+          <path d="M320 435 L 380 435" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 435 L 750 435" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Persistence + done ===== -->
+          <g transform="translate(300,510)">
+            <rect class="node-bg emerald" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🗄 PostgreSQL</text>
+            <text class="node-sub"   x="100" y="38">research_briefs</text>
+          </g>
+          <g transform="translate(520,510)">
+            <rect class="node-bg emerald" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🔎 Qdrant</text>
+            <text class="node-sub"   x="100" y="38">EMBEDDED FOR CONTEXT AGENT</text>
+          </g>
+          <g transform="translate(740,510)" class="node-pulse emerald">
+            <rect class="node-bg green" width="280" height="50" rx="10"/>
+            <text class="node-label" x="140" y="20">✅ Brief ready</text>
+            <text class="node-sub"   x="140" y="38">UI POLLS · WS UPDATE</text>
+          </g>
+          <path d="M895 460 C 600 460 500 510 400 510" class="edge flow emerald" marker-end="url(#ra-e)"/>
+          <path d="M895 460 C 700 460 700 510 620 510" class="edge flow emerald" marker-end="url(#ra-e)"/>
+          <path d="M500 535 L 740 535" class="edge flow emerald" marker-end="url(#ra-e)"/>
+          <path d="M720 535 L 740 535" class="edge flow emerald"/>
+
+          <!-- Animated flow dots -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M250 85 L 295 85');animation:flowA 1.4s linear infinite"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 165 L 380 165');animation:flowA 1.6s linear infinite"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 255 L 380 255');animation:flowA 1.6s linear infinite .25s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 345 L 380 345');animation:flowA 1.6s linear infinite .5s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 435 L 380 435');animation:flowA 1.6s linear infinite .75s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 165 L 750 165');animation:flowA 1.8s linear infinite .4s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 255 L 750 255');animation:flowA 1.8s linear infinite .65s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 345 L 750 345');animation:flowA 1.8s linear infinite .9s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 435 L 750 435');animation:flowA 1.8s linear infinite 1.15s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M895 460 C 600 460 500 510 400 510');animation:flowA 2.4s linear infinite 1.4s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M500 535 L 740 535');animation:flowA 2.0s linear infinite 1.8s"/>
+
+          <text x="570" y="565" class="node-sub" text-anchor="middle" opacity=".7">
+            Without EXA_API_KEY, SearchAgent returns empty → Synthesis still produces "what to ask about" brief (graceful degradation)
+          </text>
+        </svg>

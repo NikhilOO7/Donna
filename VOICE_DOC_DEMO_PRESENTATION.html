@@ -1,0 +1,2851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Assistant — Architecture &amp; Flow Walkthrough</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --indigo: #4f46e5;
+      --indigo-dark: #4338ca;
+      --indigo-50: #eef2ff;
+      --indigo-100: #e0e7ff;
+      --violet: #7c3aed;
+      --violet-50: #f5f3ff;
+      --amber: #f59e0b;
+      --amber-50: #fffbeb;
+      --emerald: #10b981;
+      --emerald-50: #ecfdf5;
+      --pink: #ec4899;
+      --pink-50: #fdf2f8;
+      --sky: #0ea5e9;
+      --sky-50: #f0f9ff;
+      --red: #ef4444;
+      --red-50: #fef2f2;
+      --slate-900: #0f172a;
+      --slate-800: #1e293b;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748b;
+      --slate-400: #94a3b8;
+      --slate-300: #cbd5e1;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --slate-50:  #f8fafc;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow:    0 4px 12px rgba(15, 23, 42, 0.06);
+      --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: linear-gradient(180deg, #fafbff 0%, #f4f6fc 100%);
+      color: var(--slate-800);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- Layout ---------- */
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    aside.sidebar {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 32px 24px;
+      border-right: 1px solid var(--slate-200);
+      background: rgba(255,255,255,0.6);
+      backdrop-filter: blur(8px);
+    }
+    .sidebar h1 {
+      font-size: 16px;
+      margin: 0 0 6px;
+      color: var(--slate-900);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+    .sidebar .subtitle {
+      font-size: 12px;
+      color: var(--slate-500);
+      margin-bottom: 24px;
+    }
+    .sidebar nav ul { list-style: none; padding: 0; margin: 0; }
+    .sidebar nav > ul > li { margin: 4px 0; }
+    .sidebar nav a {
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      color: var(--slate-600);
+      text-decoration: none;
+      font-size: 13px;
+      transition: all 0.15s;
+    }
+    .sidebar nav a:hover { background: var(--indigo-50); color: var(--indigo-dark); }
+    .sidebar nav a.section { font-weight: 600; color: var(--slate-800); margin-top: 14px; }
+    .sidebar nav .sub { padding-left: 18px; }
+    .sidebar nav .sub a { font-size: 12.5px; color: var(--slate-500); padding: 4px 10px; }
+
+    main { padding: 48px 56px 120px; min-width: 0; }
+
+    /* ---------- Hero ---------- */
+    .hero {
+      position: relative;
+      padding: 48px 0 24px;
+      border-bottom: 1px solid var(--slate-200);
+      margin-bottom: 48px;
+    }
+    .hero h1 {
+      font-size: 44px;
+      margin: 0 0 12px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      background: linear-gradient(135deg, var(--indigo) 0%, var(--violet) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero .lede {
+      font-size: 18px;
+      color: var(--slate-600);
+      max-width: 720px;
+      margin: 0 0 24px;
+    }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: var(--slate-100);
+      color: var(--slate-700);
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+    .badge.indigo { background: var(--indigo-50); color: var(--indigo-dark); }
+    .badge.violet { background: var(--violet-50); color: var(--violet); }
+    .badge.amber  { background: var(--amber-50);  color: #b45309; }
+    .badge.emerald { background: var(--emerald-50); color: #047857; }
+    .badge.sky    { background: var(--sky-50);    color: #0369a1; }
+
+    /* ---------- Sections ---------- */
+    section { margin-bottom: 64px; scroll-margin-top: 24px; }
+    section > h2 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--slate-900);
+      margin: 0 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    section > .section-lede {
+      font-size: 15px;
+      color: var(--slate-600);
+      max-width: 720px;
+      margin: 0 0 24px;
+    }
+    h3 {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--slate-900);
+      margin: 32px 0 12px;
+      letter-spacing: -0.01em;
+    }
+    h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--slate-700);
+      margin: 20px 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    p { color: var(--slate-700); margin: 8px 0 14px; }
+
+    /* ---------- Section header icons ---------- */
+    .h2-icon {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* ---------- Cards / panels ---------- */
+    .panel {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow-sm);
+      margin: 14px 0;
+    }
+    .panel.accent-indigo { border-left: 3px solid var(--indigo); }
+    .panel.accent-violet { border-left: 3px solid var(--violet); }
+    .panel.accent-amber  { border-left: 3px solid var(--amber);  }
+    .panel.accent-emerald { border-left: 3px solid var(--emerald); }
+    .panel.accent-sky    { border-left: 3px solid var(--sky);    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 14px 0; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin: 14px 0; }
+    @media (max-width: 980px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    .feat {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 16px 18px;
+      transition: all 0.2s;
+    }
+    .feat:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .feat h4 { margin: 0 0 6px; text-transform: none; letter-spacing: 0; font-size: 15px; }
+    .feat p { margin: 0; font-size: 13.5px; color: var(--slate-600); }
+    .feat-icon {
+      width: 30px; height: 30px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    /* ---------- Code blocks ---------- */
+    pre, code {
+      font-family: 'JetBrains Mono', SF Mono, ui-monospace, monospace;
+    }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px 18px;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 12.5px;
+      line-height: 1.6;
+      margin: 12px 0;
+    }
+    pre .kw { color: #c084fc; }
+    pre .str { color: #86efac; }
+    pre .com { color: #64748b; font-style: italic; }
+    pre .fn  { color: #93c5fd; }
+    code.inline {
+      background: var(--slate-100);
+      color: var(--indigo-dark);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    /* ---------- API endpoints ---------- */
+    .api-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+    .api {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 12px 14px;
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      font-size: 13.5px;
+    }
+    .method {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 3px 0;
+      text-align: center;
+      border-radius: 4px;
+      color: white;
+    }
+    .method.GET    { background: #16a34a; }
+    .method.POST   { background: #2563eb; }
+    .method.DELETE { background: #dc2626; }
+    .method.WS     { background: #7c3aed; }
+    .api .path { font-family: 'JetBrains Mono', monospace; color: var(--slate-800); font-weight: 600; font-size: 13px; }
+    .api .desc { color: var(--slate-600); margin-top: 2px; font-size: 13px; }
+
+    /* ---------- Tables ---------- */
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--slate-200); text-align: left; }
+    th { background: var(--slate-50); font-weight: 600; color: var(--slate-700); font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:hover td { background: #fafbff; }
+
+    /* ---------- Diagram container (dark theme inside light page) ---------- */
+    .diagram {
+      background: radial-gradient(ellipse at top, #1a2336 0%, #0f1626 60%, #0a0f1c 100%);
+      border: 1px solid #1f2940;
+      border-radius: 14px;
+      padding: 22px 18px 16px;
+      margin: 22px 0;
+      overflow-x: auto;
+      box-shadow: 0 14px 36px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+    .diagram svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      font-family: 'Inter', sans-serif;
+    }
+    .diagram .caption {
+      font-size: 12px;
+      color: #6b7390;
+      margin-top: 12px;
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+
+    /* ---------- SVG node + edge system ---------- */
+    .node-bg       { fill:#1a2336; stroke:#2b3654; stroke-width:1.2; }
+    .node-bg.indigo  { stroke:#6366f1; fill:#1b1d3a; }
+    .node-bg.violet  { stroke:#8b5cf6; fill:#221a3a; }
+    .node-bg.amber   { stroke:#f59e0b; fill:#2c2418; }
+    .node-bg.emerald { stroke:#10b981; fill:#152a23; }
+    .node-bg.pink    { stroke:#ec4899; fill:#2a1a26; }
+    .node-bg.sky     { stroke:#0ea5e9; fill:#15273a; }
+    .node-bg.rose    { stroke:#f43f5e; fill:#2a1820; }
+    .node-bg.green   { stroke:#22c55e; fill:#152a22; }
+
+    .node-label    { fill:#eaeef4; font-size:12.5px; font-weight:600; text-anchor:middle; dominant-baseline:middle; }
+    .node-sub      { fill:#8a93ab; font-size:10.5px; text-anchor:middle; dominant-baseline:middle; letter-spacing:.06em; }
+    .node-tag      { fill:#cbd5e1; font-size:9.5px; text-anchor:middle; dominant-baseline:middle; letter-spacing:.12em; text-transform:uppercase; font-weight:700; }
+
+    .edge          { fill:none; stroke:#3a4258; stroke-width:1.4; }
+    .edge.dashed   { stroke-dasharray:5 5; }
+    .edge.flow     { stroke:#5c6788; }
+    .edge.accent   { stroke:#8b5cf6; }
+    .edge.amber    { stroke:#f59e0b; }
+    .edge.pink     { stroke:#ec4899; }
+    .edge.emerald  { stroke:#10b981; }
+    .edge.sky      { stroke:#0ea5e9; }
+
+    .edge-label {
+      fill:#9ca3b8; font-size:10.5px; text-anchor:middle;
+      font-family:'JetBrains Mono',monospace; letter-spacing:.04em;
+    }
+    .edge-label.bg { fill:#0a0f1c; }
+
+    .lane-label {
+      fill:#6b7390; font-size:10.5px; letter-spacing:.18em;
+      text-transform:uppercase; font-weight:700; text-anchor:middle;
+    }
+
+    /* Animated flow dots running along bezier paths */
+    .flow-dot {
+      filter: drop-shadow(0 0 4px currentColor);
+    }
+    @keyframes flowA { 0% { offset-distance: 0%; } 100% { offset-distance: 100%; } }
+
+    /* Subtle pulse glow on key nodes */
+    .node-pulse        { animation: nodePulse 2.6s ease-in-out infinite; }
+    .node-pulse.violet { animation-name: nodePulseViolet; }
+    .node-pulse.amber  { animation-name: nodePulseAmber; }
+    .node-pulse.emerald{ animation-name: nodePulseEmerald; }
+    @keyframes nodePulse { 0%,100% { filter: drop-shadow(0 0 0 rgba(99,102,241,0)); } 50% { filter: drop-shadow(0 0 8px rgba(99,102,241,.55)); } }
+    @keyframes nodePulseViolet  { 0%,100% { filter: drop-shadow(0 0 0 rgba(139,92,246,0)); }  50% { filter: drop-shadow(0 0 8px rgba(139,92,246,.55)); } }
+    @keyframes nodePulseAmber   { 0%,100% { filter: drop-shadow(0 0 0 rgba(245,158,11,0)); }  50% { filter: drop-shadow(0 0 8px rgba(245,158,11,.55)); } }
+    @keyframes nodePulseEmerald { 0%,100% { filter: drop-shadow(0 0 0 rgba(16,185,129,0)); }  50% { filter: drop-shadow(0 0 8px rgba(16,185,129,.55)); } }
+
+    /* Legend chip strip below diagrams */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+      margin-top: 10px; font-size: 11px; color: #8a93ab;
+    }
+    .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .swatch {
+      width: 10px; height: 10px; border-radius: 3px;
+      border: 1.5px solid; background: rgba(255,255,255,0.02);
+    }
+
+    /* ---------- Trade-off cards ---------- */
+    .tradeoff {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      padding: 14px 16px;
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      margin: 8px 0;
+      align-items: start;
+    }
+    .tradeoff .icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .tradeoff .icon.pros { background: var(--emerald-50); color: var(--emerald); }
+    .tradeoff .icon.cons { background: var(--red-50); color: var(--red); }
+    .tradeoff h5 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--slate-900); }
+    .tradeoff p { margin: 0; font-size: 13px; color: var(--slate-600); }
+
+    /* ---------- Hero diagram (custom SVG) ---------- */
+    .hero-diagram {
+      position: relative;
+      background: linear-gradient(135deg, white 0%, #fafbff 100%);
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      padding: 36px 28px;
+      margin: 32px 0 24px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ---------- Animations ---------- */
+    @keyframes fade-up {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.45); }
+      50%      { box-shadow: 0 0 0 12px rgba(79, 70, 229, 0); }
+    }
+    @keyframes dash {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes flow {
+      from { stroke-dashoffset: 40; }
+      to   { stroke-dashoffset: 0;  }
+    }
+    .anim-flow path,
+    .anim-flow line {
+      stroke-dasharray: 4 4;
+      animation: flow 1.4s linear infinite;
+    }
+    .anim-pulse { animation: pulse-glow 2.4s ease-in-out infinite; }
+    section, .panel, .feat, .diagram { animation: fade-up 0.4s ease-out both; }
+
+    /* ---------- Stack chips ---------- */
+    .stack {
+      display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px;
+    }
+    .stack span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--slate-700);
+    }
+    .stack span::before {
+      content: ''; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--indigo);
+    }
+
+    /* ---------- Callouts ---------- */
+    .callout {
+      padding: 14px 16px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      margin: 14px 0;
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .callout.note { background: var(--indigo-50); color: var(--indigo-dark); }
+    .callout.warn { background: var(--amber-50); color: #b45309; }
+    .callout.ok   { background: var(--emerald-50); color: #065f46; }
+    .callout svg { margin-top: 1px; }
+
+    /* ---------- Agent grid ---------- */
+    .agents {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 16px 0;
+    }
+    @media (max-width: 980px) { .agents { grid-template-columns: 1fr 1fr; } }
+    .agent-card {
+      background: white;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 14px 16px;
+      transition: all 0.2s;
+    }
+    .agent-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .agent-card .phase {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+    .phase.doc   { background: var(--pink-50); color: var(--pink); }
+    .phase.before { background: var(--sky-50); color: #0369a1; }
+    .phase.during { background: var(--amber-50); color: #b45309; }
+    .phase.after  { background: var(--emerald-50); color: #047857; }
+    .agent-card h5 { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: var(--slate-900); }
+    .agent-card p  { margin: 0; font-size: 12.5px; color: var(--slate-600); line-height: 1.5; }
+
+    /* ---------- Phase ribbon ---------- */
+    .ribbon {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin: 24px 0;
+    }
+    @media (max-width: 980px) { .ribbon { grid-template-columns: 1fr 1fr; } }
+    .ribbon .step {
+      position: relative;
+      padding: 18px 18px;
+      border-radius: 12px;
+      background: white;
+      border: 1px solid var(--slate-200);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .ribbon .step::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+    }
+    .ribbon .step.s1::before { background: linear-gradient(90deg, var(--pink), #f472b6); }
+    .ribbon .step.s2::before { background: linear-gradient(90deg, var(--sky), #38bdf8); }
+    .ribbon .step.s3::before { background: linear-gradient(90deg, var(--amber), #fbbf24); }
+    .ribbon .step.s4::before { background: linear-gradient(90deg, var(--emerald), #34d399); }
+    .ribbon h5 { margin: 8px 0 4px; font-size: 14px; font-weight: 700; }
+    .ribbon p  { margin: 0; font-size: 12.5px; color: var(--slate-600); }
+    .ribbon .step-num {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700;
+      color: white;
+    }
+    .ribbon .s1 .step-num { background: var(--pink); }
+    .ribbon .s2 .step-num { background: var(--sky); }
+    .ribbon .s3 .step-num { background: var(--amber); }
+    .ribbon .s4 .step-num { background: var(--emerald); }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- =================== SIDEBAR =================== -->
+  <aside class="sidebar">
+    <h1>Meeting Assistant</h1>
+    <div class="subtitle">Architecture &amp; Flow Walkthrough</div>
+    <nav>
+      <ul>
+        <li><a href="#overview" class="section">Overview</a></li>
+        <li><a href="#stack" class="section">Tech Stack</a></li>
+        <li><a href="#architecture" class="section">Architecture</a></li>
+
+        <li><a href="#knowledge-base" class="section">1. Knowledge Base</a></li>
+        <li class="sub"><a href="#kb-upload">Document Upload</a></li>
+        <li class="sub"><a href="#kb-agents">Document Agents</a></li>
+        <li class="sub"><a href="#kb-graph">Knowledge Graph</a></li>
+        <li class="sub"><a href="#kb-apis">APIs</a></li>
+
+        <li><a href="#before" class="section">2. BEFORE: Research</a></li>
+        <li class="sub"><a href="#before-flow">Pipeline Flow</a></li>
+        <li class="sub"><a href="#before-agents">Research Agents</a></li>
+        <li class="sub"><a href="#before-apis">APIs</a></li>
+
+        <li><a href="#during" class="section">3. DURING: Live</a></li>
+        <li class="sub"><a href="#during-text">Text Chat Flow</a></li>
+        <li class="sub"><a href="#during-voice">Voice Chat Flow</a></li>
+        <li class="sub"><a href="#during-agents">Meeting Agents</a></li>
+        <li class="sub"><a href="#during-memory">Memory &amp; Context</a></li>
+        <li class="sub"><a href="#during-tts">TTS Speakback</a></li>
+        <li class="sub"><a href="#during-apis">APIs</a></li>
+
+        <li><a href="#after" class="section">4. AFTER: Summary</a></li>
+        <li class="sub"><a href="#after-flow">Pipeline Flow</a></li>
+        <li class="sub"><a href="#after-apis">APIs</a></li>
+
+        <li><a href="#agent-execution" class="section">Agent Execution</a></li>
+        <li><a href="#resilience" class="section">Production Patterns</a></li>
+        <li><a href="#tradeoffs" class="section">Trade-offs</a></li>
+        <li><a href="#api-ref" class="section">API Reference</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <!-- =================== MAIN =================== -->
+  <main>
+
+    <!-- ============ HERO ============ -->
+    <header class="hero">
+      <div class="badges">
+        <span class="badge indigo">Staff-level POC</span>
+        <span class="badge violet">15 specialized agents</span>
+        <span class="badge amber">Multi-modal RAG</span>
+        <span class="badge emerald">Real-time voice</span>
+        <span class="badge sky">Neo4j knowledge graph</span>
+      </div>
+      <h1 style="margin-top:18px">Meeting Assistant — Flow &amp; Architecture</h1>
+      <p class="lede">
+        An AI-powered 3-phase meeting intelligence platform. Documents become a queryable knowledge graph,
+        pre-meeting research is auto-generated, real-time agents surface nudge cards during the meeting,
+        and a structured summary is delivered after. This document walks every feature, every API,
+        every fallback.
+      </p>
+
+      <!-- Phase ribbon -->
+      <div class="ribbon">
+        <div class="step s1"><span class="step-num">0</span><h5>Knowledge Base</h5><p>PDF → text + tables + images + knowledge graph</p></div>
+        <div class="step s2"><span class="step-num">1</span><h5>BEFORE</h5><p>Pre-meeting research via 4 web-search agents</p></div>
+        <div class="step s3"><span class="step-num">2</span><h5>DURING</h5><p>Live transcript + 5 parallel nudge agents</p></div>
+        <div class="step s4"><span class="step-num">3</span><h5>AFTER</h5><p>Structured summary + email delivery</p></div>
+      </div>
+    </header>
+
+    <!-- ============ OVERVIEW ============ -->
+    <section id="overview">
+      <h2>
+        <span class="h2-icon" style="background:var(--indigo-50);color:var(--indigo);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </span>
+        Overview
+      </h2>
+      <p class="section-lede">
+        Three temporal phases, fifteen specialized agents, one continuous data flow.
+        Each phase enriches the data model the next phase consumes.
+      </p>
+
+      <div class="grid-3">
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--pink-50);color:var(--pink);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <h4>Multi-modal documents</h4>
+          <p>Docling for layout, pdfplumber for tables, EasyOCR for charts, GPT-4o-mini to normalize. All become searchable.</p>
+        </div>
+
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--violet-50);color:var(--violet);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 6h8M6 8v8M18 8v8M8 18h8"/></svg>
+          </div>
+          <h4>Real knowledge graph</h4>
+          <p>Neo4j with Cypher traversal. Entities deduped via <code class="inline">MERGE</code>. Multi-hop paths drive in-meeting nudges.</p>
+        </div>
+
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--amber-50);color:var(--amber);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          </div>
+          <h4>Five parallel meeting agents</h4>
+          <p>Scribe, Context, Insight, Fact-check, KG-traversal. Run via <code class="inline">asyncio.gather</code> after each utterance.</p>
+        </div>
+
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--sky-50);color:var(--sky);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          </div>
+          <h4>Real voice pipeline</h4>
+          <p>LiveKit WebRTC, Deepgram streaming STT, Cartesia sonic-2 TTS. Worker auto-joins <code class="inline">meeting-&lt;id&gt;</code> rooms.</p>
+        </div>
+
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--emerald-50);color:var(--emerald);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <h4>Resilience first</h4>
+          <p>Circuit breakers per provider, retry with backoff, structured logs, Prometheus, rate limiting. Production patterns throughout.</p>
+        </div>
+
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--indigo-50);color:var(--indigo);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          </div>
+          <h4>Live UI updates</h4>
+          <p>Per-meeting WebSocket fans nudges + utterances to the React UI. 30s heartbeat is the safety net only.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TECH STACK ============ -->
+    <section id="stack">
+      <h2>
+        <span class="h2-icon" style="background:var(--violet-50);color:var(--violet);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </span>
+        Tech Stack
+      </h2>
+
+      <div class="grid-2">
+        <div class="panel accent-indigo">
+          <h4>Backend</h4>
+          <div class="stack">
+            <span>FastAPI</span>
+            <span>SQLAlchemy 2.0 async</span>
+            <span>asyncpg</span>
+            <span>PostgreSQL 15</span>
+            <span>Redis 7</span>
+            <span>Qdrant</span>
+            <span>Neo4j 5</span>
+            <span>MinIO</span>
+            <span>structlog</span>
+            <span>Prometheus</span>
+            <span>slowapi</span>
+            <span>tenacity</span>
+          </div>
+        </div>
+        <div class="panel accent-violet">
+          <h4>AI / ML</h4>
+          <div class="stack">
+            <span>OpenAI GPT-4 / 4o-mini</span>
+            <span>text-embedding-3-small</span>
+            <span>LlamaIndex</span>
+            <span>CrewAI</span>
+            <span>spaCy NER</span>
+            <span>Docling</span>
+            <span>EasyOCR</span>
+            <span>NetworkX</span>
+            <span>sentence-transformers</span>
+          </div>
+        </div>
+        <div class="panel accent-sky">
+          <h4>Voice / Real-time</h4>
+          <div class="stack">
+            <span>LiveKit WebRTC</span>
+            <span>livekit-agents</span>
+            <span>Deepgram nova-3 STT</span>
+            <span>Cartesia sonic-2 TTS</span>
+            <span>Silero VAD</span>
+            <span>WebSocket fan-out</span>
+          </div>
+        </div>
+        <div class="panel accent-amber">
+          <h4>External / Frontend</h4>
+          <div class="stack">
+            <span>Exa web search</span>
+            <span>Postmark email</span>
+            <span>Next.js 14</span>
+            <span>React 18</span>
+            <span>TypeScript</span>
+            <span>Tailwind CSS</span>
+            <span>livekit-client</span>
+            <span>axios</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ARCHITECTURE ============ -->
+    <section id="architecture">
+      <h2>
+        <span class="h2-icon" style="background:var(--sky-50);color:var(--sky);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        </span>
+        Architecture at a Glance
+      </h2>
+      <p class="section-lede">Three-tier: frontend (Next.js) → API (FastAPI) → data layer (Postgres + Redis + Qdrant + Neo4j + MinIO). Voice runs as a separate process that joins LiveKit rooms.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 540" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/>
+            </marker>
+            <marker id="arr-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/>
+            </marker>
+            <marker id="arr-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/>
+            </marker>
+            <marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/>
+            </marker>
+            <marker id="arr-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <!-- Lane labels -->
+          <text x="105"  y="28" class="lane-label">CLIENT</text>
+          <text x="345"  y="28" class="lane-label">API EDGE</text>
+          <text x="610"  y="28" class="lane-label">VOICE PROCESS</text>
+          <text x="900"  y="28" class="lane-label">DATA · EXTERNAL</text>
+
+          <!-- Lane separators -->
+          <line x1="230" y1="44" x2="230" y2="520" class="edge dashed" opacity=".35"/>
+          <line x1="475" y1="44" x2="475" y2="520" class="edge dashed" opacity=".35"/>
+          <line x1="755" y1="44" x2="755" y2="520" class="edge dashed" opacity=".35"/>
+
+          <!-- ===== Client column ===== -->
+          <g transform="translate(20,70)">
+            <rect class="node-bg indigo" width="200" height="60" rx="10"/>
+            <text class="node-label" x="100" y="22">Next.js UI</text>
+            <text class="node-sub"   x="100" y="42">REACT 18 · LIVEKIT-CLIENT</text>
+          </g>
+          <g transform="translate(20,160)">
+            <rect class="node-bg indigo" width="200" height="60" rx="10"/>
+            <text class="node-label" x="100" y="22">Browser Mic</text>
+            <text class="node-sub"   x="100" y="42">WEBRTC · LOCAL TRACK</text>
+          </g>
+
+          <!-- ===== API edge column ===== -->
+          <g transform="translate(255,70)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="76" rx="12"/>
+            <text class="node-label" x="100" y="26">FastAPI Backend</text>
+            <text class="node-sub"   x="100" y="46">ASYNC · DI · SLOWAPI</text>
+            <text class="node-tag"   x="100" y="62">/api/v1/*</text>
+          </g>
+          <g transform="translate(255,180)">
+            <rect class="node-bg sky" width="200" height="60" rx="10"/>
+            <text class="node-label" x="100" y="22">WebSocket Hub</text>
+            <text class="node-sub"   x="100" y="42">PER-MEETING FAN-OUT</text>
+          </g>
+          <g transform="translate(255,270)">
+            <rect class="node-bg violet" width="200" height="60" rx="10"/>
+            <text class="node-label" x="100" y="22">Agent Dispatcher</text>
+            <text class="node-sub"   x="100" y="42">5× PARALLEL · asyncio</text>
+          </g>
+          <g transform="translate(255,360)">
+            <rect class="node-bg violet" width="200" height="60" rx="10"/>
+            <text class="node-label" x="100" y="22">RAG · KG Endpoints</text>
+            <text class="node-sub"   x="100" y="42">/documents/* · /query</text>
+          </g>
+
+          <!-- ===== Voice process column ===== -->
+          <g transform="translate(495,70)">
+            <rect class="node-bg amber" width="240" height="60" rx="10"/>
+            <text class="node-label" x="120" y="22">LiveKit Server</text>
+            <text class="node-sub"   x="120" y="42">WEBRTC SFU · meeting-{id}</text>
+          </g>
+          <g transform="translate(495,180)" class="node-pulse amber">
+            <rect class="node-bg pink" width="240" height="76" rx="12"/>
+            <text class="node-label" x="120" y="26">Meeting Voice Worker</text>
+            <text class="node-sub"   x="120" y="46">SEPARATE PYTHON PROCESS</text>
+            <text class="node-tag"   x="120" y="62">STT LOOP · TTS PUBLISH</text>
+          </g>
+          <g transform="translate(495,300)">
+            <rect class="node-bg pink" width="240" height="60" rx="10"/>
+            <text class="node-label" x="120" y="22">Deepgram nova-3 STT</text>
+            <text class="node-sub"   x="120" y="42">RECONNECT · 1s → 15s BACKOFF</text>
+          </g>
+          <g transform="translate(495,390)">
+            <rect class="node-bg pink" width="240" height="60" rx="10"/>
+            <text class="node-label" x="120" y="22">Cartesia sonic-2 TTS</text>
+            <text class="node-sub"   x="120" y="42">pcm_s16le · 24kHz</text>
+          </g>
+
+          <!-- ===== Data / external column ===== -->
+          <g transform="translate(775,70)">
+            <rect class="node-bg emerald" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">PostgreSQL</text>
+            <text class="node-sub"   x="85" y="42">SYSTEM OF RECORD</text>
+          </g>
+          <g transform="translate(960,70)">
+            <rect class="node-bg emerald" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">Qdrant</text>
+            <text class="node-sub"   x="85" y="42">3-LEVEL VECTORS</text>
+          </g>
+          <g transform="translate(775,150)">
+            <rect class="node-bg emerald" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">Neo4j</text>
+            <text class="node-sub"   x="85" y="42">KNOWLEDGE GRAPH</text>
+          </g>
+          <g transform="translate(960,150)">
+            <rect class="node-bg emerald" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">Redis</text>
+            <text class="node-sub"   x="85" y="42">CACHE · PUB/SUB</text>
+          </g>
+          <g transform="translate(775,230)">
+            <rect class="node-bg emerald" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">MinIO</text>
+            <text class="node-sub"   x="85" y="42">FILE STORAGE</text>
+          </g>
+
+          <g transform="translate(775,330)">
+            <rect class="node-bg amber" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">OpenAI</text>
+            <text class="node-sub"   x="85" y="42">GPT-4 · EMBEDDINGS</text>
+          </g>
+          <g transform="translate(960,330)">
+            <rect class="node-bg amber" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">Exa</text>
+            <text class="node-sub"   x="85" y="42">SEMANTIC WEB SEARCH</text>
+          </g>
+          <g transform="translate(775,410)">
+            <rect class="node-bg amber" width="170" height="58" rx="10"/>
+            <text class="node-label" x="85" y="22">Postmark</text>
+            <text class="node-sub"   x="85" y="42">EMAIL DELIVERY</text>
+          </g>
+
+          <!-- ===== Edges: Client → API ===== -->
+          <path d="M220 100 C 240 100 240 100 255 100" class="edge flow accent" marker-end="url(#arr-violet)"/>
+          <text x="237" y="93" class="edge-label">REST</text>
+
+          <path d="M220 210 C 240 210 240 210 255 210" class="edge flow sky dashed"/>
+          <text x="237" y="203" class="edge-label">WS</text>
+
+          <!-- Client → LiveKit (audio) -->
+          <path d="M220 190 C 360 190 380 100 495 100" class="edge flow amber" marker-end="url(#arr-amber)"/>
+          <text x="370" y="135" class="edge-label">WEBRTC</text>
+
+          <!-- LiveKit ↔ Worker -->
+          <path d="M615 130 L 615 180" class="edge flow amber" marker-end="url(#arr-amber)"/>
+          <path d="M620 256 L 620 130" class="edge flow amber dashed" opacity=".7"/>
+
+          <!-- Worker → Deepgram -->
+          <path d="M615 256 L 615 300" class="edge flow pink" marker-end="url(#arr-pink)"/>
+          <!-- Worker → Cartesia -->
+          <path d="M615 256 C 615 320 615 360 615 390" class="edge flow pink" marker-end="url(#arr-pink)"/>
+
+          <!-- Worker → API (utterances POST) -->
+          <path d="M495 210 C 480 210 470 100 455 100" class="edge flow" marker-end="url(#arr)"/>
+          <text x="475" y="148" class="edge-label">POST</text>
+
+          <!-- Redis pub/sub: API → Worker -->
+          <path d="M960 180 C 760 180 700 240 615 256" class="edge flow sky dashed" opacity=".6"/>
+          <text x="780" y="265" class="edge-label">speak pubsub</text>
+
+          <!-- API → Postgres -->
+          <path d="M455 110 C 600 110 700 99 775 99" class="edge flow" marker-end="url(#arr)"/>
+          <!-- API → Qdrant -->
+          <path d="M455 380 C 700 380 800 99 960 99" class="edge flow" marker-end="url(#arr)" opacity=".7"/>
+          <!-- API → Neo4j -->
+          <path d="M455 380 C 700 380 720 179 775 179" class="edge flow" marker-end="url(#arr)" opacity=".7"/>
+          <!-- API → Redis -->
+          <path d="M455 210 C 700 210 850 179 960 179" class="edge flow" marker-end="url(#arr)" opacity=".7"/>
+          <!-- API → MinIO -->
+          <path d="M455 380 C 660 380 720 259 775 259" class="edge flow" marker-end="url(#arr)" opacity=".7"/>
+          <!-- API → OpenAI -->
+          <path d="M455 300 C 600 300 720 359 775 359" class="edge flow amber" marker-end="url(#arr-amber)"/>
+          <!-- API → Exa -->
+          <path d="M455 390 C 700 390 850 359 960 359" class="edge flow amber" marker-end="url(#arr-amber)"/>
+          <!-- API → Postmark -->
+          <path d="M455 390 C 600 390 720 439 775 439" class="edge flow amber" marker-end="url(#arr-amber)"/>
+
+          <!-- ===== Animated flow dots (the centerpiece) ===== -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot"
+                  style="color:#8b5cf6;offset-path:path('M220 100 C 240 100 240 100 255 100');animation:flowA 1.8s linear infinite"/>
+          <circle r="3" fill="#0ea5e9" class="flow-dot"
+                  style="color:#0ea5e9;offset-path:path('M255 210 L 220 210');animation:flowA 1.6s linear infinite .3s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot"
+                  style="color:#f59e0b;offset-path:path('M220 190 C 360 190 380 100 495 100');animation:flowA 2.6s linear infinite"/>
+          <circle r="3.2" fill="#ec4899" class="flow-dot"
+                  style="color:#ec4899;offset-path:path('M615 130 L 615 180');animation:flowA 1.4s linear infinite .2s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot"
+                  style="color:#ec4899;offset-path:path('M615 256 L 615 300');animation:flowA 1.6s linear infinite .6s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot"
+                  style="color:#5c6788;offset-path:path('M495 210 C 480 210 470 100 455 100');animation:flowA 2.4s linear infinite 1s"/>
+          <circle r="3" fill="#0ea5e9" class="flow-dot"
+                  style="color:#0ea5e9;offset-path:path('M960 180 C 760 180 700 240 615 256');animation:flowA 3.2s linear infinite 1.4s"/>
+
+          <text x="570" y="520" class="node-sub" text-anchor="middle" opacity=".7">
+            Worker auto-joins meeting-* rooms · API never touches audio · Redis pubsub bridges API → Worker for TTS
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>Client</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>API</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>Worker / external voice</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Datastore</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>External AI service</span>
+        </div>
+        <div class="caption">Live request paths animated. Solid lines = sync REST · Dashed = WebSocket / pub-sub · Amber edges = WebRTC + LLM hops.</div>
+      </div>
+    </section>
+
+    <!-- ============ KNOWLEDGE BASE ============ -->
+    <section id="knowledge-base">
+      <h2>
+        <span class="h2-icon" style="background:var(--pink-50);color:var(--pink);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </span>
+        1. Knowledge Base — Document Intelligence
+      </h2>
+      <p class="section-lede">
+        PDFs enter the system, four specialized agents extract structure (text, tables, images, entities, relationships),
+        and the result lands in three stores: PostgreSQL (records), Qdrant (3-level contextual vectors), and Neo4j (knowledge graph).
+      </p>
+
+      <!-- ---------- Workflow ---------- -->
+      <h3 id="kb-upload">Document Upload &amp; Processing Workflow</h3>
+      <div class="diagram">
+        <svg viewBox="0 0 1140 640" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="arr2-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="arr2-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="arr2-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+          </defs>
+
+          <!-- Stage band labels (left margin) -->
+          <text x="60" y="28" class="lane-label" text-anchor="start">STAGE 1 · PERSIST</text>
+          <text x="60" y="178" class="lane-label" text-anchor="start">STAGE 2 · MULTI-MODAL EXTRACTION</text>
+          <text x="60" y="358" class="lane-label" text-anchor="start">STAGE 3 · EMBED &amp; INDEX</text>
+          <text x="60" y="478" class="lane-label" text-anchor="start">STAGE 4 · KNOWLEDGE GRAPH</text>
+
+          <!-- Stage band backgrounds -->
+          <rect x="50" y="38" width="1040" height="110" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="188" width="1040" height="140" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="368" width="1040" height="90"  rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="488" width="1040" height="130" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+
+          <!-- ===== STAGE 1: Entry + Persist ===== -->
+          <g transform="translate(70,60)">
+            <rect class="node-bg indigo" width="180" height="68" rx="10"/>
+            <text class="node-label" x="90" y="26">👤 User drops PDF</text>
+            <text class="node-sub"   x="90" y="48">DRAG-DROP · BROWSE</text>
+          </g>
+          <g transform="translate(295,60)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">POST /documents/upload</text>
+            <text class="node-sub"   x="100" y="48">FASTAPI · MULTIPART</text>
+          </g>
+          <g transform="translate(545,60)">
+            <rect class="node-bg emerald" width="170" height="68" rx="10"/>
+            <text class="node-label" x="85" y="26">MinIO</text>
+            <text class="node-sub"   x="85" y="48">RAW PDF STORED</text>
+          </g>
+          <g transform="translate(740,60)">
+            <rect class="node-bg emerald" width="170" height="68" rx="10"/>
+            <text class="node-label" x="85" y="26">PostgreSQL</text>
+            <text class="node-sub"   x="85" y="48">STATUS = processing</text>
+          </g>
+          <g transform="translate(935,60)">
+            <rect class="node-bg" width="140" height="68" rx="10"/>
+            <text class="node-label" x="70" y="26">200 OK</text>
+            <text class="node-sub"   x="70" y="48">{ document_id }</text>
+          </g>
+          <path d="M250 94 L 295 94"  class="edge flow accent" marker-end="url(#arr2-violet)"/>
+          <path d="M495 84 L 545 84"  class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <path d="M495 104 L 545 104" class="edge flow emerald" marker-end="url(#arr2-emerald)" opacity=".0"/>
+          <path d="M495 104 L 740 104" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <path d="M495 94 C 800 94 800 94 935 94" class="edge flow dashed" opacity=".5"/>
+
+          <!-- ===== STAGE 2: Extraction ===== -->
+          <g transform="translate(70,215)" class="node-pulse amber">
+            <rect class="node-bg amber" width="220" height="86" rx="12"/>
+            <text class="node-label" x="110" y="26">🔍 LayoutAgent</text>
+            <text class="node-sub"   x="110" y="46">DOCLING · pdfplumber fallback</text>
+            <text class="node-tag"   x="110" y="68">DETECTS · TEXT · TABLES · IMAGES</text>
+          </g>
+          <g transform="translate(340,205)">
+            <rect class="node-bg" width="150" height="48" rx="8"/>
+            <text class="node-label" x="75" y="28">📄 text chunks</text>
+          </g>
+          <g transform="translate(340,253)">
+            <rect class="node-bg" width="150" height="48" rx="8"/>
+            <text class="node-label" x="75" y="28">📊 raw tables</text>
+          </g>
+          <g transform="translate(340,301)">
+            <rect class="node-bg" width="150" height="48" rx="8"/>
+            <text class="node-label" x="75" y="28">🖼 image regions</text>
+          </g>
+          <g transform="translate(540,253)">
+            <rect class="node-bg amber" width="220" height="48" rx="8"/>
+            <text class="node-label" x="110" y="20">📊 TableAgent</text>
+            <text class="node-sub"   x="110" y="38">GPT-4o-mini · MARKDOWN</text>
+          </g>
+          <g transform="translate(540,301)">
+            <rect class="node-bg amber" width="220" height="48" rx="8"/>
+            <text class="node-label" x="110" y="20">🖼 ImageAgent</text>
+            <text class="node-sub"   x="110" y="38">EASYOCR + CAPTIONS</text>
+          </g>
+          <g transform="translate(810,253)">
+            <rect class="node-bg" width="170" height="48" rx="8"/>
+            <text class="node-label" x="85" y="28">markdown tables</text>
+          </g>
+          <g transform="translate(810,301)">
+            <rect class="node-bg" width="170" height="48" rx="8"/>
+            <text class="node-label" x="85" y="28">OCR + captions</text>
+          </g>
+          <path d="M290 240 C 320 240 320 229 340 229" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M290 258 C 320 258 320 277 340 277" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M290 276 C 320 276 320 325 340 325" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M490 277 L 540 277" class="edge flow amber" marker-end="url(#arr2-amber)"/>
+          <path d="M490 325 L 540 325" class="edge flow amber" marker-end="url(#arr2-amber)"/>
+          <path d="M760 277 L 810 277" class="edge flow" marker-end="url(#arr2)"/>
+          <path d="M760 325 L 810 325" class="edge flow" marker-end="url(#arr2)"/>
+
+          <!-- ===== STAGE 3: Embed ===== -->
+          <g transform="translate(70,395)">
+            <rect class="node-bg violet" width="240" height="48" rx="8"/>
+            <text class="node-label" x="120" y="20">🧬 Append synthetic chunks</text>
+            <text class="node-sub"   x="120" y="38">TABLES + IMAGES AS TEXT</text>
+          </g>
+          <g transform="translate(380,395)" class="node-pulse violet">
+            <rect class="node-bg amber" width="240" height="48" rx="8"/>
+            <text class="node-label" x="120" y="20">⚡ ContextualEmbeddingGen</text>
+            <text class="node-sub"   x="120" y="38">3-LEVEL · OPENAI EMBEDDINGS</text>
+          </g>
+          <g transform="translate(690,395)">
+            <rect class="node-bg emerald" width="240" height="48" rx="8"/>
+            <text class="node-label" x="120" y="20">🔎 Qdrant</text>
+            <text class="node-sub"   x="120" y="38">LOCAL · DOCUMENT · GLOBAL</text>
+          </g>
+          <path d="M310 419 L 380 419" class="edge flow accent" marker-end="url(#arr2-violet)"/>
+          <path d="M620 419 L 690 419" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <!-- text/table/image → append -->
+          <path d="M415 229 C 440 229 60 380 145 395" class="edge flow dashed" opacity=".5"/>
+          <path d="M980 277 C 1010 277 60 395 190 395" class="edge flow dashed" opacity=".0"/>
+          <path d="M980 277 C 1010 320 60 380 190 410" class="edge flow dashed" opacity=".4"/>
+          <path d="M980 325 C 1010 360 60 410 190 425" class="edge flow dashed" opacity=".4"/>
+
+          <!-- ===== STAGE 4: KG ===== -->
+          <g transform="translate(70,510)">
+            <rect class="node-bg amber" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">🏷 Per-chunk entities</text>
+            <text class="node-sub"   x="100" y="48">SPACY NER · chunk_id LINKAGE</text>
+          </g>
+          <g transform="translate(320,510)" class="node-pulse amber">
+            <rect class="node-bg amber" width="240" height="68" rx="10"/>
+            <text class="node-label" x="120" y="26">🔗 RelationshipAgent</text>
+            <text class="node-sub"   x="120" y="48">GPT-4o-mini · ENTITY PAIRS</text>
+          </g>
+          <g transform="translate(610,510)">
+            <rect class="node-bg emerald" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">PostgreSQL</text>
+            <text class="node-sub"   x="100" y="48">entity_relationships</text>
+          </g>
+          <g transform="translate(860,510)" class="node-pulse emerald">
+            <rect class="node-bg emerald" width="200" height="68" rx="10"/>
+            <text class="node-label" x="100" y="26">🧠 Neo4j MERGE</text>
+            <text class="node-sub"   x="100" y="48">AUTO-DEDUP · CYPHER QUERIES</text>
+          </g>
+          <path d="M270 544 L 320 544" class="edge flow amber" marker-end="url(#arr2-amber)"/>
+          <path d="M560 544 L 610 544" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+          <path d="M560 530 C 600 530 800 530 860 530" class="edge flow emerald" marker-end="url(#arr2-emerald)"/>
+
+          <!-- Text chunks feed entity extraction (cross-stage) -->
+          <path d="M415 229 C 50 350 30 540 70 544" class="edge flow dashed" opacity=".3"/>
+
+          <!-- ===== Animated flow dots ===== -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M250 94 L 295 94');animation:flowA 1.4s linear infinite"/>
+          <circle r="3"   fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M495 84 L 545 84');animation:flowA 1.5s linear infinite .2s"/>
+          <circle r="3"   fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M495 104 L 740 104');animation:flowA 2.2s linear infinite .4s"/>
+          <circle r="3.5" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M290 258 C 320 258 320 277 340 277');animation:flowA 1.6s linear infinite .3s"/>
+          <circle r="3"   fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M490 277 L 540 277');animation:flowA 1.4s linear infinite .8s"/>
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M310 419 L 380 419');animation:flowA 1.3s linear infinite"/>
+          <circle r="3.5" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M620 419 L 690 419');animation:flowA 1.3s linear infinite .6s"/>
+          <circle r="3.5" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M270 544 L 320 544');animation:flowA 1.4s linear infinite"/>
+          <circle r="3"   fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M560 530 C 600 530 800 530 860 530');animation:flowA 2.0s linear infinite .9s"/>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>API / Process</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>Agent (LLM-backed)</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Datastore</span>
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>User input</span>
+        </div>
+        <div class="caption">Document processing pipeline — orchestrated by <code class="inline">enhanced_pipeline.py</code>, runs as a FastAPI BackgroundTask so upload returns immediately.</div>
+      </div>
+
+      <!-- ---------- Agents ---------- -->
+      <h3 id="kb-agents">The Four Document Agents</h3>
+      <div class="agents">
+        <div class="agent-card">
+          <span class="phase doc">Document</span>
+          <h5>LayoutAgent</h5>
+          <p>Docling first; falls back to pdfplumber. Detects text blocks, tables, images, page boundaries. <code class="inline">apps/api/services/document/layout_agent.py</code></p>
+        </div>
+        <div class="agent-card">
+          <span class="phase doc">Document</span>
+          <h5>TableAgent</h5>
+          <p>Raw nested-list tables → markdown via GPT-4o-mini cleanup. Normalizes headers, removes empty rows, formats data.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase doc">Document</span>
+          <h5>ImageAgent</h5>
+          <p>EasyOCR extracts text from image regions; PyMuPDF crops bboxes; describes via positioned captions.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase doc">Document</span>
+          <h5>RelationshipAgent</h5>
+          <p>Per-chunk: spaCy NER entities → GPT-4o-mini extracts <code class="inline">works_at</code>, <code class="inline">part_of</code>, <code class="inline">decided_on</code>, etc.</p>
+        </div>
+      </div>
+
+      <!-- ---------- Knowledge graph ---------- -->
+      <h3 id="kb-graph">Knowledge Graph — Dual-Store Design</h3>
+      <p>
+        PostgreSQL is the system of record (foreign-key integrity to documents/chunks). Neo4j is the query layer
+        — multi-hop traversal during meetings happens in Cypher, not in in-memory NetworkX.
+        Entity dedup is automatic via <code class="inline">MERGE (e:Entity {normalized, type})</code>.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 460" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="kgarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="kgarr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+          </defs>
+
+          <text x="570" y="28" class="lane-label" text-anchor="middle">SAMPLE KNOWLEDGE GRAPH · vendor evaluation document</text>
+
+          <!-- Edges (drawn first so nodes overlap) -->
+          <!-- Jane Calder → Acme (works_at) -->
+          <path d="M340 230 C 390 230 410 230 460 230" class="edge flow amber" marker-end="url(#kgarr-amber)"/>
+          <text x="400" y="220" class="edge-label" style="fill:#f59e0b">works_at</text>
+
+          <!-- Jane Calder → Beacon Cloud (co_certified_with) -->
+          <path d="M280 200 C 280 130 700 100 800 150" class="edge flow amber" marker-end="url(#kgarr-amber)"/>
+          <text x="540" y="100" class="edge-label" style="fill:#f59e0b">co_certified_with</text>
+
+          <!-- Acme → Beacon Cloud (competes_with) -->
+          <path d="M620 215 C 700 200 760 165 800 165" class="edge flow" marker-end="url(#kgarr)"/>
+          <text x="710" y="180" class="edge-label">competes_with</text>
+
+          <!-- Acme → CoreScale (competes_with) -->
+          <path d="M620 245 C 700 270 760 290 800 300" class="edge flow" marker-end="url(#kgarr)"/>
+          <text x="710" y="290" class="edge-label">competes_with</text>
+
+          <!-- CoreScale → Beacon Cloud (spun_out_from) -->
+          <path d="M880 280 C 920 260 920 200 880 195" class="edge flow amber" marker-end="url(#kgarr-amber)"/>
+          <text x="950" y="240" class="edge-label" style="fill:#f59e0b">spun_out_from</text>
+
+          <!-- Beacon Cloud → Q2 (reviewed_in) -->
+          <path d="M880 165 C 970 140 1010 150 1020 200" class="edge flow dashed" opacity=".7"/>
+          <text x="1010" y="135" class="edge-label">reviewed_in</text>
+
+          <!-- ===== Nodes (circles + labels) ===== -->
+          <!-- Jane Calder (PERSON) — pulsing accent node -->
+          <g transform="translate(220,230)" class="node-pulse violet">
+            <circle r="60" class="node-bg violet"/>
+            <text class="node-tag" x="0" y="-18" style="fill:#a78bfa">PERSON</text>
+            <text class="node-label" x="0" y="2">Jane Calder</text>
+            <text class="node-sub" x="0" y="22">CEO · ACME</text>
+          </g>
+
+          <!-- Acme (ORG) -->
+          <g transform="translate(540,230)">
+            <circle r="54" class="node-bg indigo"/>
+            <text class="node-tag" x="0" y="-18" style="fill:#818cf8">ORG</text>
+            <text class="node-label" x="0" y="2">Acme</text>
+            <text class="node-sub" x="0" y="20">SEARCH</text>
+          </g>
+
+          <!-- Beacon Cloud (ORG) -->
+          <g transform="translate(840,160)">
+            <circle r="56" class="node-bg sky"/>
+            <text class="node-tag" x="0" y="-20" style="fill:#38bdf8">ORG</text>
+            <text class="node-label" x="0" y="0">Beacon Cloud</text>
+            <text class="node-sub" x="0" y="20">COMPLIANCE</text>
+          </g>
+
+          <!-- CoreScale (ORG) -->
+          <g transform="translate(840,310)">
+            <circle r="52" class="node-bg indigo"/>
+            <text class="node-tag" x="0" y="-18" style="fill:#818cf8">ORG</text>
+            <text class="node-label" x="0" y="2">CoreScale</text>
+            <text class="node-sub" x="0" y="20">LOW-COST</text>
+          </g>
+
+          <!-- Q2 (DATE) -->
+          <g transform="translate(1040,230)">
+            <circle r="40" class="node-bg amber"/>
+            <text class="node-tag" x="0" y="-15" style="fill:#fbbf24">DATE</text>
+            <text class="node-label" x="0" y="6">Q2</text>
+          </g>
+
+          <!-- ===== Animated flow dots traversing the relationships ===== -->
+          <circle r="3.5" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M340 230 C 390 230 410 230 460 230');animation:flowA 2.0s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M280 200 C 280 130 700 100 800 150');animation:flowA 3.4s linear infinite .2s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M620 215 C 700 200 760 165 800 165');animation:flowA 2.4s linear infinite .6s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M620 245 C 700 270 760 290 800 300');animation:flowA 2.4s linear infinite .9s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M880 280 C 920 260 920 200 880 195');animation:flowA 2.0s linear infinite 1.2s"/>
+
+          <text x="570" y="430" class="node-sub" text-anchor="middle" opacity=".7">
+            kg_query_agent traverses these edges with Cypher (1-2 hops) when meeting utterances mention any of these entities
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>PERSON</span>
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>ORG</span>
+          <span class="item"><span class="swatch" style="border-color:#0ea5e9"></span>ORG (focus)</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>DATE / direct edges</span>
+        </div>
+        <div class="caption">Sample knowledge graph extracted from a vendor evaluation document. Amber edges animate to show <code class="inline">kg_query_agent</code> path traversal.</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="tradeoff">
+          <div class="icon pros">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div>
+            <h5>Auto-dedup via MERGE</h5>
+            <p>5 spaCy hits of "Acme" across 5 chunks collapse into one node. No separate dedup pass.</p>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <div class="icon pros">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div>
+            <h5>Cypher path queries</h5>
+            <p>1-hop and 2-hop neighbor lookups in milliseconds. NetworkX-in-memory wouldn't scale past 10k edges.</p>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <div class="icon cons">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div>
+            <h5>Dual-write complexity</h5>
+            <p>Two writes per relationship. Mitigated by best-effort mirror — Neo4j failures don't fail the upload.</p>
+          </div>
+        </div>
+        <div class="tradeoff">
+          <div class="icon cons">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div>
+            <h5>Eventual consistency</h5>
+            <p>If Neo4j sync silently fails, PostgreSQL still has the edges — endpoint falls back automatically.</p>
+          </div>
+        </div>
+      </div>
+
+      <h4>Fallback Strategy</h4>
+      <p>
+        The <code class="inline">GET /documents/{id}/knowledge-graph</code> endpoint tries Neo4j first.
+        On miss or unavailability, it reads from PostgreSQL <code class="inline">entities</code> +
+        <code class="inline">entity_relationships</code> tables. The response includes
+        <code class="inline">"source": "neo4j" | "postgresql"</code> so the UI can show provenance.
+      </p>
+
+      <!-- ---------- APIs ---------- -->
+      <h3 id="kb-apis">Knowledge Base APIs</h3>
+      <div class="api-list">
+        <div class="api">
+          <div class="method POST">POST</div>
+          <div>
+            <div class="path">/api/v1/documents/upload</div>
+            <div class="desc">Multipart upload. Stores to MinIO, kicks off background processing pipeline. Returns <code class="inline">document_id</code>.</div>
+          </div>
+        </div>
+        <div class="api">
+          <div class="method GET">GET</div>
+          <div>
+            <div class="path">/api/v1/documents/{id}</div>
+            <div class="desc">Document metadata + chunks + processing status. Includes <code class="inline">knowledge_graph</code> stats from extraction.</div>
+          </div>
+        </div>
+        <div class="api">
+          <div class="method GET">GET</div>
+          <div>
+            <div class="path">/api/v1/documents/{id}/elements</div>
+            <div class="desc">Tables + images + charts extracted by the enhanced pipeline. Rendered in the KB panel "Tables &amp; Images" tab.</div>
+          </div>
+        </div>
+        <div class="api">
+          <div class="method GET">GET</div>
+          <div>
+            <div class="path">/api/v1/documents/{id}/knowledge-graph</div>
+            <div class="desc">Entities + relationships as <code class="inline">{nodes, edges}</code>. Neo4j-first with PostgreSQL fallback.</div>
+          </div>
+        </div>
+        <div class="api">
+          <div class="method POST">POST</div>
+          <div>
+            <div class="path">/api/v1/query</div>
+            <div class="desc">RAG query across all uploaded docs. Uses <code class="inline">ModernRAGService</code> + LlamaIndex query routing.</div>
+          </div>
+        </div>
+        <div class="api">
+          <div class="method DELETE">DELETE</div>
+          <div>
+            <div class="path">/api/v1/documents/{id}</div>
+            <div class="desc">Cascading delete: chunks, embeddings (Qdrant), entities, MinIO file. Neo4j cleanup is async.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BEFORE ============ -->
+    <section id="before">
+      <h2>
+        <span class="h2-icon" style="background:var(--sky-50);color:var(--sky);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+        2. BEFORE — Pre-Meeting Research
+      </h2>
+      <p class="section-lede">
+        The user creates a meeting and clicks <strong>Run Pre-Meeting Research</strong>. A 4-agent pipeline
+        extracts topics, fetches web sources, validates them, and synthesizes an executive brief — all in
+        under a minute.
+      </p>
+
+      <h3 id="before-flow">Pipeline Flow</h3>
+      <div class="diagram">
+        <svg viewBox="0 0 1140 580" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="ra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="ra-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="ra-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="ra-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="ra-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+          </defs>
+
+          <!-- Column labels -->
+          <text x="180" y="28" class="lane-label">AGENT</text>
+          <text x="490" y="28" class="lane-label">LLM / EXTERNAL</text>
+          <text x="870" y="28" class="lane-label">OUTPUT</text>
+
+          <!-- Lane separators -->
+          <line x1="340" y1="44" x2="340" y2="495" class="edge dashed" opacity=".3"/>
+          <line x1="710" y1="44" x2="710" y2="495" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== Header row: User → Endpoint ===== -->
+          <g transform="translate(70,60)">
+            <rect class="node-bg indigo" width="180" height="50" rx="10"/>
+            <text class="node-label" x="90" y="20">👤 User clicks</text>
+            <text class="node-sub"   x="90" y="38">RUN RESEARCH</text>
+          </g>
+          <g transform="translate(295,60)" class="node-pulse violet">
+            <rect class="node-bg violet" width="240" height="50" rx="10"/>
+            <text class="node-label" x="120" y="20">POST /meetings/id/research</text>
+            <text class="node-sub"   x="120" y="38">FASTAPI · BACKGROUND TASK</text>
+          </g>
+          <g transform="translate(580,60)">
+            <rect class="node-bg" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">200 OK</text>
+            <text class="node-sub"   x="100" y="38">STATUS: RESEARCHING</text>
+          </g>
+          <path d="M250 85 L 295 85" class="edge flow accent" marker-end="url(#ra-v)"/>
+          <path d="M535 85 L 580 85" class="edge flow dashed" opacity=".5"/>
+
+          <!-- ===== Stage 1: Topic extraction ===== -->
+          <g transform="translate(70,148)">
+            <rect class="node-tag" width="34" height="34" rx="17" fill="#1b1d3a" stroke="#8b5cf6" stroke-width="1.5"
+                  style="display:none"/>
+            <circle cx="17" cy="17" r="17" fill="#1b1d3a" stroke="#8b5cf6" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">1</text>
+          </g>
+          <g transform="translate(120,140)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🧭 TopicAgent</text>
+            <text class="node-sub"   x="100" y="38">EXTRACT RESEARCH TOPICS</text>
+          </g>
+          <g transform="translate(380,140)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🤖 GPT-4o-mini</text>
+            <text class="node-sub"   x="100" y="38">JSON · 3-5 TOPICS</text>
+          </g>
+          <g transform="translate(750,140)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">📋 topics + seed queries</text>
+            <text class="node-sub"   x="135" y="38">3-5 ITEMS</text>
+          </g>
+          <path d="M320 165 L 380 165" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 165 L 750 165" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Stage 2: Web search (parallel) ===== -->
+          <g transform="translate(70,238)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">2</text>
+          </g>
+          <g transform="translate(120,230)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🔍 SearchAgent</text>
+            <text class="node-sub"   x="100" y="38">FAN-OUT · ASYNCIO.GATHER</text>
+          </g>
+          <g transform="translate(380,220)">
+            <rect class="node-bg pink" width="200" height="70" rx="10"/>
+            <text class="node-label" x="100" y="22">🌐 Exa</text>
+            <text class="node-sub"   x="100" y="40">SEMANTIC SEARCH</text>
+            <text class="node-tag"   x="100" y="58">AUTOPROMPT</text>
+          </g>
+          <g transform="translate(750,230)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">📰 10 raw sources / topic</text>
+            <text class="node-sub"   x="135" y="38">URL · TITLE · 1500-CHAR SNIPPET</text>
+          </g>
+          <path d="M895 190 L 200 230" class="edge flow dashed" opacity=".4"/>
+          <path d="M320 255 L 380 255" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 255 L 750 255" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Stage 3: Validation ===== -->
+          <g transform="translate(70,328)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">3</text>
+          </g>
+          <g transform="translate(120,320)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">⚖ ValidationAgent</text>
+            <text class="node-sub"   x="100" y="38">TIER + CREDIBILITY</text>
+          </g>
+          <g transform="translate(380,320)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🤖 GPT-4o-mini</text>
+            <text class="node-sub"   x="100" y="38">CLASSIFY 1 · 2 · 3</text>
+          </g>
+          <g transform="translate(750,320)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">🏆 top 5 per topic</text>
+            <text class="node-sub"   x="135" y="38">TIER · SCORE · URL</text>
+          </g>
+          <path d="M895 280 L 200 320" class="edge flow dashed" opacity=".4"/>
+          <path d="M320 345 L 380 345" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 345 L 750 345" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Stage 4: Synthesis ===== -->
+          <g transform="translate(70,418)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">4</text>
+          </g>
+          <g transform="translate(120,410)" class="node-pulse amber">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">📝 SynthesisAgent</text>
+            <text class="node-sub"   x="100" y="38">EXECUTIVE BRIEF</text>
+          </g>
+          <g transform="translate(380,410)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🤖 GPT-4</text>
+            <text class="node-sub"   x="100" y="38">JSON MODE</text>
+          </g>
+          <g transform="translate(750,410)">
+            <rect class="node-bg" width="270" height="50" rx="10"/>
+            <text class="node-label" x="135" y="20">📑 research brief</text>
+            <text class="node-sub"   x="135" y="38">SUMMARY · FINDINGS · GAPS</text>
+          </g>
+          <path d="M895 370 L 200 410" class="edge flow dashed" opacity=".4"/>
+          <path d="M320 435 L 380 435" class="edge flow pink" marker-end="url(#ra-p)"/>
+          <path d="M580 435 L 750 435" class="edge flow" marker-end="url(#ra)"/>
+
+          <!-- ===== Persistence + done ===== -->
+          <g transform="translate(300,510)">
+            <rect class="node-bg emerald" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🗄 PostgreSQL</text>
+            <text class="node-sub"   x="100" y="38">research_briefs</text>
+          </g>
+          <g transform="translate(520,510)">
+            <rect class="node-bg emerald" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🔎 Qdrant</text>
+            <text class="node-sub"   x="100" y="38">EMBEDDED FOR CONTEXT AGENT</text>
+          </g>
+          <g transform="translate(740,510)" class="node-pulse emerald">
+            <rect class="node-bg green" width="280" height="50" rx="10"/>
+            <text class="node-label" x="140" y="20">✅ Brief ready</text>
+            <text class="node-sub"   x="140" y="38">UI POLLS · WS UPDATE</text>
+          </g>
+          <path d="M895 460 C 600 460 500 510 400 510" class="edge flow emerald" marker-end="url(#ra-e)"/>
+          <path d="M895 460 C 700 460 700 510 620 510" class="edge flow emerald" marker-end="url(#ra-e)"/>
+          <path d="M500 535 L 740 535" class="edge flow emerald" marker-end="url(#ra-e)"/>
+          <path d="M720 535 L 740 535" class="edge flow emerald"/>
+
+          <!-- Animated flow dots -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M250 85 L 295 85');animation:flowA 1.4s linear infinite"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 165 L 380 165');animation:flowA 1.6s linear infinite"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 255 L 380 255');animation:flowA 1.6s linear infinite .25s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 345 L 380 345');animation:flowA 1.6s linear infinite .5s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M320 435 L 380 435');animation:flowA 1.6s linear infinite .75s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 165 L 750 165');animation:flowA 1.8s linear infinite .4s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 255 L 750 255');animation:flowA 1.8s linear infinite .65s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 345 L 750 345');animation:flowA 1.8s linear infinite .9s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M580 435 L 750 435');animation:flowA 1.8s linear infinite 1.15s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M895 460 C 600 460 500 510 400 510');animation:flowA 2.4s linear infinite 1.4s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M500 535 L 740 535');animation:flowA 2.0s linear infinite 1.8s"/>
+
+          <text x="570" y="565" class="node-sub" text-anchor="middle" opacity=".7">
+            Without EXA_API_KEY, SearchAgent returns empty → Synthesis still produces "what to ask about" brief (graceful degradation)
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>User</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>API</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>Agent</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>LLM / External</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Datastore</span>
+        </div>
+        <div class="caption">Pre-meeting research pipeline. Each agent has a single responsibility; <code class="inline">asyncio.gather</code> fans out search across topics.</div>
+      </div>
+
+      <h3 id="before-agents">Research Agents</h3>
+      <div class="agents">
+        <div class="agent-card">
+          <span class="phase before">Before</span>
+          <h5>TopicAgent</h5>
+          <p>GPT-4o-mini reads the meeting title + description, extracts 3-5 research-worthy topics with seed queries.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase before">Before</span>
+          <h5>SearchAgent</h5>
+          <p>Exa <code class="inline">search_and_contents</code> with <code class="inline">use_autoprompt=True</code>. Per-query 1500-char text snippets, dedup by URL.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase before">Before</span>
+          <h5>ValidationAgent</h5>
+          <p>GPT-4o-mini classifies each source into Tier 1 (academic / official), 2 (reputable outlet), 3 (forum/blog). Filters to top 5.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase before">Before</span>
+          <h5>SynthesisAgent</h5>
+          <p>GPT-4 produces the executive summary, key findings per topic, identified data gaps. JSON-mode output for reliability.</p>
+        </div>
+      </div>
+
+      <div class="callout note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <div><strong>Graceful degradation:</strong> without <code class="inline">EXA_API_KEY</code>, the SearchAgent returns empty results and the SynthesisAgent operates on topics alone — a still-useful "what we should ask about" brief, just no live web grounding.</div>
+      </div>
+
+      <h3 id="before-apis">Research APIs</h3>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/research</div><div class="desc">Trigger the research pipeline as a background task. Returns immediately.</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/research</div><div class="desc">Fetch the research brief (topics, sources, executive summary). Polled until status == completed.</div></div></div>
+      </div>
+    </section>
+
+    <!-- ============ DURING ============ -->
+    <section id="during">
+      <h2>
+        <span class="h2-icon" style="background:var(--amber-50);color:var(--amber);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+        </span>
+        3. DURING — Live Meeting
+      </h2>
+      <p class="section-lede">
+        The centerpiece. Two input modes — manual text utterances OR real audio via LiveKit — fan into one
+        backend endpoint, which dispatches five agents in parallel and pushes nudges over a meeting-scoped
+        WebSocket. The bot can also speak back via Cartesia TTS.
+      </p>
+
+      <!-- =============== TEXT CHAT FLOW =============== -->
+      <h3 id="during-text">A. Text Chat Flow (manual utterance input)</h3>
+      <p>
+        The simpler, demo-reliable path. The user types into the speaker dropdown + text box in the live
+        meeting room. Same backend pipeline as voice — only the input source differs.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 480" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="ta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="ta-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="ta-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <marker id="ta-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="ta-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+          </defs>
+
+          <text x="120" y="28" class="lane-label">USER + API</text>
+          <text x="430" y="28" class="lane-label">FAN-OUT</text>
+          <text x="900" y="28" class="lane-label">SIDE EFFECTS</text>
+
+          <line x1="290" y1="44" x2="290" y2="460" class="edge dashed" opacity=".3"/>
+          <line x1="620" y1="44" x2="620" y2="460" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== User ===== -->
+          <g transform="translate(50,170)">
+            <rect class="node-bg indigo" width="220" height="80" rx="12"/>
+            <text class="node-label" x="110" y="26">👤 User types</text>
+            <text class="node-sub"   x="110" y="46">"Let's pick Beacon Cloud"</text>
+            <text class="node-tag"   x="110" y="64">+ SEND</text>
+          </g>
+
+          <!-- ===== API endpoint ===== -->
+          <g transform="translate(330,170)" class="node-pulse violet">
+            <rect class="node-bg violet" width="240" height="80" rx="12"/>
+            <text class="node-label" x="120" y="22">POST /utterances</text>
+            <text class="node-sub"   x="120" y="42">{ speaker, text }</text>
+            <text class="node-tag"   x="120" y="62">RETURNS IN &lt; 50 MS</text>
+          </g>
+
+          <!-- ===== 3 parallel side effects ===== -->
+
+          <!-- 1. Persist -->
+          <g transform="translate(680,70)">
+            <rect class="node-bg emerald" width="200" height="58" rx="10"/>
+            <text class="node-tag"   x="100" y="14" style="fill:#34d399">① PERSIST</text>
+            <text class="node-label" x="100" y="36">append_utterance</text>
+            <text class="node-sub"   x="100" y="50">UPSERT TRANSCRIPT</text>
+          </g>
+          <g transform="translate(910,70)">
+            <rect class="node-bg emerald" width="200" height="58" rx="10"/>
+            <text class="node-label" x="100" y="22">🗄 PostgreSQL</text>
+            <text class="node-sub"   x="100" y="42">JSONB ARRAY APPEND</text>
+          </g>
+
+          <!-- 2. Broadcast -->
+          <g transform="translate(680,178)">
+            <rect class="node-bg pink" width="200" height="64" rx="10"/>
+            <text class="node-tag"   x="100" y="14" style="fill:#f472b6">② BROADCAST</text>
+            <text class="node-label" x="100" y="36">📡 meeting_hub</text>
+            <text class="node-sub"   x="100" y="54">PER-MEETING WS HUB</text>
+          </g>
+          <g transform="translate(910,178)" class="node-pulse">
+            <rect class="node-bg pink" width="200" height="64" rx="10"/>
+            <text class="node-label" x="100" y="22">🔌 WebSocket clients</text>
+            <text class="node-sub"   x="100" y="42">type: utterance_added</text>
+            <text class="node-tag"   x="100" y="58">OPTIMISTIC UI UPDATE</text>
+          </g>
+
+          <!-- 3. Dispatch -->
+          <g transform="translate(680,295)">
+            <rect class="node-bg amber" width="200" height="64" rx="10"/>
+            <text class="node-tag"   x="100" y="14" style="fill:#fbbf24">③ DISPATCH</text>
+            <text class="node-label" x="100" y="36">🔥 BackgroundTask</text>
+            <text class="node-sub"   x="100" y="54">NEVER BLOCKS RESPONSE</text>
+          </g>
+          <g transform="translate(910,295)" class="node-pulse amber">
+            <rect class="node-bg amber" width="200" height="64" rx="10"/>
+            <text class="node-label" x="100" y="22">agent_dispatcher</text>
+            <text class="node-sub"   x="100" y="42">5× PARALLEL · asyncio.gather</text>
+            <text class="node-tag"   x="100" y="58">SEE NEXT DIAGRAM ↓</text>
+          </g>
+
+          <!-- ===== Edges ===== -->
+          <!-- User → API -->
+          <path d="M270 210 L 330 210" class="edge flow accent" marker-end="url(#ta-v)"/>
+
+          <!-- API → 3 fan-out targets -->
+          <path d="M570 195 C 620 195 630 100 680 100" class="edge flow emerald" marker-end="url(#ta-e)"/>
+          <path d="M570 210 L 680 210" class="edge flow pink" marker-end="url(#ta-p)"/>
+          <path d="M570 225 C 620 225 630 327 680 327" class="edge flow amber" marker-end="url(#ta-a)"/>
+
+          <!-- Side-effect internal arrows -->
+          <path d="M880 100 L 910 100" class="edge flow emerald" marker-end="url(#ta-e)"/>
+          <path d="M880 210 L 910 210" class="edge flow pink" marker-end="url(#ta-p)"/>
+          <path d="M880 327 L 910 327" class="edge flow amber" marker-end="url(#ta-a)"/>
+
+          <!-- WS → User push back (curve) -->
+          <path d="M1010 178 C 1010 130 320 130 270 200" class="edge flow pink dashed" opacity=".6"/>
+          <text x="600" y="120" class="edge-label" style="fill:#ec4899">WebSocket push</text>
+
+          <!-- API → User 200 OK -->
+          <path d="M330 240 C 280 240 280 250 270 250" class="edge flow dashed" opacity=".5"/>
+          <text x="290" y="270" class="edge-label">200 OK · &lt; 50 ms</text>
+
+          <!-- Animated dots -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M270 210 L 330 210');animation:flowA 1.3s linear infinite"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M570 195 C 620 195 630 100 680 100');animation:flowA 1.6s linear infinite"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M570 210 L 680 210');animation:flowA 1.4s linear infinite .2s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M570 225 C 620 225 630 327 680 327');animation:flowA 1.6s linear infinite .4s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M880 100 L 910 100');animation:flowA 1.0s linear infinite .6s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M880 210 L 910 210');animation:flowA 1.0s linear infinite .6s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M880 327 L 910 327');animation:flowA 1.0s linear infinite .8s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M1010 178 C 1010 130 320 130 270 200');animation:flowA 3.0s linear infinite 1.2s"/>
+
+          <text x="570" y="445" class="node-sub" text-anchor="middle" opacity=".7">
+            One inbound POST · three parallel side-effects · sub-50ms response · WebSocket carries the push back to the UI
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>User</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>API</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Persistence</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>WebSocket</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>Background task</span>
+        </div>
+        <div class="caption">Text chat flow. The API returns in &lt; 50ms — agent fan-out runs as a background task so the UI never blocks.</div>
+      </div>
+
+      <!-- =============== VOICE CHAT FLOW =============== -->
+      <h3 id="during-voice">B. Voice Chat Flow (LiveKit + Deepgram + Cartesia)</h3>
+      <p>
+        The full real-time path. The browser publishes a mic track to a LiveKit room named
+        <code class="inline">meeting-&lt;id&gt;</code>. A separate Python worker auto-joins that room,
+        streams every participant's audio to Deepgram, and POSTs final utterances to the
+        same endpoint manual input uses.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 540" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="va" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="va-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="va-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="va-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="va-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+          </defs>
+
+          <text x="170" y="28" class="lane-label">BROWSER</text>
+          <text x="490" y="28" class="lane-label">LIVEKIT</text>
+          <text x="810" y="28" class="lane-label">VOICE WORKER (separate process)</text>
+          <text x="1080" y="28" class="lane-label">BACKEND</text>
+
+          <line x1="335" y1="44" x2="335" y2="510" class="edge dashed" opacity=".3"/>
+          <line x1="650" y1="44" x2="650" y2="510" class="edge dashed" opacity=".3"/>
+          <line x1="1020" y1="44" x2="1020" y2="510" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== Stage 1: Token + connect ===== -->
+          <g transform="translate(50,70)">
+            <circle cx="17" cy="17" r="17" fill="#1b1d3a" stroke="#6366f1" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">1</text>
+          </g>
+          <g transform="translate(95,60)">
+            <rect class="node-bg indigo" width="220" height="50" rx="10"/>
+            <text class="node-label" x="110" y="20">👤 Click Enable Mic</text>
+            <text class="node-sub"   x="110" y="38">LiveAudioCapture.tsx</text>
+          </g>
+          <g transform="translate(95,130)">
+            <rect class="node-bg violet" width="220" height="50" rx="10"/>
+            <text class="node-label" x="110" y="20">GET /voice-token</text>
+            <text class="node-sub"   x="110" y="38">JWT FOR meeting-{id}</text>
+          </g>
+          <path d="M205 110 L 205 130" class="edge flow accent" marker-end="url(#va-v)"/>
+          <path d="M315 155 C 350 155 350 75 1020 75" class="edge flow accent dashed" opacity=".5"/>
+          <text x="600" y="60" class="edge-label">{ token, url }</text>
+
+          <!-- ===== Stage 2: LiveKit room ===== -->
+          <g transform="translate(355,70)">
+            <circle cx="17" cy="17" r="17" fill="#2c2418" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">2</text>
+          </g>
+          <g transform="translate(395,60)" class="node-pulse amber">
+            <rect class="node-bg amber" width="240" height="90" rx="12"/>
+            <text class="node-label" x="120" y="24">🎙 LiveKit Server</text>
+            <text class="node-sub"   x="120" y="46">WEBRTC SFU</text>
+            <text class="node-tag"   x="120" y="66">room: meeting-{id}</text>
+          </g>
+          <path d="M205 180 C 250 180 350 100 395 105" class="edge flow amber" marker-end="url(#va-a)"/>
+          <text x="280" y="155" class="edge-label" style="fill:#f59e0b">publish mic track</text>
+
+          <!-- ===== Stage 3: Worker auto-join ===== -->
+          <g transform="translate(670,70)">
+            <circle cx="17" cy="17" r="17" fill="#2a1a26" stroke="#ec4899" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">3</text>
+          </g>
+          <g transform="translate(710,60)" class="node-pulse">
+            <rect class="node-bg pink" width="290" height="90" rx="12"/>
+            <text class="node-label" x="145" y="24">🤖 meeting_voice_worker</text>
+            <text class="node-sub"   x="145" y="46">SEPARATE PYTHON PROCESS</text>
+            <text class="node-tag"   x="145" y="66">AUTO-JOIN meeting-* ROOMS</text>
+          </g>
+          <path d="M635 105 L 710 105" class="edge flow pink" marker-end="url(#va-p)"/>
+          <text x="672" y="95" class="edge-label" style="fill:#ec4899">subscribe AUDIO</text>
+          <path d="M710 130 L 635 130" class="edge flow pink dashed" opacity=".6"/>
+          <text x="672" y="146" class="edge-label">TTS track</text>
+
+          <!-- Audio frame -->
+          <g transform="translate(395,210)">
+            <rect class="node-bg" width="240" height="46" rx="8"/>
+            <text class="node-label" x="120" y="20">🎵 rtc.AudioFrame</text>
+            <text class="node-sub"   x="120" y="38">48 kHz · LINEAR16 · PCM</text>
+          </g>
+          <path d="M515 150 L 515 210" class="edge flow amber" marker-end="url(#va-a)"/>
+          <path d="M635 233 L 710 233" class="edge flow pink" marker-end="url(#va-p)"/>
+          <text x="672" y="223" class="edge-label">raw bytes</text>
+
+          <!-- ===== Stage 4: Deepgram ===== -->
+          <g transform="translate(670,290)">
+            <circle cx="17" cy="17" r="17" fill="#2a1a26" stroke="#ec4899" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">4</text>
+          </g>
+          <g transform="translate(710,280)" class="node-pulse">
+            <rect class="node-bg pink" width="290" height="76" rx="12"/>
+            <text class="node-label" x="145" y="24">🎯 Deepgram nova-3 STT</text>
+            <text class="node-sub"   x="145" y="46">RECONNECT LOOP · 1s → 15s</text>
+            <text class="node-tag"   x="145" y="64">FRAME BUFFERED ON DROP</text>
+          </g>
+          <path d="M855 150 L 855 280" class="edge flow pink" marker-end="url(#va-p)"/>
+          <text x="880" y="220" class="edge-label" style="fill:#ec4899">streaming WS</text>
+
+          <!-- Transcript output -->
+          <g transform="translate(710,390)">
+            <rect class="node-bg" width="290" height="50" rx="10"/>
+            <text class="node-label" x="145" y="20">📝 final transcript</text>
+            <text class="node-sub"   x="145" y="38">is_final = true · SMART FORMAT</text>
+          </g>
+          <path d="M855 356 L 855 390" class="edge flow pink dashed" opacity=".7"/>
+
+          <!-- ===== Stage 5: POST back to API ===== -->
+          <g transform="translate(1040,390)">
+            <circle cx="17" cy="17" r="17" fill="#1b1d3a" stroke="#6366f1" stroke-width="1.5"/>
+            <text x="17" y="22" class="node-label" style="font-size:13px">5</text>
+          </g>
+          <g transform="translate(1040,440)">
+            <rect class="node-bg violet" width="80" height="60" rx="10"/>
+            <text class="node-label" x="40" y="22">POST</text>
+            <text class="node-sub"   x="40" y="42">/utterances</text>
+          </g>
+          <path d="M1000 415 L 1080 440" class="edge flow accent" marker-end="url(#va-v)"/>
+          <text x="1080" y="425" class="edge-label" text-anchor="end" style="fill:#8b5cf6">retry 5× · 0.5→8s</text>
+
+          <!-- Continuation note -->
+          <g transform="translate(95,440)">
+            <rect class="node-bg emerald" width="850" height="50" rx="10"/>
+            <text class="node-label" x="425" y="20">➡ From here: identical to Text Chat Flow</text>
+            <text class="node-sub"   x="425" y="38">PERSIST · WS BROADCAST · 5-AGENT DISPATCH</text>
+          </g>
+          <path d="M1080 500 C 1080 510 500 510 520 490" class="edge flow emerald dashed" opacity=".6"/>
+
+          <!-- Animated dots -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M205 110 L 205 130');animation:flowA 0.8s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M205 180 C 250 180 350 100 395 105');animation:flowA 2.0s linear infinite"/>
+          <circle r="3.5" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M635 105 L 710 105');animation:flowA 1.2s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M515 150 L 515 210');animation:flowA 1.0s linear infinite .2s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M635 233 L 710 233');animation:flowA 0.9s linear infinite .4s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M855 150 L 855 280');animation:flowA 1.6s linear infinite .8s"/>
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M1000 415 L 1080 440');animation:flowA 1.3s linear infinite 1.2s"/>
+
+          <text x="570" y="525" class="node-sub" text-anchor="middle" opacity=".7">
+            Worker auto-joins · Deepgram reconnect-loop is the resilience win · Final transcript POSTs to the same endpoint manual input uses
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>Browser / API</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>API call</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>LiveKit (WebRTC)</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>Worker / Deepgram</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Continuation</span>
+        </div>
+        <div class="caption">Voice flow. The voice worker has its own reconnect loop for Deepgram drops and retries POSTs with exponential backoff.</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel accent-emerald">
+          <h4>Worker Resilience</h4>
+          <p style="font-size:13.5px">
+            <strong>Deepgram reconnect:</strong> outer <code class="inline">while True:</code> loop wraps the WS lifecycle.
+            Drops trigger reconnect with backoff (1s → 15s cap).
+            The in-flight audio frame at the moment of disconnect is buffered and re-sent on the next successful connect — no lost speech.
+          </p>
+          <p style="font-size:13.5px">
+            <strong>POST retry:</strong> 5 attempts at 0.5s → 8s exponential backoff. Retries on
+            connection errors + 5xx, gives up on 4xx (those need config fixes, not retries).
+          </p>
+        </div>
+        <div class="panel accent-violet">
+          <h4>Why a separate process?</h4>
+          <p style="font-size:13.5px">
+            The voice worker runs <em>outside</em> FastAPI as its own Python process.
+            That's the production pattern: an event loop dedicated to audio I/O,
+            unaffected by API request latency or process restarts.
+            It connects to the LiveKit cluster, not to the API.
+          </p>
+        </div>
+      </div>
+
+      <!-- =============== MEETING AGENTS =============== -->
+      <h3 id="during-agents">C. The Five Meeting Agents (parallel fan-out)</h3>
+      <p>
+        After every utterance, <code class="inline">agent_dispatcher.dispatch()</code> fans out via
+        <code class="inline">asyncio.gather(return_exceptions=True)</code>. One agent's failure does not
+        block the batch. Each agent returns either a nudge dict or <code class="inline">None</code>.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 620" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="fa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="fa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="fa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="fa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <radialGradient id="hub-glow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#8b5cf6" stop-opacity=".5"/>
+              <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+
+          <text x="570" y="28" class="lane-label" text-anchor="middle">PARALLEL 5-AGENT FAN-OUT · asyncio.gather(return_exceptions=True)</text>
+
+          <!-- Background glow under dispatcher -->
+          <ellipse cx="570" cy="160" rx="170" ry="80" fill="url(#hub-glow)"/>
+
+          <!-- ===== Utterance source ===== -->
+          <g transform="translate(220,140)">
+            <rect class="node-bg indigo" width="220" height="50" rx="10"/>
+            <text class="node-label" x="110" y="20">📥 New utterance arrives</text>
+            <text class="node-sub"   x="110" y="38">POST /utterances</text>
+          </g>
+
+          <!-- ===== Dispatcher (central hub) ===== -->
+          <g transform="translate(470,130)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="70" rx="14"/>
+            <text class="node-label" x="100" y="22">🎯 agent_dispatcher</text>
+            <text class="node-sub"   x="100" y="42">PARALLEL FAN-OUT</text>
+            <text class="node-tag"   x="100" y="58">asyncio.gather</text>
+          </g>
+
+          <!-- ===== 5 Agents ===== -->
+          <!-- Scribe -->
+          <g transform="translate(720,40)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">SCRIBE</text>
+            <text class="node-label" x="140" y="34">✍️ Decision detection</text>
+            <text class="node-sub"   x="140" y="54">REGEX GATE → GPT-4o-mini</text>
+            <text class="node-tag"   x="140" y="68">EMITS · decision_prompt</text>
+          </g>
+          <!-- Context -->
+          <g transform="translate(720,128)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">CONTEXT</text>
+            <text class="node-label" x="140" y="34">📚 RAG with re-rank</text>
+            <text class="node-sub"   x="140" y="54">EMBED → QDRANT TOP-K=5</text>
+            <text class="node-tag"   x="140" y="68">EMITS · context</text>
+          </g>
+          <!-- Insight -->
+          <g transform="translate(720,216)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">INSIGHT</text>
+            <text class="node-label" x="140" y="34">💡 Research match</text>
+            <text class="node-sub"   x="140" y="54">UTTERANCE ↔ research_brief</text>
+            <text class="node-tag"   x="140" y="68">EMITS · insight</text>
+          </g>
+          <!-- Fact-Check -->
+          <g transform="translate(720,304)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">FACT-CHECK</text>
+            <text class="node-label" x="140" y="34">🛡 Claim verification</text>
+            <text class="node-sub"   x="140" y="54">REGEX → EXA → GPT VERDICT</text>
+            <text class="node-tag"   x="140" y="68">COOLDOWN + DEDUP HASH</text>
+          </g>
+          <!-- KG Query -->
+          <g transform="translate(720,392)">
+            <rect class="node-bg amber" width="280" height="76" rx="12"/>
+            <text class="node-tag"   x="14"  y="14" text-anchor="start" style="fill:#fbbf24">KG-QUERY</text>
+            <text class="node-label" x="140" y="34">🧠 Multi-hop traversal</text>
+            <text class="node-sub"   x="140" y="54">spaCy NER → CYPHER 1-2 HOP</text>
+            <text class="node-tag"   x="140" y="68">EMITS · knowledge_graph</text>
+          </g>
+
+          <!-- Edge: utterance → dispatcher -->
+          <path d="M440 165 L 470 165" class="edge flow accent" marker-end="url(#fa-v)"/>
+
+          <!-- Dispatcher → 5 agents (fan-out curves) -->
+          <path d="M670 145 C 690 145 700 78 720 78"  class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 155 C 690 155 700 166 720 166" class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 165 C 690 165 700 254 720 254" class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 175 C 690 175 700 342 720 342" class="edge flow amber" marker-end="url(#fa-a)"/>
+          <path d="M670 185 C 690 185 700 430 720 430" class="edge flow amber" marker-end="url(#fa-a)"/>
+
+          <!-- ===== Aggregation: 5 agents → persist ===== -->
+          <g transform="translate(420,490)" class="node-pulse">
+            <rect class="node-bg pink" width="300" height="50" rx="10"/>
+            <text class="node-label" x="150" y="20">💾 meeting_service.add_nudge</text>
+            <text class="node-sub"   x="150" y="38">FILTER NONE + EXCEPTIONS · PER NUDGE</text>
+          </g>
+          <!-- Each agent → aggregator (fan-in curves) -->
+          <path d="M860 116 C 860 130 800 480 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 204 C 860 220 770 480 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 292 C 860 320 700 480 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 380 C 860 430 670 510 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+          <path d="M860 468 L 720 510" class="edge flow pink" marker-end="url(#fa-p)" opacity=".7"/>
+
+          <!-- Broadcast -->
+          <g transform="translate(420,560)">
+            <rect class="node-bg emerald" width="300" height="50" rx="10"/>
+            <text class="node-label" x="150" y="20">📡 meeting_hub.broadcast</text>
+            <text class="node-sub"   x="150" y="38">PER-MEETING WS · type: nudge_created</text>
+          </g>
+          <path d="M570 540 L 570 560" class="edge flow emerald" marker-end="url(#fa-e)"/>
+
+          <!-- ===== Animated flow dots ===== -->
+          <circle r="3.5" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M440 165 L 470 165');animation:flowA 0.9s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 145 C 690 145 700 78 720 78');animation:flowA 1.4s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 155 C 690 155 700 166 720 166');animation:flowA 1.4s linear infinite .15s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 165 C 690 165 700 254 720 254');animation:flowA 1.4s linear infinite .3s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 175 C 690 175 700 342 720 342');animation:flowA 1.4s linear infinite .45s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M670 185 C 690 185 700 430 720 430');animation:flowA 1.4s linear infinite .6s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M860 116 C 860 130 800 480 720 510');animation:flowA 2.2s linear infinite 1s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M860 380 C 860 430 670 510 720 510');animation:flowA 2.0s linear infinite 1.3s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M570 540 L 570 560');animation:flowA 0.8s linear infinite 1.6s"/>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>Utterance source</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>Dispatcher</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>5 agents (parallel)</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>Persist</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Broadcast</span>
+        </div>
+        <div class="caption">Five-agent parallel dispatch after every utterance. Each agent has cheap pre-checks so most utterances skip the LLM entirely.</div>
+      </div>
+
+      <div class="agents">
+        <div class="agent-card">
+          <span class="phase during">During</span>
+          <h5>Scribe Agent</h5>
+          <p>Regex gate on decision keywords (<em>"let's go with"</em>, <em>"agreed"</em>) → GPT-4o-mini extracts the decision text. Emits <code class="inline">decision_prompt</code> nudge.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase during">During</span>
+          <h5>Context Agent</h5>
+          <p>Embeds last 3 utterances → Qdrant top-K=5. <strong>Multi-modal aware:</strong> table chunks get a 1.15× boost when query is data-heavy. Emits <code class="inline">context</code> nudge.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase during">During</span>
+          <h5>Insight Agent</h5>
+          <p>Matches utterance against pre-meeting research topics via GPT-4o-mini. Emits <code class="inline">insight</code> nudge citing the original source.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase during">During</span>
+          <h5>Fact-Check Agent</h5>
+          <p>Claim-pattern regex (percentages, attributions) → GPT extracts claim → Exa retrieves sources → GPT verdict. Cooldown: 5-min per claim hash + 45s global throttle.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase during">During</span>
+          <h5>KG-Query Agent</h5>
+          <p><strong>spaCy NER</strong> extracts entities (catches lowercase!) → Cypher <code class="inline">MATCH path = (a)-[:REL*1..2]-(b)</code> → emits novel connection as <code class="inline">knowledge_graph</code> nudge.</p>
+        </div>
+        <div class="agent-card" style="border-style:dashed">
+          <span class="phase during">Service</span>
+          <h5>Nudge Broadcaster</h5>
+          <p>Not an agent — <code class="inline">meeting_hub.broadcast()</code> in <code class="inline">realtime.py</code>. JSON-encodes each persisted nudge and pushes over the per-meeting WebSocket.</p>
+        </div>
+      </div>
+
+      <!-- =============== MEMORY =============== -->
+      <h3 id="during-memory">D. Memory &amp; Context — what each agent reads</h3>
+      <p>
+        "Memory" in this system is concrete: it's the union of four stores the agents pull from.
+        There's no LLM-side scratchpad — every agent decision is reproducible from the data layer.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 500" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="ma-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <marker id="ma-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+          </defs>
+
+          <text x="200" y="28" class="lane-label">MEMORY STORES</text>
+          <text x="940" y="28" class="lane-label">AGENT READS</text>
+
+          <line x1="570" y1="44" x2="570" y2="475" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== Left: Memory stores ===== -->
+          <!-- Working memory: transcript (centered) -->
+          <g transform="translate(80,80)" class="node-pulse emerald">
+            <rect class="node-bg emerald" width="380" height="86" rx="14"/>
+            <text class="node-tag"   x="190" y="18" style="fill:#34d399">WORKING MEMORY · HOT</text>
+            <text class="node-label" x="190" y="42">📝 MeetingTranscript</text>
+            <text class="node-sub"   x="190" y="62">POSTGRESQL · JSONB · ROLLING WINDOW</text>
+            <text class="node-tag"   x="190" y="78">UPDATES EVERY UTTERANCE</text>
+          </g>
+
+          <!-- Long-term stores -->
+          <g transform="translate(80,200)">
+            <rect class="node-bg emerald" width="180" height="76" rx="10"/>
+            <text class="node-tag"   x="90" y="14" style="fill:#34d399">LONG TERM</text>
+            <text class="node-label" x="90" y="36">🔬 ResearchBrief</text>
+            <text class="node-sub"   x="90" y="55">PER-MEETING</text>
+            <text class="node-tag"   x="90" y="69">TOPICS · SOURCES</text>
+          </g>
+          <g transform="translate(280,200)">
+            <rect class="node-bg emerald" width="180" height="76" rx="10"/>
+            <text class="node-tag"   x="90" y="14" style="fill:#34d399">LONG TERM</text>
+            <text class="node-label" x="90" y="36">🔎 Qdrant</text>
+            <text class="node-sub"   x="90" y="55">VECTOR STORE</text>
+            <text class="node-tag"   x="90" y="69">3-LEVEL EMBEDDINGS</text>
+          </g>
+          <g transform="translate(180,310)">
+            <rect class="node-bg emerald" width="280" height="76" rx="10"/>
+            <text class="node-tag"   x="140" y="14" style="fill:#34d399">LONG TERM · GRAPH</text>
+            <text class="node-label" x="140" y="36">🧠 Neo4j</text>
+            <text class="node-sub"   x="140" y="55">ENTITIES + RELATIONSHIPS</text>
+            <text class="node-tag"   x="140" y="69">FROM KB DOCUMENTS</text>
+          </g>
+
+          <!-- ===== Right: Agents (5 stacked) ===== -->
+          <g transform="translate(770,60)">
+            <rect class="node-bg amber" width="240" height="48" rx="10"/>
+            <text class="node-label" x="120" y="20">✍️ Scribe</text>
+            <text class="node-sub"   x="120" y="38">LAST 5 UTTERANCES · DECISIONS</text>
+          </g>
+          <g transform="translate(770,118)">
+            <rect class="node-bg amber" width="240" height="48" rx="10"/>
+            <text class="node-label" x="120" y="20">📚 Context (RAG)</text>
+            <text class="node-sub"   x="120" y="38">LAST 3 · MULTI-MODAL RE-RANK</text>
+          </g>
+          <g transform="translate(770,176)">
+            <rect class="node-bg amber" width="240" height="48" rx="10"/>
+            <text class="node-label" x="120" y="20">💡 Insight</text>
+            <text class="node-sub"   x="120" y="38">LAST 5 · MATCH ↔ RESEARCH</text>
+          </g>
+          <g transform="translate(770,234)">
+            <rect class="node-bg amber" width="240" height="48" rx="10"/>
+            <text class="node-label" x="120" y="20">🛡 Fact-Check</text>
+            <text class="node-sub"   x="120" y="38">LATEST · EXA SOURCES</text>
+          </g>
+          <g transform="translate(770,292)" class="node-pulse amber">
+            <rect class="node-bg amber" width="240" height="48" rx="10"/>
+            <text class="node-label" x="120" y="20">🧠 KG-Query</text>
+            <text class="node-sub"   x="120" y="38">LAST 3 · CYPHER TRAVERSAL</text>
+          </g>
+
+          <!-- ===== Edges: every agent reads transcript ===== -->
+          <path d="M460 110 C 600 110 670 84 770 84"   class="edge flow emerald" marker-end="url(#ma-e)"/>
+          <path d="M460 120 C 600 120 670 142 770 142" class="edge flow emerald" marker-end="url(#ma-e)"/>
+          <path d="M460 130 C 600 130 670 200 770 200" class="edge flow emerald" marker-end="url(#ma-e)"/>
+          <path d="M460 140 C 600 140 670 258 770 258" class="edge flow emerald" marker-end="url(#ma-e)"/>
+          <path d="M460 150 C 600 150 670 316 770 316" class="edge flow emerald" marker-end="url(#ma-e)"/>
+
+          <!-- Edges: agent-specific reads -->
+          <!-- ResearchBrief → Insight -->
+          <path d="M260 220 C 500 220 670 200 770 200" class="edge flow amber dashed" opacity=".75"/>
+          <text x="495" y="210" class="edge-label" style="fill:#f59e0b">topics · sources</text>
+          <!-- Qdrant → Context -->
+          <path d="M460 220 C 600 220 670 142 770 142" class="edge flow amber" marker-end="url(#ma-a)"/>
+          <text x="610" y="180" class="edge-label" style="fill:#f59e0b">embeddings</text>
+          <!-- Neo4j → KGQuery -->
+          <path d="M460 340 C 620 340 700 316 770 316" class="edge flow amber" marker-end="url(#ma-a)"/>
+          <text x="555" y="330" class="edge-label" style="fill:#f59e0b">cypher MATCH path</text>
+
+          <!-- Note about write-back direction -->
+          <g transform="translate(80,440)">
+            <rect class="node-bg" width="900" height="40" rx="8" opacity=".5"/>
+            <text x="450" y="24" class="node-sub" text-anchor="middle">
+              Every utterance writes to the transcript; agent OUTPUTS (nudges) flow forward into PostgreSQL `nudges` — not back into memory
+            </text>
+          </g>
+
+          <!-- Animated dots: pulse through the read paths -->
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M460 110 C 600 110 670 84 770 84');animation:flowA 2.0s linear infinite"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M460 120 C 600 120 670 142 770 142');animation:flowA 2.0s linear infinite .15s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M460 130 C 600 130 670 200 770 200');animation:flowA 2.0s linear infinite .3s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M460 140 C 600 140 670 258 770 258');animation:flowA 2.0s linear infinite .45s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M460 150 C 600 150 670 316 770 316');animation:flowA 2.0s linear infinite .6s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M460 220 C 600 220 670 142 770 142');animation:flowA 2.2s linear infinite .8s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M460 340 C 620 340 700 316 770 316');animation:flowA 2.2s linear infinite 1.0s"/>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Memory store</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>Agent / Long-term read</span>
+        </div>
+        <div class="caption">Memory model. The transcript is the working memory; Qdrant/Neo4j/research-brief are the long-term stores each agent draws from.</div>
+      </div>
+
+      <div class="panel accent-indigo">
+        <h4>Per-agent windowing</h4>
+        <table>
+          <thead><tr><th>Agent</th><th>Window</th><th>Stores Read</th><th>Cost guard</th></tr></thead>
+          <tbody>
+            <tr><td>Scribe</td><td>Last 5 utterances</td><td>Transcript</td><td>Regex gate before GPT</td></tr>
+            <tr><td>Context</td><td>Last 3 utterances</td><td>Transcript + Qdrant</td><td>≥20 char min query length</td></tr>
+            <tr><td>Insight</td><td>Last 5 utterances</td><td>Transcript + ResearchBrief</td><td>Pre-fetched topics, no per-call I/O</td></tr>
+            <tr><td>Fact-check</td><td>Latest utterance</td><td>Transcript + Exa</td><td>Regex + claim hash + 45s global throttle</td></tr>
+            <tr><td>KG-Query</td><td>Last 3 utterances</td><td>Transcript + Neo4j</td><td>90s per (src,tgt) cooldown</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- =============== TTS =============== -->
+      <h3 id="during-tts">E. TTS Speakback — Cartesia → LiveKit room</h3>
+      <p>
+        The bot can speak back inside the meeting. The backend publishes text to a Redis channel; the
+        worker (already in the room) subscribes, synthesizes via Cartesia, and pushes audio frames into
+        the room.
+      </p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 1140 380" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="tta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="tta-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="tta-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+            <marker id="tta-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+            <marker id="tta-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+          </defs>
+
+          <text x="120" y="28" class="lane-label">BACKEND</text>
+          <text x="430" y="28" class="lane-label">REDIS IPC</text>
+          <text x="700" y="28" class="lane-label">VOICE WORKER</text>
+          <text x="1010" y="28" class="lane-label">LIVEKIT ROOM</text>
+
+          <line x1="290" y1="44" x2="290" y2="345" class="edge dashed" opacity=".3"/>
+          <line x1="560" y1="44" x2="560" y2="345" class="edge dashed" opacity=".3"/>
+          <line x1="900" y1="44" x2="900" y2="345" class="edge dashed" opacity=".3"/>
+
+          <!-- ===== User trigger ===== -->
+          <g transform="translate(50,80)">
+            <rect class="node-bg indigo" width="220" height="60" rx="10"/>
+            <text class="node-label" x="110" y="22">👤 User or backend</text>
+            <text class="node-sub"   x="110" y="42">TRIGGERS AI SPEECH</text>
+          </g>
+
+          <!-- ===== Backend endpoint ===== -->
+          <g transform="translate(50,180)" class="node-pulse violet">
+            <rect class="node-bg violet" width="220" height="60" rx="10"/>
+            <text class="node-label" x="110" y="22">POST /speak</text>
+            <text class="node-sub"   x="110" y="42">{ text }</text>
+          </g>
+          <path d="M160 140 L 160 180" class="edge flow accent" marker-end="url(#tta-v)"/>
+
+          <!-- ===== Redis IPC ===== -->
+          <g transform="translate(310,180)" class="node-pulse">
+            <rect class="node-bg sky" width="230" height="60" rx="10"/>
+            <text class="node-label" x="115" y="22">🔊 Redis PUBLISH</text>
+            <text class="node-sub"   x="115" y="42">meeting:id:speak</text>
+          </g>
+          <path d="M270 210 L 310 210" class="edge flow sky" marker-end="url(#tta-s)"/>
+
+          <!-- API → User response -->
+          <path d="M270 195 C 260 240 200 240 160 240" class="edge flow dashed" opacity=".5"/>
+          <text x="200" y="265" class="edge-label">200 OK · subscribers count</text>
+
+          <!-- ===== Worker subscriber ===== -->
+          <g transform="translate(590,180)" class="node-pulse">
+            <rect class="node-bg pink" width="230" height="60" rx="10"/>
+            <text class="node-label" x="115" y="22">📡 Pub/sub listener</text>
+            <text class="node-sub"   x="115" y="42">PER-ROOM TASK</text>
+          </g>
+          <path d="M540 210 L 590 210" class="edge flow sky" marker-end="url(#tta-s)"/>
+
+          <!-- ===== Cartesia synthesis ===== -->
+          <g transform="translate(590,80)">
+            <rect class="node-bg pink" width="230" height="68" rx="10"/>
+            <text class="node-label" x="115" y="22">🗣 Cartesia sonic-2</text>
+            <text class="node-sub"   x="115" y="42">model=sonic-2 · pcm_s16le</text>
+            <text class="node-tag"   x="115" y="60">24 kHz MONO</text>
+          </g>
+          <path d="M705 180 L 705 148" class="edge flow pink" marker-end="url(#tta-p)"/>
+          <text x="745" y="170" class="edge-label" style="fill:#ec4899">tts.bytes()</text>
+
+          <!-- ===== Slice + capture ===== -->
+          <g transform="translate(590,280)">
+            <rect class="node-bg pink" width="230" height="50" rx="10"/>
+            <text class="node-label" x="115" y="20">✂ Slice 20ms AudioFrames</text>
+            <text class="node-sub"   x="115" y="38">480 SAMPLES @ 24kHz · CAPTURE</text>
+          </g>
+          <path d="M705 240 L 705 280" class="edge flow pink" marker-end="url(#tta-p)"/>
+
+          <!-- ===== LiveKit room (publish + user hears) ===== -->
+          <g transform="translate(930,80)">
+            <rect class="node-bg amber" width="190" height="68" rx="10"/>
+            <text class="node-label" x="95" y="22">🎙 LiveKit room</text>
+            <text class="node-sub"   x="95" y="42">PUBLISHED TRACK:</text>
+            <text class="node-tag"   x="95" y="60">meeting-assistant-voice</text>
+          </g>
+          <g transform="translate(930,280)" class="node-pulse amber">
+            <rect class="node-bg amber" width="190" height="50" rx="10"/>
+            <text class="node-label" x="95" y="20">🔊 User hears AI</text>
+            <text class="node-sub"   x="95" y="38">VIA WEBRTC</text>
+          </g>
+          <path d="M820 305 L 930 305" class="edge flow amber" marker-end="url(#tta-a)"/>
+          <text x="870" y="295" class="edge-label" style="fill:#f59e0b">capture_frame</text>
+
+          <!-- LiveKit track → user (loop closure) -->
+          <path d="M1025 148 L 1025 280" class="edge flow amber dashed" opacity=".7"/>
+
+          <!-- Animated dots -->
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M160 140 L 160 180');animation:flowA 1.0s linear infinite"/>
+          <circle r="3" fill="#0ea5e9" class="flow-dot" style="color:#0ea5e9;offset-path:path('M270 210 L 310 210');animation:flowA 1.0s linear infinite .15s"/>
+          <circle r="3" fill="#0ea5e9" class="flow-dot" style="color:#0ea5e9;offset-path:path('M540 210 L 590 210');animation:flowA 1.0s linear infinite .35s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M705 180 L 705 148');animation:flowA 1.2s linear infinite .55s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M705 240 L 705 280');animation:flowA 1.2s linear infinite .75s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M820 305 L 930 305');animation:flowA 1.4s linear infinite .95s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M1025 148 L 1025 280');animation:flowA 1.4s linear infinite 1.1s"/>
+
+          <text x="570" y="370" class="node-sub" text-anchor="middle" opacity=".7">
+            Backend doesn't know which worker holds the room · Redis pubsub decouples them · Worker already in the room publishes the TTS track on join
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>User</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>Backend API</span>
+          <span class="item"><span class="swatch" style="border-color:#0ea5e9"></span>Redis pub/sub</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>Worker + Cartesia</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>LiveKit room</span>
+        </div>
+        <div class="caption">TTS speakback pipeline. Redis is used as a worker IPC channel so the backend doesn't need to know which worker holds which room.</div>
+      </div>
+
+      <h3 id="during-apis">DURING APIs</h3>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/start</div><div class="desc">Mark meeting as <code class="inline">in_progress</code>, set <code class="inline">started_at</code>.</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/utterances</div><div class="desc">Body <code class="inline">{speaker, text}</code>. Appends to transcript, broadcasts WS, triggers dispatcher in background.</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/transcript</div><div class="desc">Full transcript + accumulated full_text.</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/nudges</div><div class="desc">Persisted nudges. WebSocket is the primary delivery; this is for replay.</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/decisions</div><div class="desc">Body <code class="inline">{decision_text, source_nudge_id?, owner?, deadline?}</code>. <code class="inline">source_nudge_id</code> wires nudge-to-decision lineage.</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/action-items</div><div class="desc">Body <code class="inline">{description, assignee?, deadline?, priority?}</code>.</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/voice-token</div><div class="desc">Mints a LiveKit JWT scoped to room <code class="inline">meeting-{id}</code> with the participant name from the query string.</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/speak</div><div class="desc">Body <code class="inline">{text}</code>. Publishes to Redis; the voice worker synthesizes via Cartesia and plays into the room.</div></div></div>
+        <div class="api"><div class="method WS">WS</div><div><div class="path">/api/v1/meetings/{id}/ws</div><div class="desc">Per-meeting WebSocket. Emits <code class="inline">utterance_added</code> and <code class="inline">nudge_created</code> events.</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/end</div><div class="desc">Mark <code class="inline">completed</code>, set <code class="inline">ended_at</code>. UI shows the "Generate Summary" button.</div></div></div>
+      </div>
+    </section>
+
+    <!-- ============ AFTER ============ -->
+    <section id="after">
+      <h2>
+        <span class="h2-icon" style="background:var(--emerald-50);color:var(--emerald);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </span>
+        4. AFTER — Summary &amp; Delivery
+      </h2>
+      <p class="section-lede">
+        Once the meeting ends, the user clicks <strong>Generate Summary</strong>. Two agents aggregate the
+        full data tree (transcript, nudges, decisions, action items, research brief) and produce a
+        structured summary, optionally delivered by email.
+      </p>
+
+      <h3 id="after-flow">Pipeline Flow</h3>
+      <div class="diagram">
+        <svg viewBox="0 0 1140 580" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="sa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+            <marker id="sa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+            <marker id="sa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+            <marker id="sa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+          </defs>
+
+          <text x="60" y="28" class="lane-label" text-anchor="start">STAGE 1 · AGGREGATE</text>
+          <text x="60" y="208" class="lane-label" text-anchor="start">STAGE 2 · SYNTHESIZE</text>
+          <text x="60" y="358" class="lane-label" text-anchor="start">STAGE 3 · DELIVER</text>
+
+          <!-- Stage backgrounds -->
+          <rect x="50" y="38" width="1040" height="155" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="218" width="1040" height="125" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+          <rect x="50" y="368" width="1040" height="160" rx="10" fill="#0d1424" stroke="#1f2940" opacity=".6"/>
+
+          <!-- ===== STAGE 1: Aggregate ===== -->
+          <g transform="translate(70,60)">
+            <rect class="node-bg indigo" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">👤 User clicks</text>
+            <text class="node-sub"   x="100" y="38">GENERATE SUMMARY</text>
+          </g>
+          <g transform="translate(295,60)" class="node-pulse violet">
+            <rect class="node-bg violet" width="220" height="50" rx="10"/>
+            <text class="node-label" x="110" y="20">POST /summarize</text>
+            <text class="node-sub"   x="110" y="38">BACKGROUND TASK</text>
+          </g>
+          <g transform="translate(540,60)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">📚 DataAggregator</text>
+            <text class="node-sub"   x="100" y="38">LOAD FULL TREE</text>
+          </g>
+          <path d="M270 85 L 295 85" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M515 85 L 540 85" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M515 110 C 460 130 400 130 270 95" class="edge flow dashed" opacity=".5"/>
+          <text x="370" y="146" class="edge-label">200 OK · status: generating</text>
+
+          <!-- 6 data sources -->
+          <g transform="translate(770,55)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">📝 transcript</text>
+          </g>
+          <g transform="translate(900,55)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">💡 nudges</text>
+          </g>
+          <g transform="translate(770,98)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">✅ decisions</text>
+          </g>
+          <g transform="translate(900,98)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">📋 action items</text>
+          </g>
+          <g transform="translate(770,141)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">🔍 research brief</text>
+          </g>
+          <g transform="translate(900,141)">
+            <rect class="node-bg emerald" width="120" height="36" rx="6"/>
+            <text class="node-label" x="60" y="22">🧠 KG snapshot</text>
+          </g>
+          <path d="M740 85 L 770 73"  class="edge flow emerald" marker-end="url(#sa-e)" opacity=".7"/>
+          <path d="M740 85 L 900 73"  class="edge flow emerald" marker-end="url(#sa-e)" opacity=".5"/>
+          <path d="M740 85 L 770 116" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".7"/>
+          <path d="M740 85 L 900 116" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".5"/>
+          <path d="M740 85 L 770 159" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".7"/>
+          <path d="M740 85 L 900 159" class="edge flow emerald" marker-end="url(#sa-e)" opacity=".5"/>
+
+          <!-- ===== STAGE 2: Synthesize ===== -->
+          <g transform="translate(70,240)" class="node-pulse amber">
+            <rect class="node-bg amber" width="260" height="86" rx="12"/>
+            <text class="node-label" x="130" y="26">📝 SummaryAgent</text>
+            <text class="node-sub"   x="130" y="46">NUDGES AS 'AI INSIGHTS'</text>
+            <text class="node-tag"   x="130" y="66">JSON-MODE PROMPT</text>
+          </g>
+          <g transform="translate(360,240)">
+            <rect class="node-bg pink" width="230" height="86" rx="12"/>
+            <text class="node-label" x="115" y="26">🤖 GPT-4</text>
+            <text class="node-sub"   x="115" y="46">FULL MODEL · NOT MINI</text>
+            <text class="node-tag"   x="115" y="66">REPRODUCIBLE</text>
+          </g>
+          <g transform="translate(620,240)">
+            <rect class="node-bg" width="240" height="86" rx="12"/>
+            <text class="node-label" x="120" y="22">📑 Structured output</text>
+            <text class="node-sub"   x="120" y="42">summary_text</text>
+            <text class="node-sub"   x="120" y="58">decisions_summary</text>
+            <text class="node-sub"   x="120" y="74">key_insights · action_items</text>
+          </g>
+          <g transform="translate(890,240)">
+            <rect class="node-bg emerald" width="190" height="86" rx="12"/>
+            <text class="node-label" x="95" y="26">🗄 PostgreSQL</text>
+            <text class="node-sub"   x="95" y="46">INSERT INTO</text>
+            <text class="node-tag"   x="95" y="66">meeting_summaries</text>
+          </g>
+          <path d="M330 283 L 360 283" class="edge flow pink" marker-end="url(#sa-p)"/>
+          <path d="M590 283 L 620 283" class="edge flow" marker-end="url(#sa-a)"/>
+          <path d="M860 283 L 890 283" class="edge flow emerald" marker-end="url(#sa-e)"/>
+
+          <!-- Aggregator → SummaryAgent (cross-stage) -->
+          <path d="M640 110 C 640 200 200 220 200 240" class="edge flow amber dashed" opacity=".6"/>
+
+          <!-- ===== STAGE 3: Deliver ===== -->
+          <g transform="translate(70,400)">
+            <rect class="node-bg" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">✅ Summary ready</text>
+            <text class="node-sub"   x="100" y="38">UI SHOWS RESULT</text>
+          </g>
+          <g transform="translate(310,400)">
+            <rect class="node-bg indigo" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">👤 User clicks</text>
+            <text class="node-sub"   x="100" y="38">SEND SUMMARY EMAIL</text>
+          </g>
+          <g transform="translate(550,400)" class="node-pulse violet">
+            <rect class="node-bg violet" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">POST /send-summary</text>
+            <text class="node-sub"   x="100" y="38">TO ATTENDEES</text>
+          </g>
+          <g transform="translate(790,400)">
+            <rect class="node-bg amber" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">✉ DeliveryAgent</text>
+            <text class="node-sub"   x="100" y="38">RENDER HTML TEMPLATE</text>
+          </g>
+
+          <g transform="translate(550,470)">
+            <rect class="node-bg pink" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">📨 Postmark API</text>
+            <text class="node-sub"   x="100" y="38">RETURNS message_id</text>
+          </g>
+          <g transform="translate(790,470)">
+            <rect class="node-bg emerald" width="200" height="50" rx="10"/>
+            <text class="node-label" x="100" y="20">🗄 update tracking</text>
+            <text class="node-sub"   x="100" y="38">email_sent_at · postmark_id</text>
+          </g>
+
+          <!-- Edges within stage 3 -->
+          <path d="M985 326 L 985 360 L 170 360 L 170 400" class="edge flow emerald" marker-end="url(#sa-e)"/>
+          <path d="M270 425 L 310 425" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M510 425 L 550 425" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M750 425 L 790 425" class="edge flow accent" marker-end="url(#sa-v)"/>
+          <path d="M890 450 C 890 460 750 495 750 495" class="edge flow pink" marker-end="url(#sa-p)"/>
+          <path d="M750 495 L 790 495" class="edge flow emerald" marker-end="url(#sa-e)"/>
+          <path d="M650 495 C 600 495 600 470 650 470" class="edge flow pink dashed" opacity=".4"/>
+
+          <!-- Animated dots -->
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M270 85 L 295 85');animation:flowA 1.0s linear infinite"/>
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M515 85 L 540 85');animation:flowA 1.0s linear infinite .2s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M740 85 L 770 73');animation:flowA 1.8s linear infinite .4s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M740 85 L 900 159');animation:flowA 2.2s linear infinite .6s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M330 283 L 360 283');animation:flowA 1.0s linear infinite .8s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M590 283 L 620 283');animation:flowA 1.0s linear infinite 1.0s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M860 283 L 890 283');animation:flowA 1.0s linear infinite 1.2s"/>
+          <circle r="3" fill="#10b981" class="flow-dot" style="color:#10b981;offset-path:path('M985 326 L 985 360 L 170 360 L 170 400');animation:flowA 3.6s linear infinite 1.4s"/>
+          <circle r="3" fill="#8b5cf6" class="flow-dot" style="color:#8b5cf6;offset-path:path('M510 425 L 550 425');animation:flowA 1.0s linear infinite 1.8s"/>
+          <circle r="3" fill="#ec4899" class="flow-dot" style="color:#ec4899;offset-path:path('M890 450 C 890 460 750 495 750 495');animation:flowA 2.0s linear infinite 2.4s"/>
+
+          <text x="570" y="560" class="node-sub" text-anchor="middle" opacity=".7">
+            Summary references nudges + decisions · Weaves all three phases into a single narrative · Postmark delivery is optional
+          </text>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>User</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>API</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>Agent</span>
+          <span class="item"><span class="swatch" style="border-color:#ec4899"></span>External (GPT-4 / Postmark)</span>
+          <span class="item"><span class="swatch" style="border-color:#10b981"></span>Datastore</span>
+        </div>
+        <div class="caption">Post-meeting summary pipeline. Summary references nudges + decisions, weaving all three phases into a single narrative.</div>
+      </div>
+
+      <div class="agents">
+        <div class="agent-card">
+          <span class="phase after">After</span>
+          <h5>Summary Agent</h5>
+          <p>GPT-4 (full model, not mini). Prompt includes transcript excerpt + nudge list + decisions + research-brief context. JSON-mode response.</p>
+        </div>
+        <div class="agent-card">
+          <span class="phase after">After</span>
+          <h5>Delivery Agent</h5>
+          <p>Renders an HTML email template, sends via Postmark API. Stores <code class="inline">postmark_id</code> for delivery tracking.</p>
+        </div>
+      </div>
+
+      <h3 id="after-apis">AFTER APIs</h3>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/summarize</div><div class="desc">Trigger the summary pipeline as a background task. Idempotent — re-running regenerates the summary.</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/summary</div><div class="desc">Fetch the structured summary.</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/send-summary</div><div class="desc">Email summary to attendees via Postmark. 503 when key missing.</div></div></div>
+      </div>
+    </section>
+
+    <!-- ============ AGENT EXECUTION ============ -->
+    <section id="agent-execution">
+      <h2>
+        <span class="h2-icon" style="background:var(--violet-50);color:var(--violet);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </span>
+        Agent Execution Model
+      </h2>
+      <p class="section-lede">
+        Every agent in the system follows the same contract: <code class="inline">async def analyze(...) -&gt; Optional[dict]</code>.
+        That uniformity is what lets the dispatcher fan five of them out in parallel without bespoke wiring.
+      </p>
+
+      <h3>The Agent Contract</h3>
+      <pre><span class="com"># Each meeting-phase agent</span>
+<span class="kw">class</span> <span class="fn">SomeAgent</span>:
+    <span class="kw">async def</span> <span class="fn">analyze</span>(
+        self,
+        recent_utterances: <span class="fn">List</span>[<span class="fn">Dict</span>[<span class="fn">str</span>, <span class="fn">Any</span>]],
+    ) -> <span class="fn">Optional</span>[<span class="fn">Dict</span>[<span class="fn">str</span>, <span class="fn">Any</span>]]:
+        <span class="com"># 1. Cheap pre-check (regex / length / settings flag)</span>
+        <span class="kw">if not</span> _gate(recent_utterances):
+            <span class="kw">return</span> <span class="kw">None</span>
+
+        <span class="com"># 2. Optional LLM / external call (resilient_call wrapper)</span>
+        result = <span class="kw">await</span> self._llm_or_external(...)
+
+        <span class="com"># 3. Return canonical nudge dict OR None</span>
+        <span class="kw">return</span> {
+            <span class="str">"nudge_type"</span>: <span class="str">"context"</span>,
+            <span class="str">"title"</span>: ...,
+            <span class="str">"content"</span>: ...,
+            <span class="str">"source_agent"</span>: <span class="str">"context_agent"</span>,
+            <span class="str">"source_data"</span>: { ... },
+            <span class="str">"relevance_score"</span>: 0.78,
+        }</pre>
+
+      <h3>The Dispatcher</h3>
+      <pre><span class="kw">async def</span> <span class="fn">dispatch</span>(self, meeting_id: <span class="fn">str</span>) -> <span class="kw">None</span>:
+    <span class="kw">async with</span> AsyncSessionLocal() <span class="kw">as</span> session:
+        meeting = <span class="kw">await</span> meeting_service.get_meeting(session, mid)
+        utterances = meeting.transcript.utterances
+        topics    = meeting.research_brief.topics
+
+        <span class="com"># Fan-out — return_exceptions so one failure doesn't kill the batch</span>
+        results = <span class="kw">await</span> asyncio.gather(
+            scribe_agent.analyze(utterances),
+            context_agent.analyze(utterances),
+            insight_agent.analyze(utterances, topics),
+            fact_check_agent.analyze(utterances),
+            kg_query_agent.analyze(meeting_id, utterances),
+            return_exceptions=<span class="kw">True</span>,
+        )
+
+        <span class="com"># Persist + broadcast every non-None, non-exception nudge</span>
+        <span class="kw">for</span> r <span class="kw">in</span> results:
+            <span class="kw">if not</span> r <span class="kw">or</span> <span class="fn">isinstance</span>(r, <span class="fn">Exception</span>):
+                <span class="kw">continue</span>
+            persisted = <span class="kw">await</span> meeting_service.add_nudge(session, mid, **r)
+            <span class="kw">await</span> meeting_hub.broadcast(meeting_id, {
+                <span class="str">"type"</span>: <span class="str">"nudge_created"</span>, <span class="str">"nudge"</span>: persisted.to_dict()
+            })</pre>
+
+      <div class="callout ok">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+        <div><strong>Test coverage:</strong> the dispatcher is end-to-end-tested with all five agents mocked — see <code class="inline">tests/integration/test_meeting_dispatch_flow.py</code>. 83 tests pass across unit + integration.</div>
+      </div>
+    </section>
+
+    <!-- ============ RESILIENCE ============ -->
+    <section id="resilience">
+      <h2>
+        <span class="h2-icon" style="background:var(--emerald-50);color:var(--emerald);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </span>
+        Production Patterns
+      </h2>
+      <p class="section-lede">Things you'd expect at staff level — they're here, not hand-waved.</p>
+
+      <div class="grid-2">
+        <div class="panel accent-indigo">
+          <h4>Resilient external calls</h4>
+          <p>Every OpenAI / Exa / Deepgram / Postmark call goes through <code class="inline">@resilient_call(provider)</code> — combines tenacity retry, per-provider circuit breaker, timeout, and Prometheus counter / histogram. Per-provider state means a Deepgram outage doesn't trip Postmark's breaker.</p>
+        </div>
+        <div class="panel accent-violet">
+          <h4>Dependency injection</h4>
+          <p>One <code class="inline">ServiceContainer</code> built in the FastAPI lifespan, injected via <code class="inline">request.app.state.services</code>. Tests swap services trivially — no globals, no monkey-patching.</p>
+        </div>
+        <div class="panel accent-amber">
+          <h4>Structured logging</h4>
+          <p>structlog with request-ID propagation; every external call logs <code class="inline">provider</code>, <code class="inline">duration_ms</code>, <code class="inline">success</code>. JSON in production, console in dev. <code class="inline">/metrics</code> exposes Prometheus.</p>
+        </div>
+        <div class="panel accent-sky">
+          <h4>Rate limiting</h4>
+          <p>slowapi backed by Redis. Configured per-endpoint via <code class="inline">@limiter.limit(settings.rate_limit_upload)</code>. Disabled cleanly in tests.</p>
+        </div>
+        <div class="panel accent-emerald">
+          <h4>Async-first end-to-end</h4>
+          <p>SQLAlchemy 2.0 async + asyncpg + AsyncSession. No sync DB calls anywhere. <code class="inline">asyncio.gather</code> for parallel fan-outs. AsyncClient for HTTP.</p>
+        </div>
+        <div class="panel accent-indigo">
+          <h4>Cooldowns &amp; spam guards</h4>
+          <p>Fact-check has a SHA1-hashed claim cache + 45s global throttle. KG-query has a per-(src,tgt) 90s cooldown. Cheap regex pre-checks gate every LLM call.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TRADE-OFFS ============ -->
+    <section id="tradeoffs">
+      <h2>
+        <span class="h2-icon" style="background:var(--amber-50);color:var(--amber);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </span>
+        Key Trade-offs
+      </h2>
+      <p class="section-lede">Honest about the design choices — what was bought, what was paid for it.</p>
+
+      <table>
+        <thead><tr><th>Decision</th><th>What we gain</th><th>What we pay</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Neo4j + PostgreSQL dual-write</strong></td>
+            <td>Free entity dedup via MERGE; fast Cypher traversal; relational FK integrity preserved</td>
+            <td>Two writes per relationship; eventual consistency; one more service in compose</td>
+          </tr>
+          <tr>
+            <td><strong>Voice worker as separate process</strong></td>
+            <td>Dedicated audio event loop; isolated from API request latency; matches LiveKit's deployment model</td>
+            <td>Cross-process IPC (Redis pubsub for TTS); harder to share in-memory state</td>
+          </tr>
+          <tr>
+            <td><strong>WebSocket optimistic update</strong></td>
+            <td>~0ms perceived latency for new nudges/utterances; no full-tree refetch per event</td>
+            <td>Frontend state must be reconciled on heartbeat; possible duplicate on reconnect (mitigated via id-dedup)</td>
+          </tr>
+          <tr>
+            <td><strong>Cheap pre-checks on every agent</strong></td>
+            <td>~80% of utterances skip the LLM entirely; demo runs &lt; $0.50 OpenAI</td>
+            <td>Regex / length heuristics can miss edge cases; tuned for English business meetings</td>
+          </tr>
+          <tr>
+            <td><strong>Background-task dispatch</strong></td>
+            <td>API responds in &lt; 50ms; UI never blocks; failures don't surface to the user</td>
+            <td>Agent failures only visible in logs; not retryable from the UI</td>
+          </tr>
+          <tr>
+            <td><strong>spaCy NER over LLM for entity extraction</strong></td>
+            <td>~1ms per utterance vs ~1s LLM call; runs locally; catches lowercase entities</td>
+            <td>Misses domain-specific entities not in the model's training set; en_core_web_sm is ~50MB on disk</td>
+          </tr>
+          <tr>
+            <td><strong>Tables/images as synthetic chunks</strong></td>
+            <td>Multi-modal RAG with zero new infrastructure; table markdown embeds alongside text</td>
+            <td>Element-type weighting tuned by hand; no learned re-ranker</td>
+          </tr>
+          <tr>
+            <td><strong>Best-effort Neo4j sync</strong></td>
+            <td>Document upload never fails because of a graph-DB hiccup</td>
+            <td>If sync silently fails, KG queries get stale data — mitigated by PostgreSQL fallback on read</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ API REFERENCE ============ -->
+    <section id="api-ref">
+      <h2>
+        <span class="h2-icon" style="background:var(--indigo-50);color:var(--indigo);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </span>
+        API Reference Cheatsheet
+      </h2>
+      <p class="section-lede">Every endpoint in one place. All paths prefixed with the base URL (default <code class="inline">http://localhost:8000</code>).</p>
+
+      <h4>Documents</h4>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/documents/upload</div><div class="desc">Multipart upload, async processing</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/documents</div><div class="desc">List with pagination</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/documents/{id}</div><div class="desc">Detail + chunk count + KG stats</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/documents/{id}/elements</div><div class="desc">Tables / images extracted</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/documents/{id}/knowledge-graph</div><div class="desc">Neo4j-first, PostgreSQL fallback</div></div></div>
+        <div class="api"><div class="method DELETE">DELETE</div><div><div class="path">/api/v1/documents/{id}</div><div class="desc">Cascading delete</div></div></div>
+      </div>
+
+      <h4>Query (RAG)</h4>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/query</div><div class="desc">RAG over all documents</div></div></div>
+      </div>
+
+      <h4>Meetings — Lifecycle</h4>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings</div><div class="desc">Create</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings</div><div class="desc">List</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}</div><div class="desc">Full tree: meeting + transcript + research + nudges + decisions + summary</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/start</div><div class="desc">Transition to in_progress</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/end</div><div class="desc">Transition to completed</div></div></div>
+        <div class="api"><div class="method DELETE">DELETE</div><div><div class="path">/api/v1/meetings/{id}</div><div class="desc">Delete</div></div></div>
+      </div>
+
+      <h4>Meetings — BEFORE</h4>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/research</div><div class="desc">Trigger research pipeline</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/research</div><div class="desc">Get research brief</div></div></div>
+      </div>
+
+      <h4>Meetings — DURING</h4>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/utterances</div><div class="desc">Append utterance, broadcast WS, dispatch agents</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/transcript</div><div class="desc">Get transcript</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/nudges</div><div class="desc">Persisted nudges</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/decisions</div><div class="desc">Log decision (supports source_nudge_id)</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/action-items</div><div class="desc">Log action item</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/voice-token</div><div class="desc">LiveKit JWT for meeting room</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/speak</div><div class="desc">TTS speakback via Redis → worker → Cartesia</div></div></div>
+        <div class="api"><div class="method WS">WS</div><div><div class="path">/api/v1/meetings/{id}/ws</div><div class="desc">Per-meeting event stream</div></div></div>
+      </div>
+
+      <h4>Meetings — AFTER</h4>
+      <div class="api-list">
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/summarize</div><div class="desc">Generate structured summary</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/api/v1/meetings/{id}/summary</div><div class="desc">Get summary</div></div></div>
+        <div class="api"><div class="method POST">POST</div><div><div class="path">/api/v1/meetings/{id}/send-summary</div><div class="desc">Email via Postmark</div></div></div>
+      </div>
+
+      <h4>Health &amp; Observability</h4>
+      <div class="api-list">
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/health</div><div class="desc">Liveness + readiness + circuit breaker states</div></div></div>
+        <div class="api"><div class="method GET">GET</div><div><div class="path">/metrics</div><div class="desc">Prometheus exposition</div></div></div>
+      </div>
+    </section>
+
+    <!-- ============ FOOTER ============ -->
+    <footer style="margin-top:64px; padding-top:24px; border-top: 1px solid var(--slate-200); font-size:13px; color:var(--slate-500);">
+      <p style="margin:0;">
+        Meeting Assistant — 15 agents · 4 phases · 5 datastores · 83 passing tests.
+        Built for the staff-level interview demo. Source &amp; setup notes in <code class="inline">README.md</code> and <code class="inline">DEMO_SCRIPT.md</code>.
+      </p>
+    </footer>
+
+  </main>
+
+</div>
+
+<!-- =================== INTERACTIVITY =================== -->
+<script>
+  // Highlight active section in sidebar as user scrolls
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.sidebar nav a');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.getAttribute('id');
+        navLinks.forEach(a => {
+          a.style.background = '';
+          a.style.color = '';
+          if (a.getAttribute('href') === '#' + id) {
+            a.style.background = 'var(--indigo-50)';
+            a.style.color = 'var(--indigo-dark)';
+          }
+        });
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 460" width="1140" height="460" preserveAspectRatio="xMidYMid meet">
+  <rect width="100%" height="100%" fill="#0a0f1c"/>
+  <style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseAmber{0%,100%{filter:drop-shadow(0 0 0 rgba(245,158,11,0))}50%{filter:drop-shadow(0 0 8px rgba(245,158,11,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.amber{animation-name:nodePulseAmber}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+          <defs>
+            <marker id="kgarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+            <marker id="kgarr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+          </defs>
+
+          <text x="570" y="28" class="lane-label" text-anchor="middle">SAMPLE KNOWLEDGE GRAPH · vendor evaluation document</text>
+
+          <!-- Edges (drawn first so nodes overlap) -->
+          <!-- Jane Calder → Acme (works_at) -->
+          <path d="M340 230 C 390 230 410 230 460 230" class="edge flow amber" marker-end="url(#kgarr-amber)"/>
+          <text x="400" y="220" class="edge-label" style="fill:#f59e0b">works_at</text>
+
+          <!-- Jane Calder → Beacon Cloud (co_certified_with) -->
+          <path d="M280 200 C 280 130 700 100 800 150" class="edge flow amber" marker-end="url(#kgarr-amber)"/>
+          <text x="540" y="100" class="edge-label" style="fill:#f59e0b">co_certified_with</text>
+
+          <!-- Acme → Beacon Cloud (competes_with) -->
+          <path d="M620 215 C 700 200 760 165 800 165" class="edge flow" marker-end="url(#kgarr)"/>
+          <text x="710" y="180" class="edge-label">competes_with</text>
+
+          <!-- Acme → CoreScale (competes_with) -->
+          <path d="M620 245 C 700 270 760 290 800 300" class="edge flow" marker-end="url(#kgarr)"/>
+          <text x="710" y="290" class="edge-label">competes_with</text>
+
+          <!-- CoreScale → Beacon Cloud (spun_out_from) -->
+          <path d="M880 280 C 920 260 920 200 880 195" class="edge flow amber" marker-end="url(#kgarr-amber)"/>
+          <text x="950" y="240" class="edge-label" style="fill:#f59e0b">spun_out_from</text>
+
+          <!-- Beacon Cloud → Q2 (reviewed_in) -->
+          <path d="M880 165 C 970 140 1010 150 1020 200" class="edge flow dashed" opacity=".7"/>
+          <text x="1010" y="135" class="edge-label">reviewed_in</text>
+
+          <!-- ===== Nodes (circles + labels) ===== -->
+          <!-- Jane Calder (PERSON) — pulsing accent node -->
+          <g transform="translate(220,230)" class="node-pulse violet">
+            <circle r="60" class="node-bg violet"/>
+            <text class="node-tag" x="0" y="-18" style="fill:#a78bfa">PERSON</text>
+            <text class="node-label" x="0" y="2">Jane Calder</text>
+            <text class="node-sub" x="0" y="22">CEO · ACME</text>
+          </g>
+
+          <!-- Acme (ORG) -->
+          <g transform="translate(540,230)">
+            <circle r="54" class="node-bg indigo"/>
+            <text class="node-tag" x="0" y="-18" style="fill:#818cf8">ORG</text>
+            <text class="node-label" x="0" y="2">Acme</text>
+            <text class="node-sub" x="0" y="20">SEARCH</text>
+          </g>
+
+          <!-- Beacon Cloud (ORG) -->
+          <g transform="translate(840,160)">
+            <circle r="56" class="node-bg sky"/>
+            <text class="node-tag" x="0" y="-20" style="fill:#38bdf8">ORG</text>
+            <text class="node-label" x="0" y="0">Beacon Cloud</text>
+            <text class="node-sub" x="0" y="20">COMPLIANCE</text>
+          </g>
+
+          <!-- CoreScale (ORG) -->
+          <g transform="translate(840,310)">
+            <circle r="52" class="node-bg indigo"/>
+            <text class="node-tag" x="0" y="-18" style="fill:#818cf8">ORG</text>
+            <text class="node-label" x="0" y="2">CoreScale</text>
+            <text class="node-sub" x="0" y="20">LOW-COST</text>
+          </g>
+
+          <!-- Q2 (DATE) -->
+          <g transform="translate(1040,230)">
+            <circle r="40" class="node-bg amber"/>
+            <text class="node-tag" x="0" y="-15" style="fill:#fbbf24">DATE</text>
+            <text class="node-label" x="0" y="6">Q2</text>
+          </g>
+
+          <!-- ===== Animated flow dots traversing the relationships ===== -->
+          <circle r="3.5" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M340 230 C 390 230 410 230 460 230');animation:flowA 2.0s linear infinite"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M280 200 C 280 130 700 100 800 150');animation:flowA 3.4s linear infinite .2s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M620 215 C 700 200 760 165 800 165');animation:flowA 2.4s linear infinite .6s"/>
+          <circle r="3" fill="#5c6788" class="flow-dot" style="color:#5c6788;offset-path:path('M620 245 C 700 270 760 290 800 300');animation:flowA 2.4s linear infinite .9s"/>
+          <circle r="3" fill="#f59e0b" class="flow-dot" style="color:#f59e0b;offset-path:path('M880 280 C 920 260 920 200 880 195');animation:flowA 2.0s linear infinite 1.2s"/>
+
+          <text x="570" y="430" class="node-sub" text-anchor="middle" opacity=".7">
+            kg_query_agent traverses these edges with Cypher (1-2 hops) when meeting utterances mention any of these entities
+          </text>
+        </svg>
