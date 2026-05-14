@@ -133,6 +133,149 @@ class ApiClient {
     return response.data;
   }
 
+  // Meetings
+  async createMeeting(data: { title: string; description?: string; attendees?: any[]; scheduled_at?: string }): Promise<any> {
+    const response = await this.client.post('/api/v1/meetings/', data);
+    return response.data;
+  }
+
+  async listMeetings(skip: number = 0, limit: number = 50, status?: string): Promise<any> {
+    const params: any = { skip, limit };
+    if (status) params.status = status;
+    const response = await this.client.get('/api/v1/meetings/', { params });
+    return response.data;
+  }
+
+  async getMeeting(meetingId: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}`);
+    return response.data;
+  }
+
+  async deleteMeeting(meetingId: string): Promise<any> {
+    const response = await this.client.delete(`/api/v1/meetings/${meetingId}`);
+    return response.data;
+  }
+
+  async triggerResearch(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/research`);
+    return response.data;
+  }
+
+  async getResearch(meetingId: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}/research`);
+    return response.data;
+  }
+
+  async addDecision(meetingId: string, data: { decision_text: string; owner?: string; deadline?: string; context?: string; source_nudge_id?: string }): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/decisions`, data);
+    return response.data;
+  }
+
+  async addActionItem(meetingId: string, data: { description: string; assignee?: string; deadline?: string; priority?: string }): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/action-items`, data);
+    return response.data;
+  }
+
+  // Transcript / Utterances
+  async addUtterance(meetingId: string, speaker: string, text: string): Promise<any> {
+    const response = await this.client.post(
+      `/api/v1/meetings/${meetingId}/utterances`,
+      { speaker, text },
+    );
+    return response.data;
+  }
+
+  async getTranscript(meetingId: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}/transcript`);
+    return response.data;
+  }
+
+  // Summary
+  async generateSummary(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/summarize`);
+    return response.data;
+  }
+
+  async getSummary(meetingId: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}/summary`);
+    return response.data;
+  }
+
+  async sendSummaryEmail(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/send-summary`);
+    return response.data;
+  }
+
+  async getDocumentElements(documentId: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/documents/${documentId}/elements`);
+    return response.data;
+  }
+
+  async getDocumentKnowledgeGraph(documentId: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/documents/${documentId}/knowledge-graph`);
+    return response.data;
+  }
+
+  /**
+   * Open a meeting-scoped WebSocket. Returns a cleanup function.
+   * Pushed event types: "nudge_created", "utterance_added".
+   */
+  connectMeetingWS(
+    meetingId: string,
+    onMessage: (message: any) => void,
+  ): () => void {
+    let ws: WebSocket | null = null;
+    let pingInterval: ReturnType<typeof setInterval> | null = null;
+    let closed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(`${this.wsUrl}/api/v1/meetings/${meetingId}/ws`);
+
+      ws.onopen = () => {
+        console.log(`[MeetingWS] connected to ${meetingId.slice(0, 8)}`);
+        pingInterval = setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) ws.send('ping');
+        }, 25000);
+      };
+
+      ws.onmessage = (event) => {
+        if (event.data === 'pong') return;
+        try {
+          onMessage(JSON.parse(event.data));
+        } catch (e) {
+          console.warn('[MeetingWS] parse error', e);
+        }
+      };
+
+      ws.onclose = () => {
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = null;
+        }
+        if (!closed) {
+          reconnectTimer = setTimeout(connect, 2000);
+        }
+      };
+
+      ws.onerror = () => {
+        // onclose will fire next; reconnect happens there
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (pingInterval) clearInterval(pingInterval);
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+    };
+  }
+
   // WebSocket with automatic reconnection
   createWebSocket(
     onMessage: (message: any) => void,

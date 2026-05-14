@@ -146,3 +146,75 @@ export interface ConversationHistory {
   created_at: string;
   updated_at: string;
 }
+
+// Meeting Assistant Types
+
+export interface Meeting {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  scheduled_at?: string;
+  started_at?: string;
+  ended_at?: string;
+  attendees: { name?: string; email?: string }[];
+  created_at: string;
+  research?: ResearchBriefData | null;
+  nudges?: NudgeData[];
+  decisions?: DecisionData[];
+  summary?: MeetingSummaryData | null;
+}
+
+export interface ResearchBriefData {
+  status: string;
+  source_count: number;
+  executive_summary?: string;
+  topics: ResearchTopic[];
+}
+
+export interface ResearchTopic {
+  topic: string;
+  rationale: string;
+  sources: ResearchSource[];
+}
+
+export interface ResearchSource {
+  url: string;
+  title: string;
+  excerpt: string;
+  tier: number;
+  credibility_score: number;
+}
+
+export interface NudgeData {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  source_agent?: string;
+  relevance_score?: number;
+  created_at: string;
+}
+
+export interface DecisionData {
+  id: string;
+  decision_text: string;
+  owner?: string;
+  deadline?: string;
+  status: string;
+  action_items?: ActionItemData[];
+}
+
+export interface ActionItemData {
+  id: string;
+  description: string;
+  assignee?: string;
+  priority: string;
+  status: string;
+}
+
+export interface MeetingSummaryData {
+  summary_text: string;
+  key_insights: any[];
+  email_sent_at?: string;
+}

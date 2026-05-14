@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Voice Document Intelligence",
-  description: "AI-powered voice-enabled document intelligence system with contextual embeddings",
+  title: "Meeting Assistant — AI-Powered Meeting Intelligence",
+  description: "3-phase meeting assistant with 15 AI agents: pre-meeting research, live intelligence with nudge cards, and automated post-meeting summaries.",
 };
 
 export default function RootLayout({

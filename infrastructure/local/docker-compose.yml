@@ -121,22 +121,27 @@ services:
     ports:
       - "8080:8080"
 
-  # TigerGraph for knowledge graph (optional)
-  tigergraph:
-    image: docker.tigergraph.com/tigergraph:latest
-    container_name: voice-doc-tigergraph
+  # Neo4j for knowledge graph (entity relationships + multi-hop traversal)
+  neo4j:
+    image: neo4j:5-community
+    container_name: voice-doc-neo4j
     ports:
-      - "9000:9000"
-      - "14240:14240"  # GraphStudio
-    volumes:
-      - tigergraph_data:/home/tigergraph/mydata
-    ulimits:
-      nofile:
-        soft: 1000000
-        hard: 1000000
+      - "7474:7474"  # HTTP / Browser
+      - "7687:7687"  # Bolt
     environment:
-      - TIGERGRAPH_USERNAME=${TIGERGRAPH_USERNAME:-tigergraph}
-      - TIGERGRAPH_PASSWORD=${TIGERGRAPH_PASSWORD:-tigergraph}
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-voicedoc123}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_memory_pagecache_size=512M
+      - NEO4J_dbms_memory_heap_initial__size=512M
+      - NEO4J_dbms_memory_heap_max__size=1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   # Prometheus for metrics
   prometheus:
@@ -182,6 +187,7 @@ volumes:
   qdrant_data:
   minio_data:
   temporal_data:
-  tigergraph_data:
+  neo4j_data:
+  neo4j_logs:
   prometheus_data:
   grafana_data:

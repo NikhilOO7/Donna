@@ -64,7 +64,7 @@ from apps.api.core.resilience import get_all_breaker_states
 from apps.api.core.tracing import configure_tracing
 from apps.api.models.requests import QueryRequest
 from apps.api.models.responses import QueryResponse
-from apps.api.routers import voice
+from apps.api.routers import meetings, voice
 from apps.api.services.agents.agent_coordinator import DocumentIntelligenceCoordinator
 from apps.api.services.agents.crew_setup import DocumentIntelligenceAgents
 from apps.api.services.analytics_service import (
@@ -137,6 +137,18 @@ async def lifespan(app: FastAPI):
         logger.info("All services initialized successfully")
         logger.info("Voice worker must be started separately")
 
+        # Best-effort: warm up Neo4j connection + schema. App still serves
+        # if Neo4j is offline — KG features degrade to PostgreSQL fallback.
+        try:
+            from apps.api.core.neo4j_client import neo4j_client
+
+            if await neo4j_client.ensure_ready():
+                logger.info("Neo4j knowledge graph connection ready")
+            else:
+                logger.info("Neo4j disabled or unreachable — KG runs in fallback mode")
+        except Exception as e:
+            logger.warning(f"Neo4j warmup skipped: {e}")
+
     except Exception as e:
         logger.error(f"Initialization failed: {e}")
         raise
@@ -145,6 +157,12 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("Shutting down services...")
+    try:
+        from apps.api.core.neo4j_client import neo4j_client
+
+        await neo4j_client.close()
+    except Exception:
+        pass
     logger.info("Shutdown complete")
 
 
@@ -238,6 +256,7 @@ app.add_middleware(ObservabilityMiddleware)
 
 # Include routers
 app.include_router(voice.router)
+app.include_router(meetings.router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -474,6 +493,16 @@ async def process_document_task(
                     )
                 )
 
+                # 1.5. Enrich with layout/table/image agents (PDF only — additive)
+                from apps.api.services.document.enhanced_pipeline import (
+                    enhanced_document_pipeline,
+                )
+
+                enrichment = await enhanced_document_pipeline.enrich_chunks(
+                    processing_result["chunks"], file_path, content_type
+                )
+                processing_result["chunks"] = enrichment["chunks"]
+
                 # 2. Generate contextual embeddings (3 levels)
                 embeddings_data = (
                     await services.contextual_embedding_generator.generate_embeddings(
@@ -492,7 +521,7 @@ async def process_document_task(
                     document_id, embeddings_data, processing_result["structure"]
                 )
 
-                # 4. Add chunks to database
+                # 4. Add chunks to database (capture IDs for KG linkage)
                 chunk_dicts = []
                 for chunk in processing_result["chunks"]:
                     chunk_dicts.append(
@@ -504,28 +533,25 @@ async def process_document_task(
                             "start_page": chunk.get("start_page"),
                             "end_page": chunk.get("end_page"),
                             "metadata": chunk.get("metadata", {}),
+                            "is_table": chunk.get("is_table", False)
+                            or (chunk.get("metadata", {}) or {}).get("is_table", False),
                         }
                     )
 
-                await document_service.add_chunks(session, doc_uuid, chunk_dicts)
+                persisted_chunks = await document_service.add_chunks(
+                    session, doc_uuid, chunk_dicts
+                )
 
-                # 4.5. Extract and persist named entities from chunks
-                all_entities = []
-                for chunk in processing_result["chunks"]:
-                    chunk_entities = chunk.get("metadata", {}).get("entities", [])
-                    for ent in chunk_entities:
-                        all_entities.append(
-                            {
-                                "entity_type": ent.get(
-                                    "type", ent.get("label", "UNKNOWN")
-                                ),
-                                "entity_value": ent.get("text", ent.get("value", "")),
-                                "confidence_score": ent.get("confidence"),
-                                "extraction_method": "spacy",
-                            }
-                        )
-                if all_entities:
-                    await document_service.add_entities(session, doc_uuid, all_entities)
+                # 4.5. Knowledge graph extraction: per-chunk entities,
+                #      relationships, and table/image DocumentElements
+                kg_stats = await enhanced_document_pipeline.extract_knowledge_graph(
+                    session=session,
+                    document_id=doc_uuid,
+                    persisted_chunks=persisted_chunks,
+                    original_chunks=processing_result["chunks"],
+                    tables=enrichment["tables"],
+                    images=enrichment["images"],
+                )
 
                 # 5. Update document metadata and status
                 await document_service.update_document_metadata(
@@ -537,6 +563,7 @@ async def process_document_task(
                         else {},
                         "processing_method": "enhanced_contextual",
                         "chunk_count": len(processing_result["chunks"]),
+                        "knowledge_graph": kg_stats,
                     },
                 )
 
@@ -823,6 +850,183 @@ async def get_document(
         "chunk_count": len(document.chunks) if document.chunks else 0,
         "metadata": document.doc_metadata,
         "extracted_metadata": document.extracted_metadata,
+    }
+
+
+@app.get("/api/v1/documents/{document_id}/elements")
+async def get_document_elements(
+    document_id: str,
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+):
+    """Return tables/images/charts extracted from a document."""
+    from uuid import UUID
+
+    from apps.api.services.document.knowledge_graph_service import (
+        knowledge_graph_service,
+    )
+
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid document ID format")
+
+    elements = await knowledge_graph_service.get_elements_for_document(
+        session, doc_uuid
+    )
+    return {
+        "document_id": document_id,
+        "count": len(elements),
+        "elements": [
+            {
+                "id": str(e.id),
+                "type": e.element_type,
+                "content": e.content,
+                "page": e.page_number,
+                "position_index": e.position_index,
+                "caption": e.caption,
+                "raw_data": e.raw_data,
+            }
+            for e in elements
+        ],
+    }
+
+
+@app.get("/api/v1/documents/{document_id}/knowledge-graph")
+async def get_document_knowledge_graph(
+    document_id: str,
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+):
+    """Return the document's knowledge graph.
+
+    Primary path: Cypher query against Neo4j (deduplicated, fast).
+    Fallback path: PostgreSQL `entities` + `entity_relationships`
+    (raw, may contain duplicate entity rows from per-chunk spaCy
+    extractions) when Neo4j is offline or empty for this document.
+    """
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from apps.api.core.neo4j_client import neo4j_client
+    from apps.api.models.document import Entity
+    from apps.api.services.document.knowledge_graph_service import (
+        knowledge_graph_service,
+    )
+
+    try:
+        doc_uuid = UUID(document_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid document ID format")
+
+    # --- Try Neo4j first ---
+    if neo4j_client.enabled:
+        cypher = """
+        MATCH (e:Entity {document_id: $doc_id})
+        OPTIONAL MATCH (e)-[r:REL]-(other:Entity)
+        RETURN
+            collect(DISTINCT {
+                id: e.id,
+                label: e.label,
+                type: e.type,
+                confidence: e.confidence
+            }) AS nodes,
+            collect(DISTINCT CASE
+                WHEN other IS NOT NULL THEN {
+                    source_norm: e.normalized,
+                    source_type: e.type,
+                    target_norm: other.normalized,
+                    target_type: other.type,
+                    relationship: r.type,
+                    confidence: r.confidence,
+                    context: r.context
+                } ELSE NULL END
+            ) AS rels
+        """
+        result = await neo4j_client.execute(cypher, {"doc_id": str(doc_uuid)})
+        if result and result[0].get("nodes"):
+            row = result[0]
+            # Map normalized keys back to node IDs for the UI's edge.source/target
+            nodes_by_key = {
+                (n["label"].lower().strip(), n["type"]): n["id"] for n in row["nodes"]
+            }
+            edges = []
+            for r in row.get("rels") or []:
+                if not r:
+                    continue
+                s = nodes_by_key.get((r["source_norm"], r["source_type"]))
+                t = nodes_by_key.get((r["target_norm"], r["target_type"]))
+                if not s or not t:
+                    continue
+                edges.append(
+                    {
+                        "source": s,
+                        "target": t,
+                        "relationship": (r["relationship"] or "").lower(),
+                        "confidence": r.get("confidence"),
+                        "context": r.get("context"),
+                    }
+                )
+            return {
+                "document_id": document_id,
+                "node_count": len(row["nodes"]),
+                "edge_count": len(edges),
+                "nodes": row["nodes"],
+                "edges": edges,
+                "source": "neo4j",
+            }
+
+    # --- Fallback: PostgreSQL ---
+    rels = await knowledge_graph_service.get_relationships_for_document(
+        session, doc_uuid
+    )
+    entity_ids = set()
+    for r in rels:
+        entity_ids.add(r.source_entity_id)
+        entity_ids.add(r.target_entity_id)
+
+    result = await session.execute(
+        select(Entity).where(Entity.document_id == doc_uuid)
+    )
+    doc_entities = list(result.scalars().all())
+    entity_map = {ent.id: ent for ent in doc_entities}
+    for eid in entity_ids:
+        if eid not in entity_map:
+            entity_map[eid] = None
+
+    nodes = []
+    for eid, ent in entity_map.items():
+        if ent is None:
+            nodes.append({"id": str(eid), "label": "(external)", "type": "UNKNOWN"})
+        else:
+            nodes.append(
+                {
+                    "id": str(ent.id),
+                    "label": ent.entity_value,
+                    "type": ent.entity_type,
+                    "confidence": ent.confidence_score,
+                }
+            )
+
+    edges = [
+        {
+            "source": str(r.source_entity_id),
+            "target": str(r.target_entity_id),
+            "relationship": r.relationship_type,
+            "confidence": r.confidence_score,
+            "context": r.context,
+        }
+        for r in rels
+    ]
+
+    return {
+        "document_id": document_id,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "nodes": nodes,
+        "edges": edges,
+        "source": "postgresql",
     }
 
 

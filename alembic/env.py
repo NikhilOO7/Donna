@@ -19,6 +19,11 @@ from apps.api.core.database import Base
 # Import all models to register them with Base.metadata
 from apps.api.models.document import Document, DocumentChunk, ContextualEmbedding, Entity  # noqa: F401
 from apps.api.models.analytics import AnalyticsEvent, ConversationSession  # noqa: F401
+from apps.api.models.meeting import (  # noqa: F401
+    Meeting, ResearchBrief, MeetingTranscript, Nudge,
+    Decision, ActionItem, MeetingSummary,
+    EntityRelationship, DocumentElement,
+)
 
 config = context.config
 

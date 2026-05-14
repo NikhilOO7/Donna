@@ -123,6 +123,20 @@ class Settings(BaseSettings):
     # Voyage AI (Better embeddings)
     voyage_api_key: Optional[str] = Field(default=None, env="VOYAGE_API_KEY")
     voyage_model: str = Field(default="voyage-3-large", env="VOYAGE_MODEL")
+
+    # Exa (Web search for pre-meeting research)
+    exa_api_key: Optional[str] = Field(default=None, env="EXA_API_KEY")
+
+    # Postmark (Email delivery for post-meeting summaries)
+    postmark_api_key: Optional[str] = Field(default=None, env="POSTMARK_API_KEY")
+    postmark_from_email: str = Field(default="meetings@example.com", env="POSTMARK_FROM_EMAIL")
+
+    # Neo4j (Knowledge Graph)
+    neo4j_uri: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
+    neo4j_user: str = Field(default="neo4j", env="NEO4J_USER")
+    neo4j_password: str = Field(default="voicedoc123", env="NEO4J_PASSWORD")
+    neo4j_database: str = Field(default="neo4j", env="NEO4J_DATABASE")
+    neo4j_enabled: bool = Field(default=True, env="NEO4J_ENABLED")
     
     # Authentication
     api_key: Optional[str] = Field(default=None, env="API_KEY")
