@@ -2,15 +2,32 @@
 Email Service.
 
 Sends meeting summaries via Postmark. Gracefully degrades if
-Postmark API key is not configured.
+Postmark API key is not configured. The HTML body is rendered from
+the Jinja2 template at ``templates/meeting_summary.html``.
 """
 
 import logging
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from apps.api.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_TEMPLATE_DIR = Path(__file__).parent / "templates"
+_TEMPLATE_NAME = "meeting_summary.html"
+
+
+@lru_cache(maxsize=1)
+def _get_template_env():
+    """Build (once) a Jinja2 environment for the templates dir."""
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    return Environment(
+        loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
 
 
 class EmailService:
@@ -71,87 +88,31 @@ class EmailService:
             return None
 
     def _render_html(self, title: str, summary: Dict[str, Any]) -> str:
-        """Render a clean, responsive HTML email."""
-        exec_summary = summary.get("executive_summary", "No summary available.")
-        decisions = summary.get("decisions_summary", [])
-        actions = summary.get("action_items", [])
-        insights = summary.get("ai_insights_used", [])
-        follow_ups = summary.get("follow_up_recommendations", [])
+        """Render the responsive HTML email from the Jinja2 template.
 
-        decisions_html = ""
-        if decisions:
-            rows = "".join(
-                f'<tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">{d.get("decision", "")}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">{d.get("owner", "TBD")}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">{d.get("deadline", "TBD")}</td></tr>'
-                for d in decisions
+        Falls back to a minimal inline body if the template can't be
+        loaded for any reason (so email delivery never hard-fails on a
+        templating issue).
+        """
+        context = {
+            "title": title,
+            "exec_summary": summary.get(
+                "executive_summary", "No summary available."
+            ),
+            "decisions": summary.get("decisions_summary", []) or [],
+            "actions": summary.get("action_items", []) or [],
+            "insights": summary.get("ai_insights_used", []) or [],
+            "follow_ups": summary.get("follow_up_recommendations", []) or [],
+        }
+        try:
+            template = _get_template_env().get_template(_TEMPLATE_NAME)
+            return template.render(**context)
+        except Exception as e:
+            logger.error(f"Email template render failed, using fallback: {e}")
+            return (
+                f"<html><body><h1>{title}</h1>"
+                f"<p>{context['exec_summary']}</p></body></html>"
             )
-            decisions_html = f"""
-            <h2 style="color:#312e81;font-size:18px;margin:24px 0 12px">Decisions</h2>
-            <table style="width:100%;border-collapse:collapse;font-size:14px">
-                <thead><tr style="background:#eef2ff">
-                    <th style="padding:8px 12px;text-align:left">Decision</th>
-                    <th style="padding:8px 12px;text-align:left">Owner</th>
-                    <th style="padding:8px 12px;text-align:left">Deadline</th>
-                </tr></thead>
-                <tbody>{rows}</tbody>
-            </table>"""
-
-        actions_html = ""
-        if actions:
-            items = "".join(
-                f'<li style="margin-bottom:6px"><strong>{a.get("item", "")}</strong>'
-                f" — {a.get('assignee', 'Unassigned')} "
-                f'<span style="color:#6366f1">({a.get("priority", "medium")})</span></li>'
-                for a in actions
-            )
-            actions_html = f"""
-            <h2 style="color:#312e81;font-size:18px;margin:24px 0 12px">Action Items</h2>
-            <ul style="padding-left:20px;font-size:14px">{items}</ul>"""
-
-        insights_html = ""
-        if insights:
-            items = "".join(
-                f'<li style="margin-bottom:6px">{i.get("insight", "")}'
-                f' <em style="color:#888">— {i.get("impact", "")}</em></li>'
-                for i in insights
-            )
-            insights_html = f"""
-            <h2 style="color:#312e81;font-size:18px;margin:24px 0 12px">AI Insights Used</h2>
-            <ul style="padding-left:20px;font-size:14px">{items}</ul>"""
-
-        follow_html = ""
-        if follow_ups:
-            items = "".join(
-                f'<li style="margin-bottom:4px">{f}</li>' for f in follow_ups
-            )
-            follow_html = f"""
-            <h2 style="color:#312e81;font-size:18px;margin:24px 0 12px">Follow-Up Recommendations</h2>
-            <ul style="padding-left:20px;font-size:14px">{items}</ul>"""
-
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f9fafb">
-            <div style="max-width:640px;margin:0 auto;padding:32px 24px">
-                <div style="background:linear-gradient(135deg,#4f46e5,#6366f1);border-radius:12px;padding:24px 28px;color:white;margin-bottom:24px">
-                    <h1 style="margin:0;font-size:22px;font-weight:700">{title}</h1>
-                    <p style="margin:6px 0 0;opacity:0.85;font-size:14px">Meeting Summary — AI Generated</p>
-                </div>
-                <div style="background:white;border-radius:12px;padding:28px;border:1px solid #e5e7eb">
-                    <h2 style="color:#312e81;font-size:18px;margin:0 0 12px">Executive Summary</h2>
-                    <p style="color:#374151;line-height:1.7;font-size:14px;white-space:pre-wrap">{exec_summary}</p>
-                    {decisions_html}
-                    {actions_html}
-                    {insights_html}
-                    {follow_html}
-                </div>
-                <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:24px">
-                    Generated by Meeting Assistant &middot; AI-Powered Meeting Intelligence
-                </p>
-            </div>
-        </body>
-        </html>"""
 
 
 email_service = EmailService()

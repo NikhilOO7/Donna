@@ -17,23 +17,23 @@ import hashlib
 import json
 import logging
 import re
-import time
 from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
 from apps.api.core.config import settings
+from apps.api.core.coordination import cooldown_passed
 from apps.api.core.resilience import resilient_call
 from apps.api.services.research.search_agent import SearchAgent
 
 logger = logging.getLogger(__name__)
 
-# Anti-spam: don't re-emit the same claim hash within N seconds, and cap
-# total fact-check nudges to one per ~60s window even if claims vary.
-_RECENT_CLAIMS: Dict[str, float] = {}
-_LAST_EMIT_GLOBAL: Dict[str, float] = {}  # keyed by something stable; we use ""
+# Anti-spam: don't re-emit the same claim within N seconds, and cap
+# fact-check nudges to one per ~45s window per meeting. Cooldown state
+# lives in Redis (shared across replicas) via core.coordination, falling
+# back to process-local when Redis is down.
 _CLAIM_COOLDOWN_S = 300.0
-_GLOBAL_MIN_GAP_S = 45.0
+_PER_MEETING_MIN_GAP_S = 45.0
 
 # Pre-filter: only run LLM extraction if utterance looks claim-like.
 # - percentage / numeric increase: "8%", "15 percent", "$3.2B"
@@ -57,9 +57,16 @@ class FactCheckAgent:
         self.search_agent = SearchAgent()
 
     async def analyze(
-        self, recent_utterances: List[Dict[str, Any]]
+        self,
+        recent_utterances: List[Dict[str, Any]],
+        meeting_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Return a fact_check nudge if a verifiable claim is contradicted."""
+        """Return a fact_check nudge if a verifiable claim is contradicted.
+
+        Cooldowns are Redis-backed (shared across replicas): at most one
+        fact-check attempt per ``_PER_MEETING_MIN_GAP_S`` per meeting, and
+        the same claim isn't re-verified within ``_CLAIM_COOLDOWN_S``.
+        """
         if not settings.exa_api_key or not recent_utterances:
             return None
 
@@ -72,21 +79,24 @@ class FactCheckAgent:
         if not CLAIM_PATTERNS.search(text):
             return None
 
-        # Global throttle — don't fire more than once per ~45s regardless of
-        # how many claim-shaped utterances roll in
-        now = time.monotonic()
-        last_global = _LAST_EMIT_GLOBAL.get("")
-        if last_global and now - last_global < _GLOBAL_MIN_GAP_S:
+        scope = meeting_id or "global"
+
+        # Per-meeting throttle — atomically claim the window so the fleet
+        # runs at most one fact-check attempt per gap, not one per replica.
+        if not await cooldown_passed(
+            f"factcheck:meeting:{scope}", _PER_MEETING_MIN_GAP_S
+        ):
             return None
 
         claim = await self._extract_claim(text)
         if not claim:
             return None
 
-        # Per-claim cooldown — never re-verify the same claim twice in 5 min
+        # Per-claim cooldown — never re-verify the same claim within 5 min
         claim_hash = hashlib.sha1(claim.lower().encode()).hexdigest()[:16]
-        last_claim = _RECENT_CLAIMS.get(claim_hash)
-        if last_claim and now - last_claim < _CLAIM_COOLDOWN_S:
+        if not await cooldown_passed(
+            f"factcheck:claim:{scope}:{claim_hash}", _CLAIM_COOLDOWN_S
+        ):
             return None
 
         sources = await self.search_agent.search_topic(
@@ -104,10 +114,6 @@ class FactCheckAgent:
         # claims aren't interesting to surface.
         if status not in ("contradicted", "partial", "unverified"):
             return None
-
-        # Record emission timestamps for cooldown bookkeeping
-        _RECENT_CLAIMS[claim_hash] = now
-        _LAST_EMIT_GLOBAL[""] = now
 
         top = sources[0]
         return {

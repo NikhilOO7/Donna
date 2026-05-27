@@ -17,8 +17,9 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.core.auth import verify_api_key
+from apps.api.core.auth import require_user, verify_api_key
 from apps.api.core.database import get_db
+from apps.api.core.jobs import enqueue
 from apps.api.models.meeting import (
     ActionItemCreate,
     DecisionCreate,
@@ -34,19 +35,34 @@ from apps.api.services.research.pipeline import research_pipeline
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
 
 
+def _check_owner(meeting, current_user) -> None:
+    """Enforce row-level isolation: a user may only touch their own meetings.
+
+    No-op when the meeting has no owner (legacy/demo data) or when no user
+    is present (auth disabled). When a user IS present and the meeting is
+    owned by someone else, 404 (not 403 — don't reveal existence).
+    """
+    if current_user is None:
+        return
+    owner_id = getattr(meeting, "owner_id", None)
+    if owner_id is not None and str(owner_id) != str(current_user.id):
+        raise HTTPException(404, "Meeting not found")
+
+
 @router.post("/", response_model=dict)
 async def create_meeting(
     body: MeetingCreate,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Create a new meeting."""
+    """Create a new meeting (owned by the authenticated user, if any)."""
     meeting = await meeting_service.create_meeting(
         session,
         title=body.title,
         description=body.description,
         attendees=body.attendees,
         scheduled_at=body.scheduled_at,
+        owner_id=current_user.id if current_user else None,
     )
     return {
         "id": str(meeting.id),
@@ -62,10 +78,13 @@ async def list_meetings(
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = None,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """List meetings with optional status filter."""
-    meetings = await meeting_service.list_meetings(session, skip, limit, status)
+    """List the authenticated user's meetings (all meetings if auth off)."""
+    owner_id = current_user.id if current_user else None
+    meetings = await meeting_service.list_meetings(
+        session, skip, limit, status, owner_id=owner_id
+    )
     return {
         "meetings": [
             {
@@ -90,9 +109,9 @@ async def list_meetings(
 async def get_meeting(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Get a meeting with all related data."""
+    """Get a meeting with all related data (owner-scoped)."""
     try:
         mid = UUID(meeting_id)
     except ValueError:
@@ -101,6 +120,7 @@ async def get_meeting(
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
+    _check_owner(meeting, current_user)
 
     return {
         "id": str(meeting.id),
@@ -176,13 +196,18 @@ async def get_meeting(
 async def delete_meeting(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Soft-delete a meeting."""
+    """Soft-delete a meeting (owner-scoped)."""
     try:
         mid = UUID(meeting_id)
     except ValueError:
         raise HTTPException(400, "Invalid meeting ID format")
+
+    meeting = await meeting_service.get_meeting(session, mid)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+    _check_owner(meeting, current_user)
 
     success = await meeting_service.delete_meeting(session, mid)
     if not success:
@@ -285,13 +310,16 @@ async def trigger_research(
     # Update meeting status
     await meeting_service.update_meeting_status(session, mid, "researching")
 
-    # Run pipeline in background
-    background_tasks.add_task(
-        research_pipeline.run,
-        meeting_id=meeting_id,
-        title=meeting.title,
-        description=meeting.description or "",
-    )
+    # Durable queue if enabled, else in-process background task
+    if not await enqueue(
+        "research_job", meeting_id, meeting.title, meeting.description or ""
+    ):
+        background_tasks.add_task(
+            research_pipeline.run,
+            meeting_id=meeting_id,
+            title=meeting.title,
+            description=meeting.description or "",
+        )
 
     return {"status": "started", "message": "Research pipeline started"}
 
@@ -334,13 +362,18 @@ async def get_research(
 async def start_meeting(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Start a live meeting session."""
+    """Start a live meeting session (owner-scoped)."""
     try:
         mid = UUID(meeting_id)
     except ValueError:
         raise HTTPException(400, "Invalid meeting ID format")
+
+    meeting = await meeting_service.get_meeting(session, mid)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+    _check_owner(meeting, current_user)
 
     success = await meeting_service.update_meeting_status(session, mid, "in_progress")
     if not success:
@@ -352,13 +385,18 @@ async def start_meeting(
 async def end_meeting(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """End a live meeting session."""
+    """End a live meeting session (owner-scoped)."""
     try:
         mid = UUID(meeting_id)
     except ValueError:
         raise HTTPException(400, "Invalid meeting ID format")
+
+    meeting = await meeting_service.get_meeting(session, mid)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+    _check_owner(meeting, current_user)
 
     success = await meeting_service.update_meeting_status(session, mid, "completed")
     if not success:
@@ -528,8 +566,9 @@ async def add_utterance(
         },
     )
 
-    # Run agent dispatcher in background — does not block the response
-    background_tasks.add_task(agent_dispatcher.dispatch, meeting_id)
+    # Run agent dispatcher: durable queue if enabled, else in-process.
+    if not await enqueue("dispatch_job", meeting_id):
+        background_tasks.add_task(agent_dispatcher.dispatch, meeting_id)
 
     return {
         "status": "ok",
@@ -638,17 +677,28 @@ async def generate_summary(
     if meeting.research_brief and meeting.research_brief.executive_summary:
         research_summary = meeting.research_brief.executive_summary
 
-    background_tasks.add_task(
-        summary_pipeline.run,
-        meeting_id=meeting_id,
-        meeting_title=meeting.title,
-        description=meeting.description or "",
-        transcript_text=transcript_text,
-        decisions=decisions_data,
-        action_items=[],
-        nudges=nudges_data,
-        research_summary=research_summary,
-    )
+    if not await enqueue(
+        "summary_job",
+        meeting_id,
+        meeting.title,
+        meeting.description or "",
+        transcript_text,
+        decisions_data,
+        [],
+        nudges_data,
+        research_summary,
+    ):
+        background_tasks.add_task(
+            summary_pipeline.run,
+            meeting_id=meeting_id,
+            meeting_title=meeting.title,
+            description=meeting.description or "",
+            transcript_text=transcript_text,
+            decisions=decisions_data,
+            action_items=[],
+            nudges=nudges_data,
+            research_summary=research_summary,
+        )
 
     return {"status": "started", "message": "Summary generation started"}
 
@@ -732,3 +782,215 @@ async def send_summary_email(
         }
 
     raise HTTPException(500, "Failed to send email")
+
+
+# -- Knowledge Graph + In-Meeting Query ------------------------------------
+
+
+@router.get("/{meeting_id}/knowledge-graph")
+async def get_meeting_knowledge_graph(
+    meeting_id: str,
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+):
+    """Return the meeting-context knowledge graph.
+
+    Builds the subgraph of knowledge-base entities that are actually
+    referenced in this meeting — entities whose label appears in the
+    transcript or research topics — plus their 1-hop neighbours. This
+    is the graph the Context / KG agents reason over during the meeting,
+    so the UI can visualize "what the AI knows about this conversation".
+
+    Returns ``{nodes, edges, mentioned}`` where ``mentioned`` flags the
+    entities the meeting actually surfaced. Empty graph (not an error)
+    when Neo4j is unavailable or nothing matches.
+    """
+    from apps.api.core.neo4j_client import neo4j_client
+    from apps.api.services.meeting.kg_query_agent import KGQueryAgent
+
+    try:
+        mid = UUID(meeting_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid meeting ID format")
+
+    meeting = await meeting_service.get_meeting(session, mid)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+
+    if not neo4j_client.enabled:
+        return {
+            "meeting_id": meeting_id,
+            "node_count": 0,
+            "edge_count": 0,
+            "nodes": [],
+            "edges": [],
+            "mentioned": [],
+            "source": "unavailable",
+        }
+
+    # Gather text the meeting has produced: transcript + research topics
+    corpus_parts: list[str] = []
+    if meeting.transcript and meeting.transcript.full_text:
+        corpus_parts.append(meeting.transcript.full_text)
+    if meeting.research_brief and meeting.research_brief.topics:
+        for t in meeting.research_brief.topics:
+            if isinstance(t, dict):
+                corpus_parts.append(
+                    f"{t.get('topic', '')} {t.get('summary', '')}"
+                )
+    corpus = " ".join(corpus_parts).strip()
+
+    candidates = KGQueryAgent._extract_candidate_phrases(corpus) if corpus else set()
+    if not candidates:
+        return {
+            "meeting_id": meeting_id,
+            "node_count": 0,
+            "edge_count": 0,
+            "nodes": [],
+            "edges": [],
+            "mentioned": [],
+            "source": "neo4j",
+        }
+
+    # Anchor entities (mentioned) + their 1-hop neighbourhood
+    cypher = """
+    MATCH (a:Entity)
+    WHERE a.normalized IN $candidates
+    OPTIONAL MATCH (a)-[r:REL]-(b:Entity)
+    RETURN
+        collect(DISTINCT {id: a.id, label: a.label, type: a.type,
+                          normalized: a.normalized, mentioned: true}) AS anchors,
+        collect(DISTINCT CASE WHEN b IS NOT NULL THEN
+            {id: b.id, label: b.label, type: b.type,
+             normalized: b.normalized, mentioned: false} END) AS neighbours,
+        collect(DISTINCT CASE WHEN b IS NOT NULL THEN
+            {source_norm: a.normalized, source_type: a.type,
+             target_norm: b.normalized, target_type: b.type,
+             relationship: r.type, confidence: r.confidence,
+             context: r.context} END) AS rels
+    """
+    result = await neo4j_client.execute(cypher, {"candidates": list(candidates)})
+    if not result or not result[0].get("anchors"):
+        return {
+            "meeting_id": meeting_id,
+            "node_count": 0,
+            "edge_count": 0,
+            "nodes": [],
+            "edges": [],
+            "mentioned": [],
+            "source": "neo4j",
+        }
+
+    row = result[0]
+    # Merge anchors + neighbours, dedupe by (normalized, type), anchors win
+    node_by_key: dict = {}
+    for n in (row.get("neighbours") or []):
+        if n:
+            node_by_key[(n["normalized"], n["type"])] = n
+    for n in (row.get("anchors") or []):
+        if n:
+            node_by_key[(n["normalized"], n["type"])] = n  # mentioned=true wins
+
+    nodes = list(node_by_key.values())
+    id_by_key = {(n["normalized"], n["type"]): n["id"] for n in nodes}
+
+    edges = []
+    seen_edges = set()
+    for r in (row.get("rels") or []):
+        if not r:
+            continue
+        s = id_by_key.get((r["source_norm"], r["source_type"]))
+        t = id_by_key.get((r["target_norm"], r["target_type"]))
+        if not s or not t:
+            continue
+        ekey = (s, t, r.get("relationship"))
+        if ekey in seen_edges:
+            continue
+        seen_edges.add(ekey)
+        edges.append(
+            {
+                "source": s,
+                "target": t,
+                "relationship": (r.get("relationship") or "").lower(),
+                "confidence": r.get("confidence"),
+                "context": r.get("context"),
+            }
+        )
+
+    mentioned = [n["label"] for n in nodes if n.get("mentioned")]
+    return {
+        "meeting_id": meeting_id,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "nodes": nodes,
+        "edges": edges,
+        "mentioned": mentioned,
+        "source": "neo4j",
+    }
+
+
+@router.post("/{meeting_id}/query")
+async def query_meeting_context(
+    meeting_id: str,
+    body: dict,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+    _api_key: str = Depends(verify_api_key),
+):
+    """Manual RAG query during a meeting.
+
+    Lets a participant ask the knowledge base a question mid-meeting
+    (e.g. "what did we decide about pricing last quarter?"). Runs the
+    same RAG service the Context Agent uses and returns an
+    answer + sources. The query + answer are appended to the transcript
+    so they appear in the post-meeting summary.
+
+    Body: ``{"query": str, "record": bool = true}``
+    """
+    try:
+        mid = UUID(meeting_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid meeting ID format")
+
+    query_text = (body.get("query") or "").strip()
+    if not query_text:
+        raise HTTPException(400, "Field 'query' is required")
+
+    meeting = await meeting_service.get_meeting(session, mid)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+
+    services = getattr(request.app.state, "services", None)
+    rag = getattr(services, "rag_service", None) if services else None
+    if rag is None:
+        raise HTTPException(503, "RAG service not initialized")
+
+    try:
+        result = await rag.process_query(
+            query=query_text,
+            conversation_id=f"meeting-{meeting_id}",
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Query failed: {e}")
+
+    answer = result.get("answer", "")
+    sources = result.get("sources", [])
+
+    # Record the Q&A into the transcript so AFTER-phase summary sees it
+    if body.get("record", True) and answer:
+        try:
+            await meeting_service.append_utterance(
+                session=session,
+                meeting_id=mid,
+                speaker="AI Assistant",
+                text=f"Q: {query_text}\nA: {answer}",
+            )
+        except Exception:
+            pass  # non-fatal — the answer is still returned
+
+    return {
+        "meeting_id": meeting_id,
+        "query": query_text,
+        "answer": answer,
+        "sources": sources,
+    }

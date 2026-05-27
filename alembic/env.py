@@ -8,22 +8,35 @@ to auto-detect schema changes.
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
 
 # Import application models so Alembic can detect them
 from apps.api.core.config import settings
 from apps.api.core.database import Base
+from apps.api.models.analytics import AnalyticsEvent, ConversationSession  # noqa: F401
 
 # Import all models to register them with Base.metadata
-from apps.api.models.document import Document, DocumentChunk, ContextualEmbedding, Entity  # noqa: F401
-from apps.api.models.analytics import AnalyticsEvent, ConversationSession  # noqa: F401
-from apps.api.models.meeting import (  # noqa: F401
-    Meeting, ResearchBrief, MeetingTranscript, Nudge,
-    Decision, ActionItem, MeetingSummary,
-    EntityRelationship, DocumentElement,
+from apps.api.models.document import (  # noqa: F401
+    ContextualEmbedding,
+    Document,
+    DocumentChunk,
+    Entity,
 )
+from apps.api.models.meeting import (  # noqa: F401
+    ActionItem,
+    Decision,
+    DocumentElement,
+    EntityRelationship,
+    Meeting,
+    MeetingSummary,
+    MeetingTranscript,
+    Nudge,
+    ResearchBrief,
+)
+from apps.api.models.user import User  # noqa: F401
 
 config = context.config
 
@@ -35,6 +48,21 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# All application tables live in the `doc_intel` schema. Alembic's
+# autogenerate/compare defaults to the search-path (public) schema only,
+# so without these it can't "see" existing doc_intel tables and reports
+# false drift. We enable schema reflection and restrict comparison to
+# our own schema (+ the alembic_version bookkeeping table).
+TARGET_SCHEMA = "doc_intel"
+
+
+def _include_name(name, type_, parent_names):
+    """Restrict autogenerate to the doc_intel schema so reflected system
+    schemas (public, information_schema, …) don't produce spurious diffs."""
+    if type_ == "schema":
+        return name == TARGET_SCHEMA
+    return True
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode (generate SQL without connecting)."""
@@ -44,6 +72,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
+        include_name=_include_name,
     )
 
     with context.begin_transaction():
@@ -51,7 +81,12 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_schemas=True,
+        include_name=_include_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

@@ -36,6 +36,7 @@ class MeetingService:
         description: Optional[str] = None,
         attendees: Optional[list] = None,
         scheduled_at: Optional[datetime] = None,
+        owner_id: Optional[UUID] = None,
     ) -> Meeting:
         try:
             meeting = Meeting(
@@ -44,6 +45,7 @@ class MeetingService:
                 attendees=attendees or [],
                 scheduled_at=scheduled_at,
                 status="scheduled",
+                owner_id=owner_id,
             )
             session.add(meeting)
             await session.commit()
@@ -83,9 +85,12 @@ class MeetingService:
         skip: int = 0,
         limit: int = 50,
         status: Optional[str] = None,
+        owner_id: Optional[UUID] = None,
     ) -> List[Meeting]:
         try:
             query = select(Meeting).where(Meeting.deleted_at.is_(None))
+            if owner_id is not None:
+                query = query.where(Meeting.owner_id == owner_id)
             if status:
                 query = query.where(Meeting.status == status)
             query = query.offset(skip).limit(limit).order_by(Meeting.created_at.desc())
@@ -243,8 +248,22 @@ class MeetingService:
 
         Creates a MeetingTranscript record if none exists. Updates
         ``utterances`` JSON list and ``full_text``.
+
+        Concurrency: takes a row lock on the parent meeting before the
+        read-modify-write so overlapping speakers (manual + voice, or two
+        LiveKit participants) can't clobber each other's utterance — the
+        classic lost-update race on a JSON list. All appends for a given
+        meeting serialize on this lock; utterance volume per meeting is
+        low enough that this is the right trade vs. a JSONB migration.
         """
         try:
+            # Serialize concurrent appends for this meeting.
+            await session.execute(
+                select(Meeting.id)
+                .where(Meeting.id == meeting_id)
+                .with_for_update()
+            )
+
             result = await session.execute(
                 select(MeetingTranscript).where(
                     MeetingTranscript.meeting_id == meeting_id

@@ -9,7 +9,7 @@ rtc:
   use_external_ip: false
 
 redis:
-  address: voice-doc-redis:6379
+  address: redis-stack:6379
   password: voicedoc123
 
 turn:

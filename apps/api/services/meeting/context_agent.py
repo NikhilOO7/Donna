@@ -131,6 +131,9 @@ class ContextAgent:
         base_score = top["base_score"]
 
         content = getattr(c, "content", "") or ""
+        # Strip the synthetic-chunk markers the enhanced pipeline prepends
+        # to table/image chunks so users never see literal "[TABLE]" text.
+        content = content.removeprefix("[TABLE]\n").removeprefix("[IMAGE]\n").lstrip()
         snippet = content[:300] + ("..." if len(content) > 300 else "")
         doc_id = getattr(c, "document_id", "unknown")
 

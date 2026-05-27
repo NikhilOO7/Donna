@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:  # allows the CD workflow to gate on CI
 
 jobs:
   lint:
@@ -60,6 +61,14 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --frozen
+      # Migrations must apply cleanly on a fresh database...
+      - name: Apply migrations
+        run: uv run alembic upgrade head
+      # ...and the models must not have drifted from the migration history.
+      # `alembic check` exits non-zero if an autogenerate diff exists, so a
+      # model change without a matching migration fails CI.
+      - name: Check for model/migration drift
+        run: uv run alembic check
       - run: uv run python -m pytest tests/ -v --timeout=60
         timeout-minutes: 5
 

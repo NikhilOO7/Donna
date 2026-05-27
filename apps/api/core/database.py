@@ -4,16 +4,16 @@ MODERNIZED Database Module - SQLAlchemy 2.0 Standards (November 2025)
 Key changes: DeclarativeBase, Mapped[], modern async patterns
 """
 
-from typing import AsyncGenerator, Optional
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Optional
 
-from sqlalchemy import text, MetaData, event
+from sqlalchemy import MetaData, event, text
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
-    AsyncEngine,
+    create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
@@ -108,24 +108,53 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
 
+def _alembic_upgrade_head_sync() -> None:
+    """Run `alembic upgrade head` programmatically (sync; call in a thread)."""
+    from pathlib import Path
+
+    from alembic.config import Config
+
+    from alembic import command
+
+    # database.py → apps/api/core/database.py; repo root is parents[3]
+    repo_root = Path(__file__).resolve().parents[3]
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    command.upgrade(cfg, "head")
+
+
 # Initialize database
 async def init_db():
-    """Verify database connectivity and schema.
+    """Verify database connectivity. The schema is owned exclusively by
+    Alembic migrations — no implicit ``create_all`` (which silently drifts
+    from migration history and races across replicas).
 
-    Schema evolution is managed by Alembic migrations (see /alembic/).
-    Run `alembic upgrade head` to apply pending migrations.
-    In development, we still create_all as a convenience fallback.
+    Apply migrations with ``alembic upgrade head`` as a pre-deploy job, or
+    set ``RUN_MIGRATIONS_ON_STARTUP=true`` for local/dev convenience.
     """
     try:
-        async with engine.begin() as conn:
-            await conn.execute(text("CREATE SCHEMA IF NOT EXISTS doc_intel"))
-            # In production, rely on Alembic migrations exclusively.
-            # create_all is a dev convenience that only creates missing tables.
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database initialized (run 'alembic upgrade head' for migrations)")
+        # Connectivity check only.
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connectivity verified")
     except Exception as e:
-        logger.error(f"Database initialization failed: {e}", exc_info=True)
+        logger.error(f"Database connectivity check failed: {e}", exc_info=True)
         raise
+
+    if settings.run_migrations_on_startup:
+        try:
+            import asyncio
+
+            await asyncio.to_thread(_alembic_upgrade_head_sync)
+            logger.info("Migrations applied (alembic upgrade head)")
+        except Exception as e:
+            logger.error(f"Auto-migration failed: {e}", exc_info=True)
+            raise
+    else:
+        logger.info(
+            "Schema managed by Alembic — run 'alembic upgrade head' "
+            "(or set RUN_MIGRATIONS_ON_STARTUP=true)"
+        )
 
 # Cleanup
 async def close_db() -> None:

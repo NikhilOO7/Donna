@@ -11,15 +11,31 @@ Plus knowledge graph: EntityRelationship, DocumentElement
 
 from datetime import datetime, timezone
 from typing import List, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON
-from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID  # noqa: N811
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.core.database import Base
+
+
+def _validate_optional_uuid(value):
+    """Coerce empty string → None; reject malformed UUIDs at parse time.
+
+    Without this, a malformed id reaches ``UUID(...)`` in the router and
+    raises ValueError → 500. Validating here returns a clean 422 instead,
+    and normalizes the value to a canonical UUID string.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return str(UUID(str(value)))
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("must be a valid UUID")
+
 
 # ---------------------------------------------------------------------------
 # ORM Models
@@ -34,6 +50,15 @@ class Meeting(Base):
 
     id: Mapped[str] = mapped_column(
         PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    # Owner for per-user row-level isolation. Nullable so existing/demo
+    # meetings (created without auth) remain valid; enforced when
+    # REQUIRE_AUTH is on.
+    owner_id: Mapped[Optional[str]] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("doc_intel.users.id"),
+        nullable=True,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -386,6 +411,10 @@ class DecisionCreate(BaseModel):
     deadline: Optional[datetime] = None
     source_nudge_id: Optional[str] = None
 
+    _validate_nudge_id = field_validator("source_nudge_id")(
+        _validate_optional_uuid
+    )
+
 
 class ActionItemCreate(BaseModel):
     """Request to log an action item."""
@@ -397,3 +426,7 @@ class ActionItemCreate(BaseModel):
     deadline: Optional[datetime] = None
     priority: str = Field(default="medium")
     decision_id: Optional[str] = None
+
+    _validate_decision_id = field_validator("decision_id")(
+        _validate_optional_uuid
+    )

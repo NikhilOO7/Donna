@@ -4,6 +4,7 @@ Enhanced FastAPI application for Voice Document Intelligence System
 Full implementation with contextual embeddings and voice integration
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -64,6 +65,7 @@ from apps.api.core.resilience import get_all_breaker_states
 from apps.api.core.tracing import configure_tracing
 from apps.api.models.requests import QueryRequest
 from apps.api.models.responses import QueryResponse
+from apps.api.routers import auth as auth_router
 from apps.api.routers import meetings, voice
 from apps.api.services.agents.agent_coordinator import DocumentIntelligenceCoordinator
 from apps.api.services.agents.crew_setup import DocumentIntelligenceAgents
@@ -149,6 +151,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Neo4j warmup skipped: {e}")
 
+        # Preload spaCy NER off the event loop so the first KG-query agent
+        # call doesn't block the dispatcher for ~1-2s while the model loads.
+        try:
+            from apps.api.services.meeting.kg_query_agent import _get_nlp
+
+            await asyncio.to_thread(_get_nlp)
+            logger.info("spaCy NER model preloaded")
+        except Exception as e:
+            logger.warning(f"spaCy preload skipped: {e}")
+
     except Exception as e:
         logger.error(f"Initialization failed: {e}")
         raise
@@ -161,6 +173,12 @@ async def lifespan(app: FastAPI):
         from apps.api.core.neo4j_client import neo4j_client
 
         await neo4j_client.close()
+    except Exception:
+        pass
+    try:
+        from apps.api.core.jobs import close_pool
+
+        await close_pool()
     except Exception:
         pass
     logger.info("Shutdown complete")
@@ -255,6 +273,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 app.add_middleware(ObservabilityMiddleware)
 
 # Include routers
+app.include_router(auth_router.router)
 app.include_router(voice.router)
 app.include_router(meetings.router)
 

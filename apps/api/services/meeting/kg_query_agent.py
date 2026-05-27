@@ -21,13 +21,13 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Set
 
+from apps.api.core.coordination import cooldown_passed
 from apps.api.core.neo4j_client import neo4j_client
 
 logger = logging.getLogger(__name__)
 
 # Per-meeting cooldown: don't re-emit the same connection within N seconds.
-# Holds (meeting_id, src_normalized, tgt_normalized) → last emit timestamp.
-_RECENT_EMITS: Dict[tuple, float] = {}
+# Backed by Redis (shared across replicas) via core.coordination.
 _COOLDOWN_SECONDS = 90.0
 
 # Don't surface trivial neighbors that match the meeting's chitchat surface
@@ -100,15 +100,14 @@ class KGQueryAgent:
         if not connection:
             return None
 
-        # Cooldown: same src/tgt pair shouldn't re-fire within 90s
-        import time
-
-        key = (meeting_id, anchor["normalized"], connection["target_normalized"])
-        now = time.monotonic()
-        last = _RECENT_EMITS.get(key)
-        if last and now - last < _COOLDOWN_SECONDS:
+        # Cooldown: same src/tgt pair shouldn't re-fire within 90s.
+        # Atomic check-and-claim, shared across replicas via Redis.
+        cd_key = (
+            f"kg:{meeting_id}:{anchor['normalized']}:"
+            f"{connection['target_normalized']}"
+        )
+        if not await cooldown_passed(cd_key, _COOLDOWN_SECONDS):
             return None
-        _RECENT_EMITS[key] = now
 
         rel_pretty = (connection["relationship"] or "related").replace("_", " ").lower()
         if connection["hops"] == 1:

@@ -12,7 +12,10 @@ import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from apps.api.core.config import settings
+from apps.api.core.coordination import distributed_lock
 from apps.api.core.database import AsyncSessionLocal
+from apps.api.core.tracing import get_tracer
 from apps.api.services.meeting.context_agent import context_agent
 from apps.api.services.meeting.fact_check_agent import fact_check_agent
 from apps.api.services.meeting.insight_agent import insight_agent
@@ -24,17 +27,51 @@ from apps.api.services.meeting.scribe_agent import scribe_agent
 logger = logging.getLogger(__name__)
 
 
+async def _traced(span_name: str, coro):
+    """Run an agent coroutine inside an OTel span (no-op when tracing off).
+
+    Gives per-agent latency in traces — the building block for a
+    per-agent latency dashboard.
+    """
+    if not settings.enable_tracing:
+        return await coro
+    tracer = get_tracer("meeting.agents")
+    if tracer is None:
+        return await coro
+    with tracer.start_as_current_span(span_name):
+        return await coro
+
+
 class AgentDispatcher:
     """Orchestrate meeting agents in response to new utterances."""
 
     async def dispatch(self, meeting_id: str) -> None:
-        """Run all agents in parallel for the latest meeting state."""
+        """Run all agents in parallel for the latest meeting state.
+
+        Serialized per meeting via a distributed lock: overlapping
+        utterances (common with voice) can't run two dispatch cycles
+        concurrently and double-emit the same nudge. Each cycle reads
+        fresh committed state, so serializing also guarantees the latest
+        utterance is always analyzed.
+        """
         try:
             mid = UUID(meeting_id)
         except ValueError:
             logger.warning(f"[Dispatcher] invalid meeting_id: {meeting_id}")
             return
 
+        async with distributed_lock(
+            f"dispatch:{meeting_id}", ttl_seconds=30.0, wait=True, wait_timeout=20.0
+        ) as acquired:
+            if not acquired:
+                logger.info(
+                    f"[Dispatcher] meeting {meeting_id}: lock busy, skipping "
+                    "(in-progress cycle will cover latest state)"
+                )
+                return
+            await self._dispatch_locked(meeting_id, mid)
+
+    async def _dispatch_locked(self, meeting_id: str, mid: UUID) -> None:
         async with AsyncSessionLocal() as session:
             try:
                 # Pull fresh state for this dispatch cycle
@@ -56,11 +93,20 @@ class AgentDispatcher:
 
                 # Run agents in parallel — each returns Optional[nudge dict]
                 results = await asyncio.gather(
-                    scribe_agent.analyze(utterances),
-                    context_agent.analyze(utterances),
-                    insight_agent.analyze(utterances, research_topics),
-                    fact_check_agent.analyze(utterances),
-                    kg_query_agent.analyze(meeting_id, utterances),
+                    _traced("agent.scribe", scribe_agent.analyze(utterances)),
+                    _traced("agent.context", context_agent.analyze(utterances)),
+                    _traced(
+                        "agent.insight",
+                        insight_agent.analyze(utterances, research_topics),
+                    ),
+                    _traced(
+                        "agent.fact_check",
+                        fact_check_agent.analyze(utterances, meeting_id=meeting_id),
+                    ),
+                    _traced(
+                        "agent.kg_query",
+                        kg_query_agent.analyze(meeting_id, utterances),
+                    ),
                     return_exceptions=True,
                 )
 
