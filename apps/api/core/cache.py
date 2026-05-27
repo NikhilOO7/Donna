@@ -8,7 +8,7 @@ TTL-based expiration with cache invalidation on document changes.
 import hashlib
 import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from apps.api.core.connections import get_redis_client
 from apps.api.core.metrics import CACHE_HITS, CACHE_MISSES
@@ -25,7 +25,9 @@ def _cache_key(query: str, context_level: str = "document") -> str:
     return CACHE_PREFIX + hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
-async def get_cached_response(query: str, context_level: str = "document") -> Optional[Dict[str, Any]]:
+async def get_cached_response(
+    query: str, context_level: str = "document"
+) -> Optional[Dict[str, Any]]:
     """Look up a cached RAG response. Returns None on miss."""
     try:
         redis = await get_redis_client()

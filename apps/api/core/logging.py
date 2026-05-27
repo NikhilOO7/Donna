@@ -32,7 +32,7 @@ def configure_logging() -> None:
 
     # Shared structlog processors (run on every log event)
     shared_processors: list = [
-        merge_contextvars,                          # pulls request_id, etc. from contextvars
+        merge_contextvars,  # pulls request_id, etc. from contextvars
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),

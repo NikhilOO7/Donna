@@ -91,10 +91,21 @@ class AgentDispatcher:
                     else []
                 )
 
+                # Tenant scope: restrict RAG + KG retrieval to the owner's
+                # documents (None = global, when auth is off).
+                owner_id = (
+                    str(meeting.owner_id)
+                    if getattr(meeting, "owner_id", None)
+                    else None
+                )
+
                 # Run agents in parallel — each returns Optional[nudge dict]
                 results = await asyncio.gather(
                     _traced("agent.scribe", scribe_agent.analyze(utterances)),
-                    _traced("agent.context", context_agent.analyze(utterances)),
+                    _traced(
+                        "agent.context",
+                        context_agent.analyze(utterances, owner_id=owner_id),
+                    ),
                     _traced(
                         "agent.insight",
                         insight_agent.analyze(utterances, research_topics),
@@ -105,7 +116,9 @@ class AgentDispatcher:
                     ),
                     _traced(
                         "agent.kg_query",
-                        kg_query_agent.analyze(meeting_id, utterances),
+                        kg_query_agent.analyze(
+                            meeting_id, utterances, owner_id=owner_id
+                        ),
                     ),
                     return_exceptions=True,
                 )

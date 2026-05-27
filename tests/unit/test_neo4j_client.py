@@ -25,13 +25,17 @@ class TestNeo4jClientFallback:
     async def test_neo4j_disabled_setting_short_circuits(self, monkeypatch):
         monkeypatch.setattr(
             "apps.api.core.neo4j_client.settings",
-            type("S", (), {
-                "neo4j_enabled": False,
-                "neo4j_uri": "bolt://nowhere:7687",
-                "neo4j_user": "neo4j",
-                "neo4j_password": "x",
-                "neo4j_database": "neo4j",
-            })(),
+            type(
+                "S",
+                (),
+                {
+                    "neo4j_enabled": False,
+                    "neo4j_uri": "bolt://nowhere:7687",
+                    "neo4j_user": "neo4j",
+                    "neo4j_password": "x",
+                    "neo4j_database": "neo4j",
+                },
+            )(),
         )
         client = Neo4jClient()
         result = await client.execute("RETURN 1")
@@ -44,13 +48,17 @@ class TestNeo4jClientFallback:
         # unavailable and the next execute() returns None without raising.
         monkeypatch.setattr(
             "apps.api.core.neo4j_client.settings",
-            type("S", (), {
-                "neo4j_enabled": True,
-                "neo4j_uri": "bolt://127.0.0.1:1",  # invalid port
-                "neo4j_user": "neo4j",
-                "neo4j_password": "x",
-                "neo4j_database": "neo4j",
-            })(),
+            type(
+                "S",
+                (),
+                {
+                    "neo4j_enabled": True,
+                    "neo4j_uri": "bolt://127.0.0.1:1",  # invalid port
+                    "neo4j_user": "neo4j",
+                    "neo4j_password": "x",
+                    "neo4j_database": "neo4j",
+                },
+            )(),
         )
         client = Neo4jClient()
         result = await client.execute("RETURN 1")

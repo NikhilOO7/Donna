@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,9 +162,11 @@ class EnhancedDocumentPipeline:
         original_chunks: List[Dict[str, Any]],
         tables: List[Dict[str, Any]],
         images: List[Dict[str, Any]],
+        owner_id: Optional[str] = None,
     ) -> Dict[str, int]:
         """Persist entities (with chunk linkage), extract relationships,
-        and store tables/images as DocumentElements."""
+        and store tables/images as DocumentElements. ``owner_id`` scopes
+        the Neo4j nodes/edges to the document's tenant."""
         stats = {"entities": 0, "relationships": 0, "tables": 0, "images": 0}
 
         # ---- Per-chunk entity persistence with chunk_id linkage ----
@@ -182,9 +184,11 @@ class EnhancedDocumentPipeline:
             all_persisted_entities.extend(persisted)
             stats["entities"] += len(persisted)
 
-        # Mirror entities into Neo4j (MERGE on normalized value+type → free dedup)
+        # Mirror entities into Neo4j (MERGE on normalized+type+owner → dedup)
         try:
-            await self.kg.sync_entities_to_neo4j(all_persisted_entities)
+            await self.kg.sync_entities_to_neo4j(
+                all_persisted_entities, owner_id=owner_id
+            )
         except Exception as e:
             logger.warning(f"[enhanced] Neo4j entity sync skipped: {e}")
 
@@ -219,7 +223,7 @@ class EnhancedDocumentPipeline:
                 all_rels.extend(r)
             if all_rels:
                 stats["relationships"] = await self.kg.add_relationships_batch(
-                    session, all_rels
+                    session, all_rels, owner_id=owner_id
                 )
 
         # ---- Map synthetic chunks back so DocumentElements can link to them ----

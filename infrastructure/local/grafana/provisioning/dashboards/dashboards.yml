@@ -1,0 +1,12 @@
+# Auto-load dashboards from the mounted dashboards directory.
+apiVersion: 1
+
+providers:
+  - name: voice-doc
+    orgId: 1
+    folder: Meeting Assistant
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

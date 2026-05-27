@@ -72,9 +72,7 @@ class Meeting(Base):
         DateTime(timezone=True), nullable=True
     )
     attendees: Mapped[list] = mapped_column(JSON, default=list)
-    status: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="scheduled"
-    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="scheduled")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -314,9 +312,7 @@ class EntityRelationship(Base):
     )
     relationship_type: Mapped[str] = mapped_column(String(100), nullable=False)
     confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    extraction_method: Mapped[Optional[str]] = mapped_column(
-        String(50), nullable=True
-    )
+    extraction_method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     document_id: Mapped[Optional[str]] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -411,9 +407,7 @@ class DecisionCreate(BaseModel):
     deadline: Optional[datetime] = None
     source_nudge_id: Optional[str] = None
 
-    _validate_nudge_id = field_validator("source_nudge_id")(
-        _validate_optional_uuid
-    )
+    _validate_nudge_id = field_validator("source_nudge_id")(_validate_optional_uuid)
 
 
 class ActionItemCreate(BaseModel):
@@ -427,6 +421,4 @@ class ActionItemCreate(BaseModel):
     priority: str = Field(default="medium")
     decision_id: Optional[str] = None
 
-    _validate_decision_id = field_validator("decision_id")(
-        _validate_optional_uuid
-    )
+    _validate_decision_id = field_validator("decision_id")(_validate_optional_uuid)

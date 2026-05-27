@@ -10,14 +10,14 @@ import functools
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Callable, TypeVar, Any
+from typing import Any, Callable, TypeVar
 
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
 )
 
 from apps.api.core.metrics import EXTERNAL_API_CALLS_TOTAL, EXTERNAL_API_DURATION
@@ -135,7 +135,9 @@ def resilient_call(
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
             if not breaker.allow_request():
-                EXTERNAL_API_CALLS_TOTAL.labels(service=service_name, status="circuit_open").inc()
+                EXTERNAL_API_CALLS_TOTAL.labels(
+                    service=service_name, status="circuit_open"
+                ).inc()
                 raise CircuitOpenError(
                     f"Circuit breaker OPEN for {service_name}. "
                     f"Retrying in {breaker.recovery_timeout}s."
@@ -149,20 +151,26 @@ def resilient_call(
                 )
                 duration = time.monotonic() - start
                 breaker.record_success()
-                EXTERNAL_API_CALLS_TOTAL.labels(service=service_name, status="success").inc()
+                EXTERNAL_API_CALLS_TOTAL.labels(
+                    service=service_name, status="success"
+                ).inc()
                 EXTERNAL_API_DURATION.labels(service=service_name).observe(duration)
                 return result
 
             except asyncio.TimeoutError:
                 breaker.record_failure()
-                EXTERNAL_API_CALLS_TOTAL.labels(service=service_name, status="timeout").inc()
+                EXTERNAL_API_CALLS_TOTAL.labels(
+                    service=service_name, status="timeout"
+                ).inc()
                 logger.error(f"{service_name} call timed out after {timeout_seconds}s")
                 raise
 
             except Exception as exc:
                 duration = time.monotonic() - start
                 breaker.record_failure()
-                EXTERNAL_API_CALLS_TOTAL.labels(service=service_name, status="error").inc()
+                EXTERNAL_API_CALLS_TOTAL.labels(
+                    service=service_name, status="error"
+                ).inc()
                 EXTERNAL_API_DURATION.labels(service=service_name).observe(duration)
                 logger.error(f"{service_name} call failed: {exc}")
                 raise

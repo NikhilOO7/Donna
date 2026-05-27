@@ -96,9 +96,7 @@ class EmailService:
         """
         context = {
             "title": title,
-            "exec_summary": summary.get(
-                "executive_summary", "No summary available."
-            ),
+            "exec_summary": summary.get("executive_summary", "No summary available."),
             "decisions": summary.get("decisions_summary", []) or [],
             "actions": summary.get("action_items", []) or [],
             "insights": summary.get("ai_insights_used", []) or [],

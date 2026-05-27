@@ -69,12 +69,14 @@ class KnowledgeGraphService:
         self,
         session: AsyncSession,
         relationships: List[Dict[str, Any]],
+        owner_id: Optional[str] = None,
     ) -> int:
         """Bulk insert relationships. Each dict needs source/target entity IDs.
 
         Writes to PostgreSQL (system of record) and, when Neo4j is
         enabled, mirrors the edges into the graph database for fast
-        multi-hop traversal during meetings.
+        multi-hop traversal during meetings. ``owner_id`` scopes the
+        Neo4j entity match to the tenant.
         """
         count = 0
         try:
@@ -100,7 +102,7 @@ class KnowledgeGraphService:
 
         # Mirror to Neo4j (best-effort; failures don't break the upload)
         try:
-            await self._sync_relationships_to_neo4j(session, relationships)
+            await self._sync_relationships_to_neo4j(session, relationships, owner_id)
         except Exception as e:
             logger.warning(f"[Neo4j] mirror failed (non-fatal): {e}")
 
@@ -109,21 +111,27 @@ class KnowledgeGraphService:
     async def sync_entities_to_neo4j(
         self,
         entities: List[Entity],
+        owner_id: Optional[str] = None,
     ) -> int:
-        """Upsert entities into Neo4j via MERGE on (normalized, type).
+        """Upsert entities into Neo4j via MERGE on (normalized, type, owner_id).
 
-        This is the dedup point — five "Acme" extractions across five
-        chunks collapse into one :Entity node.
+        Dedup point within a tenant — five "Acme" extractions across five
+        chunks collapse into one node — while keeping tenants separate.
+        ``owner_id`` falls back to the GLOBAL_OWNER sentinel when unset.
         """
         if not entities or not neo4j_client.enabled:
             return 0
 
+        from apps.api.core.neo4j_client import GLOBAL_OWNER
+
+        owner = str(owner_id) if owner_id else GLOBAL_OWNER
         rows = [
             {
                 "id": str(e.id),
                 "label": e.entity_value,
                 "normalized": _normalize(e.entity_value),
                 "type": e.entity_type or "UNKNOWN",
+                "owner_id": owner,
                 "document_id": str(e.document_id) if e.document_id else None,
                 "chunk_id": str(e.chunk_id) if e.chunk_id else None,
                 "confidence": e.confidence_score,
@@ -136,7 +144,8 @@ class KnowledgeGraphService:
 
         cypher = """
         UNWIND $rows AS row
-        MERGE (e:Entity {normalized: row.normalized, type: row.type})
+        MERGE (e:Entity {normalized: row.normalized, type: row.type,
+                         owner_id: row.owner_id})
         ON CREATE SET
             e.id = row.id,
             e.label = row.label,
@@ -162,19 +171,23 @@ class KnowledgeGraphService:
         self,
         session: AsyncSession,
         relationships: List[Dict[str, Any]],
+        owner_id: Optional[str] = None,
     ) -> None:
-        """Mirror relationships to Neo4j keyed by (normalized, type) of the
-        source/target entities (not raw UUIDs, since those duplicate)."""
+        """Mirror relationships to Neo4j keyed by (normalized, type, owner_id)
+        of the source/target entities (not raw UUIDs, since those duplicate)."""
         if not relationships or not neo4j_client.enabled:
             return
 
+        from apps.api.core.neo4j_client import GLOBAL_OWNER
+
+        owner = str(owner_id) if owner_id else GLOBAL_OWNER
+
         # Resolve entity rows in one query so we can map UUID → (norm, type)
-        entity_ids = list({
-            r["source_entity_id"] for r in relationships
-        } | {r["target_entity_id"] for r in relationships})
-        result = await session.execute(
-            select(Entity).where(Entity.id.in_(entity_ids))
+        entity_ids = list(
+            {r["source_entity_id"] for r in relationships}
+            | {r["target_entity_id"] for r in relationships}
         )
+        result = await session.execute(select(Entity).where(Entity.id.in_(entity_ids)))
         entities = list(result.scalars().all())
         keymap = {
             e.id: {
@@ -198,6 +211,7 @@ class KnowledgeGraphService:
                     "src_type": s_key["type"],
                     "tgt_norm": t_key["normalized"],
                     "tgt_type": t_key["type"],
+                    "owner_id": owner,
                     "rel_type": (r.get("relationship_type") or "related").upper(),
                     "confidence": r.get("confidence", 0.8),
                     "context": (r.get("context") or "")[:500],
@@ -211,8 +225,10 @@ class KnowledgeGraphService:
 
         cypher = """
         UNWIND $rows AS row
-        MATCH (s:Entity {normalized: row.src_norm, type: row.src_type})
-        MATCH (t:Entity {normalized: row.tgt_norm, type: row.tgt_type})
+        MATCH (s:Entity {normalized: row.src_norm, type: row.src_type,
+                         owner_id: row.owner_id})
+        MATCH (t:Entity {normalized: row.tgt_norm, type: row.tgt_type,
+                         owner_id: row.owner_id})
         MERGE (s)-[r:REL {type: row.rel_type}]->(t)
         ON CREATE SET
             r.confidence = row.confidence,
@@ -306,9 +322,7 @@ class KnowledgeGraphService:
 
         subgraph = graph.subgraph(visited)
         return {
-            "nodes": [
-                {"id": n, **subgraph.nodes[n]} for n in subgraph.nodes()
-            ],
+            "nodes": [{"id": n, **subgraph.nodes[n]} for n in subgraph.nodes()],
             "edges": [
                 {"source": u, "target": v, **subgraph.edges[u, v]}
                 for u, v in subgraph.edges()

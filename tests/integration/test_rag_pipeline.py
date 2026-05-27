@@ -6,12 +6,11 @@ These tests use mocked external services (OpenAI, Qdrant) to validate
 the data flow without requiring live API keys or running infrastructure.
 """
 
-import pytest
-import hashlib
-import tempfile
 import os
+import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture
@@ -27,7 +26,9 @@ def mock_services():
 
     mock_chat_resp = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.content = "Based on the document, the architecture uses microservices."
+    mock_choice.message.content = (
+        "Based on the document, the architecture uses microservices."
+    )
     mock_chat_resp.choices = [mock_choice]
     mock_openai.chat.completions.create.return_value = mock_chat_resp
 
@@ -62,7 +63,10 @@ class TestRAGPipelineFlow:
     @pytest.mark.asyncio
     async def test_embedding_service_generates_correct_dimensions(self, mock_services):
         """Step 1: EmbeddingService generates 1536-dim vectors."""
-        with patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_services["openai"]):
+        with patch(
+            "apps.api.services.document.embeddings.OpenAI",
+            return_value=mock_services["openai"],
+        ):
             from apps.api.services.document.embeddings import EmbeddingService
 
             service = EmbeddingService()
@@ -107,20 +111,29 @@ class TestRAGPipelineFlow:
     @pytest.mark.asyncio
     async def test_rag_service_produces_answer_with_sources(self, mock_services):
         """Step 3: RAGService generates an answer from search results."""
-        with patch("apps.api.services.rag.llamaindex_service.OpenAI", return_value=mock_services["openai"]), \
-             patch(
-                 "apps.api.services.document.vector_store.get_qdrant_client",
-                 return_value=mock_services["qdrant"],
-             ), \
-             patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_services["openai"]):
-
+        with (
+            patch(
+                "apps.api.services.rag.llamaindex_service.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+            patch(
+                "apps.api.services.document.vector_store.get_qdrant_client",
+                return_value=mock_services["qdrant"],
+            ),
+            patch(
+                "apps.api.services.document.embeddings.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+        ):
             from apps.api.services.rag.llamaindex_service import RAGService
 
             service = RAGService()
             service.client = mock_services["openai"]
             service.embedding_service.client = mock_services["openai"]
 
-            result = await service.process_query("What architecture does the system use?")
+            result = await service.process_query(
+                "What architecture does the system use?"
+            )
 
             assert "answer" in result
             assert "sources" in result
@@ -128,17 +141,26 @@ class TestRAGPipelineFlow:
             assert result["conversation_id"] is not None
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_upload_to_query(self, mock_services, sample_document_content):
+    async def test_full_pipeline_upload_to_query(
+        self, mock_services, sample_document_content
+    ):
         """Step 4: Full pipeline - process document then query it."""
-        with patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_services["openai"]), \
-             patch(
-                 "apps.api.services.document.vector_store.get_qdrant_client",
-                 return_value=mock_services["qdrant"],
-             ), \
-             patch("apps.api.services.rag.llamaindex_service.OpenAI", return_value=mock_services["openai"]):
-
-            from apps.api.services.document.processor import DocumentProcessor
+        with (
+            patch(
+                "apps.api.services.document.embeddings.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+            patch(
+                "apps.api.services.document.vector_store.get_qdrant_client",
+                return_value=mock_services["qdrant"],
+            ),
+            patch(
+                "apps.api.services.rag.llamaindex_service.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+        ):
             from apps.api.services.document.embeddings import EmbeddingService
+            from apps.api.services.document.processor import DocumentProcessor
             from apps.api.services.document.vector_store import VectorStoreService
             from apps.api.services.rag.llamaindex_service import RAGService
 
@@ -146,7 +168,9 @@ class TestRAGPipelineFlow:
             processor = DocumentProcessor()
             processor.client = mock_services["openai"]
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False
+            ) as f:
                 f.write(sample_document_content)
                 temp_path = f.name
 
@@ -164,12 +188,14 @@ class TestRAGPipelineFlow:
             embeddings_data = []
             for i, chunk in enumerate(chunks):
                 embedding = await embedding_service.generate_embedding(chunk["content"])
-                embeddings_data.append({
-                    "chunk_id": f"chunk-{i}",
-                    "embedding": embedding,
-                    "content": chunk["content"],
-                    "metadata": chunk.get("metadata", {}),
-                })
+                embeddings_data.append(
+                    {
+                        "chunk_id": f"chunk-{i}",
+                        "embedding": embedding,
+                        "content": chunk["content"],
+                        "metadata": chunk.get("metadata", {}),
+                    }
+                )
 
             assert len(embeddings_data) == len(chunks)
             assert all(len(e["embedding"]) == 1536 for e in embeddings_data)
@@ -199,13 +225,20 @@ class TestRAGEdgeCases:
         # Configure search to return empty
         mock_services["qdrant"].search.return_value = []
 
-        with patch("apps.api.services.rag.llamaindex_service.OpenAI", return_value=mock_services["openai"]), \
-             patch(
-                 "apps.api.services.document.vector_store.get_qdrant_client",
-                 return_value=mock_services["qdrant"],
-             ), \
-             patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_services["openai"]):
-
+        with (
+            patch(
+                "apps.api.services.rag.llamaindex_service.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+            patch(
+                "apps.api.services.document.vector_store.get_qdrant_client",
+                return_value=mock_services["qdrant"],
+            ),
+            patch(
+                "apps.api.services.document.embeddings.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+        ):
             from apps.api.services.rag.llamaindex_service import RAGService
 
             service = RAGService()
@@ -215,18 +248,27 @@ class TestRAGEdgeCases:
             result = await service.process_query("nonexistent topic xyz")
 
             assert "answer" in result
-            assert "couldn't find" in result["answer"].lower() or len(result["answer"]) > 0
+            assert (
+                "couldn't find" in result["answer"].lower() or len(result["answer"]) > 0
+            )
 
     @pytest.mark.asyncio
     async def test_conversation_history_maintained(self, mock_services):
         """RAGService should maintain conversation context across queries."""
-        with patch("apps.api.services.rag.llamaindex_service.OpenAI", return_value=mock_services["openai"]), \
-             patch(
-                 "apps.api.services.document.vector_store.get_qdrant_client",
-                 return_value=mock_services["qdrant"],
-             ), \
-             patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_services["openai"]):
-
+        with (
+            patch(
+                "apps.api.services.rag.llamaindex_service.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+            patch(
+                "apps.api.services.document.vector_store.get_qdrant_client",
+                return_value=mock_services["qdrant"],
+            ),
+            patch(
+                "apps.api.services.document.embeddings.OpenAI",
+                return_value=mock_services["openai"],
+            ),
+        ):
             from apps.api.services.rag.llamaindex_service import RAGService
 
             service = RAGService()
@@ -234,9 +276,13 @@ class TestRAGEdgeCases:
             service.embedding_service.client = mock_services["openai"]
 
             # First query
-            result1 = await service.process_query("What is the architecture?", conversation_id="test-conv")
+            result1 = await service.process_query(
+                "What is the architecture?", conversation_id="test-conv"
+            )
             # Second query same conversation
-            result2 = await service.process_query("Tell me more about it", conversation_id="test-conv")
+            result2 = await service.process_query(
+                "Tell me more about it", conversation_id="test-conv"
+            )
 
             assert result1["conversation_id"] == "test-conv"
             assert result2["conversation_id"] == "test-conv"

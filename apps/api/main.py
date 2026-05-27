@@ -35,7 +35,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from apps.api.core.auth import verify_api_key
+from apps.api.core.auth import require_user, verify_api_key
 from apps.api.core.cache import (
     get_cached_response,
     invalidate_document_cache,
@@ -94,6 +94,19 @@ from apps.api.services.voice.livekit_service import VoiceService
 
 configure_logging()
 logger = get_logger(__name__)
+
+
+def _check_doc_owner(document, current_user) -> None:
+    """Row-level isolation for documents: 404 a non-owner's document.
+
+    No-op when the doc has no owner (legacy/demo) or no user is present.
+    """
+    if current_user is None:
+        return
+    owner_id = getattr(document, "owner_id", None)
+    if owner_id is not None and str(owner_id) != str(current_user.id):
+        raise HTTPException(404, "Document not found")
+
 
 # WebSocket connections for real-time updates
 active_connections: List[WebSocket] = []
@@ -368,9 +381,9 @@ async def upload_document(
         True, description="Use enhanced processing with contextual embeddings"
     ),
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Upload and process a document with contextual embeddings"""
+    """Upload and process a document with contextual embeddings (owner-scoped)"""
     from apps.api.services.document.document_service import (
         DocumentAlreadyExistsError,
         document_service,
@@ -397,6 +410,7 @@ async def upload_document(
                 file_content=content,
                 file_type=file.content_type,
                 user_metadata={"use_enhanced": use_enhanced, "uploaded_by": "api"},
+                owner_id=current_user.id if current_user else None,
             )
         except DocumentAlreadyExistsError as e:
             raise HTTPException(409, f"Document already exists: {str(e)}")
@@ -498,6 +512,9 @@ async def process_document_task(
                 logger.error(f"Document {document_id} not found in database")
                 return
 
+            # Tenant scope for Qdrant payloads + Neo4j nodes
+            owner_id = str(document.owner_id) if document.owner_id else None
+
             await notify_clients(
                 {"type": "processing_started", "document_id": document_id}
             )
@@ -535,9 +552,12 @@ async def process_document_task(
                     )
                 )
 
-                # 3. Store in vector database with context
+                # 3. Store in vector database with context (tenant-tagged)
                 await services.modern_vector_store.store_contextual_embeddings(
-                    document_id, embeddings_data, processing_result["structure"]
+                    document_id,
+                    embeddings_data,
+                    processing_result["structure"],
+                    owner_id=owner_id,
                 )
 
                 # 4. Add chunks to database (capture IDs for KG linkage)
@@ -570,6 +590,7 @@ async def process_document_task(
                     original_chunks=processing_result["chunks"],
                     tables=enrichment["tables"],
                     images=enrichment["images"],
+                    owner_id=owner_id,
                 )
 
                 # 5. Update document metadata and status
@@ -784,13 +805,14 @@ async def list_documents(
     limit: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """List all documents with pagination"""
+    """List the authenticated user's documents (all when auth off)."""
     from apps.api.services.document.document_service import document_service
 
+    owner_id = current_user.id if current_user else None
     documents = await document_service.list_documents(
-        session=session, skip=skip, limit=limit, status=status
+        session=session, skip=skip, limit=limit, status=status, owner_id=owner_id
     )
 
     # Convert to dict for response
@@ -819,6 +841,8 @@ async def list_documents(
         .select_from(DocumentModel)
         .where(DocumentModel.deleted_at.is_(None))
     )
+    if owner_id is not None:
+        total_query = total_query.where(DocumentModel.owner_id == owner_id)
     if status:
         total_query = total_query.where(DocumentModel.processing_status == status)
 
@@ -832,9 +856,9 @@ async def list_documents(
 async def get_document(
     document_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Get document details including structure"""
+    """Get document details including structure (owner-scoped)"""
     from uuid import UUID
 
     from apps.api.services.document.document_service import document_service
@@ -850,6 +874,7 @@ async def get_document(
 
     if not document:
         raise HTTPException(404, "Document not found")
+    _check_doc_owner(document, current_user)
 
     return {
         "id": str(document.id),
@@ -876,11 +901,12 @@ async def get_document(
 async def get_document_elements(
     document_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Return tables/images/charts extracted from a document."""
+    """Return tables/images/charts extracted from a document (owner-scoped)."""
     from uuid import UUID
 
+    from apps.api.services.document.document_service import document_service
     from apps.api.services.document.knowledge_graph_service import (
         knowledge_graph_service,
     )
@@ -889,6 +915,13 @@ async def get_document_elements(
         doc_uuid = UUID(document_id)
     except ValueError:
         raise HTTPException(400, "Invalid document ID format")
+
+    document = await document_service.get_document(
+        session=session, document_id=doc_uuid
+    )
+    if not document:
+        raise HTTPException(404, "Document not found")
+    _check_doc_owner(document, current_user)
 
     elements = await knowledge_graph_service.get_elements_for_document(
         session, doc_uuid
@@ -915,9 +948,9 @@ async def get_document_elements(
 async def get_document_knowledge_graph(
     document_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Return the document's knowledge graph.
+    """Return the document's knowledge graph (owner-scoped).
 
     Primary path: Cypher query against Neo4j (deduplicated, fast).
     Fallback path: PostgreSQL `entities` + `entity_relationships`
@@ -930,6 +963,7 @@ async def get_document_knowledge_graph(
 
     from apps.api.core.neo4j_client import neo4j_client
     from apps.api.models.document import Entity
+    from apps.api.services.document.document_service import document_service
     from apps.api.services.document.knowledge_graph_service import (
         knowledge_graph_service,
     )
@@ -938,6 +972,13 @@ async def get_document_knowledge_graph(
         doc_uuid = UUID(document_id)
     except ValueError:
         raise HTTPException(400, "Invalid document ID format")
+
+    document = await document_service.get_document(
+        session=session, document_id=doc_uuid
+    )
+    if not document:
+        raise HTTPException(404, "Document not found")
+    _check_doc_owner(document, current_user)
 
     # --- Try Neo4j first ---
     if neo4j_client.enabled:
@@ -1005,9 +1046,7 @@ async def get_document_knowledge_graph(
         entity_ids.add(r.source_entity_id)
         entity_ids.add(r.target_entity_id)
 
-    result = await session.execute(
-        select(Entity).where(Entity.document_id == doc_uuid)
-    )
+    result = await session.execute(select(Entity).where(Entity.document_id == doc_uuid))
     doc_entities = list(result.scalars().all())
     entity_map = {ent.id: ent for ent in doc_entities}
     for eid in entity_ids:
@@ -1055,9 +1094,9 @@ async def delete_document(
     document_id: str,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(require_user),
 ):
-    """Delete a document and its embeddings"""
+    """Delete a document and its embeddings (owner-scoped)"""
     from uuid import UUID
 
     from apps.api.services.document.document_service import document_service
@@ -1075,6 +1114,7 @@ async def delete_document(
     )
     if not document:
         raise HTTPException(404, "Document not found")
+    _check_doc_owner(document, current_user)
 
     try:
         # Delete from vector store (best-effort, may not exist if still processing)

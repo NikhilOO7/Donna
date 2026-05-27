@@ -79,9 +79,7 @@ class LayoutAgent:
                 content_parts.append(text)
 
                 for idx, table in enumerate(page.extract_tables()):
-                    tables.append(
-                        {"index": idx, "data": table, "page": page_num + 1}
-                    )
+                    tables.append({"index": idx, "data": table, "page": page_num + 1})
 
                 for idx, img in enumerate(page.images):
                     images.append(

@@ -115,9 +115,7 @@ class ImageAgent:
             )
 
         n_vision = sum(1 for r in results if r.get("vision_description"))
-        logger.info(
-            f"Processed {len(results)} images ({n_vision} with GPT-4o Vision)"
-        )
+        logger.info(f"Processed {len(results)} images ({n_vision} with GPT-4o Vision)")
         return results
 
     # ------------------------------------------------------------------
@@ -197,8 +195,7 @@ class ImageAgent:
                             {
                                 "type": "text",
                                 "text": (
-                                    f"Describe this figure from page {page}."
-                                    f"{ocr_hint}"
+                                    f"Describe this figure from page {page}.{ocr_hint}"
                                 ),
                             },
                             {

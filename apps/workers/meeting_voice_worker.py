@@ -131,9 +131,7 @@ async def _post_utterance(meeting_id: str, speaker: str, text: str) -> None:
                 f"{response.status_code}"
             )
         except (httpx.RequestError, asyncio.TimeoutError) as e:
-            logger.warning(
-                f"Utterance POST transport error (attempt {attempt}): {e}"
-            )
+            logger.warning(f"Utterance POST transport error (attempt {attempt}): {e}")
         except Exception as e:
             logger.warning(f"Utterance POST unexpected error: {e}")
             return
@@ -256,9 +254,7 @@ async def _transcribe_track(
                 pass
 
         if stream_ended:
-            logger.info(
-                f"[{meeting_id[:8]}] audio stream ended for speaker={speaker}"
-            )
+            logger.info(f"[{meeting_id[:8]}] audio stream ended for speaker={speaker}")
             return
         # Otherwise we broke out of the send loop — reconnect
 
@@ -372,8 +368,16 @@ async def _tts_subscriber(
             if not msg:
                 continue
             try:
-                payload = json.loads(msg["data"]) if isinstance(msg["data"], str) else msg["data"]
-                text = (payload or {}).get("text", "").strip() if isinstance(payload, dict) else str(payload)
+                payload = (
+                    json.loads(msg["data"])
+                    if isinstance(msg["data"], str)
+                    else msg["data"]
+                )
+                text = (
+                    (payload or {}).get("text", "").strip()
+                    if isinstance(payload, dict)
+                    else str(payload)
+                )
                 if not text:
                     continue
                 await _synthesize_and_publish(text, audio_source)
@@ -420,9 +424,7 @@ async def entrypoint(ctx: JobContext):
         logger.warning(f"[TTS] publish_track failed (TTS disabled): {e}")
 
     tts_stop = asyncio.Event()
-    tts_task = asyncio.create_task(
-        _tts_subscriber(meeting_id, audio_source, tts_stop)
-    )
+    tts_task = asyncio.create_task(_tts_subscriber(meeting_id, audio_source, tts_stop))
 
     stt_tasks: list[asyncio.Task] = []
 

@@ -2,8 +2,9 @@
 Unit tests for embedding services.
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from apps.api.core.config import settings
 
@@ -13,7 +14,9 @@ class TestEmbeddingConfig:
 
     def test_embedding_model_is_small(self):
         """Verify we use text-embedding-3-small for consistency."""
-        assert "small" in settings.embedding_model or settings.embedding_dimensions == 1536
+        assert (
+            "small" in settings.embedding_model or settings.embedding_dimensions == 1536
+        )
 
     def test_embedding_dimensions_is_1536(self):
         """All vector stores should use 1536 dimensions."""
@@ -24,9 +27,14 @@ class TestEmbeddingService:
     """Test the original EmbeddingService."""
 
     @pytest.mark.asyncio
-    async def test_generate_embedding_returns_correct_dimensions(self, mock_openai_client):
+    async def test_generate_embedding_returns_correct_dimensions(
+        self, mock_openai_client
+    ):
         """Embedding should return vector of correct dimensions."""
-        with patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_openai_client):
+        with patch(
+            "apps.api.services.document.embeddings.OpenAI",
+            return_value=mock_openai_client,
+        ):
             from apps.api.services.document.embeddings import EmbeddingService
 
             service = EmbeddingService()
@@ -40,7 +48,10 @@ class TestEmbeddingService:
     @pytest.mark.asyncio
     async def test_generate_embedding_with_context(self, mock_openai_client):
         """Embedding with context should enhance the text."""
-        with patch("apps.api.services.document.embeddings.OpenAI", return_value=mock_openai_client):
+        with patch(
+            "apps.api.services.document.embeddings.OpenAI",
+            return_value=mock_openai_client,
+        ):
             from apps.api.services.document.embeddings import EmbeddingService
 
             service = EmbeddingService()
@@ -60,16 +71,27 @@ class TestContextualEmbeddingGenerator:
     """Test the enhanced ContextualEmbeddingGenerator."""
 
     @pytest.mark.asyncio
-    async def test_generate_contextual_embedding_returns_list(self, mock_async_openai_client):
+    async def test_generate_contextual_embedding_returns_list(
+        self, mock_async_openai_client
+    ):
         """generate_contextual_embedding should return a flat list of floats."""
-        with patch("apps.api.services.document.embeddings.AsyncOpenAI", return_value=mock_async_openai_client), \
-             patch("apps.api.services.document.embeddings.SentenceTransformer"):
-            from apps.api.services.document.embeddings import ContextualEmbeddingGenerator
+        with (
+            patch(
+                "apps.api.services.document.embeddings.AsyncOpenAI",
+                return_value=mock_async_openai_client,
+            ),
+            patch("apps.api.services.document.embeddings.SentenceTransformer"),
+        ):
+            from apps.api.services.document.embeddings import (
+                ContextualEmbeddingGenerator,
+            )
 
             gen = ContextualEmbeddingGenerator()
             gen.openai_client = mock_async_openai_client
 
-            embedding = await gen.generate_contextual_embedding("What is the architecture?")
+            embedding = await gen.generate_contextual_embedding(
+                "What is the architecture?"
+            )
 
             assert isinstance(embedding, list)
             assert len(embedding) == 1536

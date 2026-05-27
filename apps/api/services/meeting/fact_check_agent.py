@@ -120,7 +120,7 @@ class FactCheckAgent:
             "nudge_type": "fact_check",
             "title": f"Fact-check: {status.title()}",
             "content": (
-                f"Claim: \"{claim}\"\n\n"
+                f'Claim: "{claim}"\n\n'
                 f"{verdict.get('explanation', '')}\n\n"
                 f"Source: {top.get('title') or top.get('url')}"
             ),

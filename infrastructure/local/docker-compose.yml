@@ -169,7 +169,25 @@ services:
       timeout: 5s
       retries: 5
 
-  # Grafana for visualization
+  # Tempo — distributed-tracing backend (receives OTLP from the API)
+  tempo:
+    image: grafana/tempo:latest
+    container_name: voice-doc-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo query API
+      - "4317:4317"   # OTLP gRPC (app exports here when ENABLE_TRACING=true)
+      - "4318:4318"   # OTLP HTTP
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3200/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Grafana for visualization (metrics + traces)
   grafana:
     image: grafana/grafana:latest
     container_name: voice-doc-grafana
@@ -183,8 +201,10 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
+      - tempo
 
 networks:
   default:
@@ -198,5 +218,6 @@ volumes:
   temporal_data:
   neo4j_data:
   neo4j_logs:
+  tempo_data:
   prometheus_data:
   grafana_data:

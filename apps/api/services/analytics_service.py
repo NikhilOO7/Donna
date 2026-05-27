@@ -6,12 +6,10 @@ conversation sessions for multi-turn RAG queries.
 """
 
 import logging
-import time
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
-from uuid import UUID
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.analytics import AnalyticsEvent, ConversationSession
@@ -22,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Analytics Events
 # ---------------------------------------------------------------------------
+
 
 async def track_event(
     session: AsyncSession,
@@ -75,7 +74,9 @@ async def get_event_stats(
         select(
             AnalyticsEvent.event_type,
             func.avg(AnalyticsEvent.latency_ms).label("avg_latency"),
-            func.percentile_cont(0.95).within_group(AnalyticsEvent.latency_ms).label("p95_latency"),
+            func.percentile_cont(0.95)
+            .within_group(AnalyticsEvent.latency_ms)
+            .label("p95_latency"),
         )
         .where(AnalyticsEvent.created_at >= since)
         .where(AnalyticsEvent.latency_ms.isnot(None))
@@ -103,6 +104,7 @@ async def get_event_stats(
 # ---------------------------------------------------------------------------
 # Conversation Sessions
 # ---------------------------------------------------------------------------
+
 
 async def get_or_create_conversation(
     session: AsyncSession,
@@ -138,12 +140,14 @@ async def append_message(
     conv = await get_or_create_conversation(session, conversation_id)
 
     messages = list(conv.messages or [])
-    messages.append({
-        "query": query,
-        "answer": answer,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        **(metadata or {}),
-    })
+    messages.append(
+        {
+            "query": query,
+            "answer": answer,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **(metadata or {}),
+        }
+    )
 
     # Keep last 20 messages
     if len(messages) > 20:

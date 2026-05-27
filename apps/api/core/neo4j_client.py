@@ -23,15 +23,22 @@ logger = logging.getLogger(__name__)
 # MERGE on (Entity {id}) gives us free deduplication: a relationship_agent
 # call that emits the same source/target pair from two different chunks
 # updates the existing edge instead of creating a duplicate.
+# Dedup + tenancy key is (normalized, type, owner_id): same entity within a
+# tenant collapses to one node, but different tenants get separate nodes.
+# owner_id uses the "__global__" sentinel when unset (auth off / demo).
 _BOOTSTRAP_CYPHER = [
     "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS "
     "FOR (e:Entity) REQUIRE e.id IS UNIQUE",
-    "CREATE CONSTRAINT entity_norm_type_unique IF NOT EXISTS "
-    "FOR (e:Entity) REQUIRE (e.normalized, e.type) IS UNIQUE",
+    "CREATE CONSTRAINT entity_norm_type_owner_unique IF NOT EXISTS "
+    "FOR (e:Entity) REQUIRE (e.normalized, e.type, e.owner_id) IS UNIQUE",
     "CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)",
     "CREATE INDEX entity_document IF NOT EXISTS FOR (e:Entity) ON (e.document_id)",
+    "CREATE INDEX entity_owner IF NOT EXISTS FOR (e:Entity) ON (e.owner_id)",
     "CREATE INDEX entity_label IF NOT EXISTS FOR (e:Entity) ON (e.label)",
 ]
+
+# Sentinel owner for entities with no tenant (auth off / demo data).
+GLOBAL_OWNER = "__global__"
 
 
 class Neo4jClient:
@@ -99,7 +106,9 @@ class Neo4jClient:
         if not await self.ensure_ready():
             return None
         try:
-            async with self._driver.session(database=settings.neo4j_database) as session:
+            async with self._driver.session(
+                database=settings.neo4j_database
+            ) as session:
                 if write:
                     result = await session.run(cypher, parameters or {})
                     records = [r.data() async for r in result]

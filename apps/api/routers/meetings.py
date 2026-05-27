@@ -17,7 +17,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.core.auth import require_user, verify_api_key
+from apps.api.core.auth import get_service_or_user, require_user
 from apps.api.core.database import get_db
 from apps.api.core.jobs import enqueue
 from apps.api.models.meeting import (
@@ -35,8 +35,8 @@ from apps.api.services.research.pipeline import research_pipeline
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
 
 
-def _check_owner(meeting, current_user) -> None:
-    """Enforce row-level isolation: a user may only touch their own meetings.
+def _check_owner_id(owner_id, current_user) -> None:
+    """Core row-level-isolation rule given a raw owner_id.
 
     No-op when the meeting has no owner (legacy/demo data) or when no user
     is present (auth disabled). When a user IS present and the meeting is
@@ -44,9 +44,34 @@ def _check_owner(meeting, current_user) -> None:
     """
     if current_user is None:
         return
-    owner_id = getattr(meeting, "owner_id", None)
     if owner_id is not None and str(owner_id) != str(current_user.id):
         raise HTTPException(404, "Meeting not found")
+
+
+def _check_owner(meeting, current_user) -> None:
+    """Ownership check against a loaded Meeting object."""
+    _check_owner_id(getattr(meeting, "owner_id", None), current_user)
+
+
+async def require_owned_meeting(
+    meeting_id: str,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user),
+) -> UUID:
+    """Dependency: validate the meeting id, enforce ownership, return the UUID.
+
+    Cheap (owner_id-only lookup) so it's safe on the hot path. Use on
+    sub-endpoints that mutate/read a meeting's data plane.
+    """
+    try:
+        mid = UUID(meeting_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid meeting ID format")
+    exists, owner_id = await meeting_service.get_owner_id(session, mid)
+    if not exists:
+        raise HTTPException(404, "Meeting not found")
+    _check_owner_id(owner_id, current_user)
+    return mid
 
 
 @router.post("/", response_model=dict)
@@ -220,14 +245,9 @@ async def add_decision(
     meeting_id: str,
     body: DecisionCreate,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Log a decision during a meeting."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Log a decision during a meeting (owner-scoped)."""
     nudge_id = UUID(body.source_nudge_id) if body.source_nudge_id else None
 
     decision = await meeting_service.add_decision(
@@ -251,14 +271,9 @@ async def add_action_item(
     meeting_id: str,
     body: ActionItemCreate,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Log an action item."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Log an action item (owner-scoped)."""
     dec_id = UUID(body.decision_id) if body.decision_id else None
 
     item = await meeting_service.add_action_item(
@@ -285,14 +300,9 @@ async def trigger_research(
     meeting_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Trigger pre-meeting research pipeline (runs in background)."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Trigger pre-meeting research pipeline (owner-scoped, runs in background)."""
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
@@ -328,14 +338,9 @@ async def trigger_research(
 async def get_research(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Get research results for a meeting."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Get research results for a meeting (owner-scoped)."""
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
@@ -408,14 +413,9 @@ async def end_meeting(
 async def get_nudges(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Get all nudge cards for a meeting."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Get all nudge cards for a meeting (owner-scoped)."""
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
@@ -444,14 +444,9 @@ async def get_meeting_voice_token(
     meeting_id: str,
     request: Request,
     participant_name: str = Query("user", description="Display name"),
-    _api_key: str = Depends(verify_api_key),
+    _owned: UUID = Depends(require_owned_meeting),
 ):
-    """Issue a LiveKit token for the meeting's room (`meeting-{id}`)."""
-    try:
-        UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Issue a LiveKit token for the meeting's room (owner-scoped)."""
     services = getattr(request.app.state, "services", None)
     voice = services.voice_service if services else None
     if voice is None:
@@ -478,10 +473,12 @@ async def get_meeting_voice_token(
 async def speak_in_meeting(
     meeting_id: str,
     body: dict,
-    _api_key: str = Depends(verify_api_key),
+    session: AsyncSession = Depends(get_db),
+    principal=Depends(get_service_or_user),
 ):
     """Send text to be spoken aloud by the meeting voice worker.
 
+    Callable by service (API key) or a meeting owner (user JWT).
     Publishes the text on the Redis channel ``meeting:{id}:speak``.
     The LiveKit-side worker subscribes, synthesizes via Cartesia, and
     pushes the audio back into the room. No-op (503) when Redis is
@@ -492,9 +489,16 @@ async def speak_in_meeting(
     from apps.api.core.connections import get_redis_client
 
     try:
-        UUID(meeting_id)
+        mid = UUID(meeting_id)
     except ValueError:
         raise HTTPException(400, "Invalid meeting ID format")
+
+    # Owner check when a user (not the service key) is calling.
+    if principal is not None:
+        exists, owner_id = await meeting_service.get_owner_id(session, mid)
+        if not exists:
+            raise HTTPException(404, "Meeting not found")
+        _check_owner_id(owner_id, principal)
 
     text = (body.get("text") or "").strip()
     if not text:
@@ -529,9 +533,12 @@ async def add_utterance(
     body: dict,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    principal=Depends(get_service_or_user),
 ):
     """Append an utterance to the meeting transcript and trigger agents.
+
+    Callable by the voice worker (service API key) or the browser (user
+    JWT). When a user calls it, ownership is enforced.
 
     Body: {"speaker": str, "text": str}
     """
@@ -548,6 +555,7 @@ async def add_utterance(
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
+    _check_owner(meeting, principal)
 
     transcript = await meeting_service.append_utterance(
         session=session,
@@ -608,14 +616,9 @@ async def meeting_websocket(websocket: WebSocket, meeting_id: str):
 async def get_transcript(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Get the meeting transcript."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Get the meeting transcript (owner-scoped)."""
     transcript = await meeting_service.get_transcript(session, mid)
     if not transcript:
         return {"utterances": [], "full_text": ""}
@@ -634,14 +637,9 @@ async def generate_summary(
     meeting_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Generate a post-meeting summary (background task)."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Generate a post-meeting summary (owner-scoped, background task)."""
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
@@ -707,14 +705,9 @@ async def generate_summary(
 async def get_summary(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Get meeting summary."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Get meeting summary (owner-scoped)."""
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
@@ -740,14 +733,9 @@ async def get_summary(
 async def send_summary_email(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Send meeting summary email to attendees."""
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
+    """Send meeting summary email to attendees (owner-scoped)."""
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
@@ -791,9 +779,9 @@ async def send_summary_email(
 async def get_meeting_knowledge_graph(
     meeting_id: str,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Return the meeting-context knowledge graph.
+    """Return the meeting-context knowledge graph (owner-scoped).
 
     Builds the subgraph of knowledge-base entities that are actually
     referenced in this meeting — entities whose label appears in the
@@ -807,11 +795,6 @@ async def get_meeting_knowledge_graph(
     """
     from apps.api.core.neo4j_client import neo4j_client
     from apps.api.services.meeting.kg_query_agent import KGQueryAgent
-
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
 
     meeting = await meeting_service.get_meeting(session, mid)
     if not meeting:
@@ -835,9 +818,7 @@ async def get_meeting_knowledge_graph(
     if meeting.research_brief and meeting.research_brief.topics:
         for t in meeting.research_brief.topics:
             if isinstance(t, dict):
-                corpus_parts.append(
-                    f"{t.get('topic', '')} {t.get('summary', '')}"
-                )
+                corpus_parts.append(f"{t.get('topic', '')} {t.get('summary', '')}")
     corpus = " ".join(corpus_parts).strip()
 
     candidates = KGQueryAgent._extract_candidate_phrases(corpus) if corpus else set()
@@ -852,11 +833,18 @@ async def get_meeting_knowledge_graph(
             "source": "neo4j",
         }
 
-    # Anchor entities (mentioned) + their 1-hop neighbourhood
+    # Tenant scope (GLOBAL_OWNER sentinel when the meeting has no owner)
+    from apps.api.core.neo4j_client import GLOBAL_OWNER
+
+    owner = (
+        str(meeting.owner_id) if getattr(meeting, "owner_id", None) else GLOBAL_OWNER
+    )
+
+    # Anchor entities (mentioned) + their 1-hop neighbourhood, owner-scoped
     cypher = """
-    MATCH (a:Entity)
+    MATCH (a:Entity {owner_id: $owner})
     WHERE a.normalized IN $candidates
-    OPTIONAL MATCH (a)-[r:REL]-(b:Entity)
+    OPTIONAL MATCH (a)-[r:REL]-(b:Entity {owner_id: $owner})
     RETURN
         collect(DISTINCT {id: a.id, label: a.label, type: a.type,
                           normalized: a.normalized, mentioned: true}) AS anchors,
@@ -869,7 +857,9 @@ async def get_meeting_knowledge_graph(
              relationship: r.type, confidence: r.confidence,
              context: r.context} END) AS rels
     """
-    result = await neo4j_client.execute(cypher, {"candidates": list(candidates)})
+    result = await neo4j_client.execute(
+        cypher, {"candidates": list(candidates), "owner": owner}
+    )
     if not result or not result[0].get("anchors"):
         return {
             "meeting_id": meeting_id,
@@ -884,10 +874,10 @@ async def get_meeting_knowledge_graph(
     row = result[0]
     # Merge anchors + neighbours, dedupe by (normalized, type), anchors win
     node_by_key: dict = {}
-    for n in (row.get("neighbours") or []):
+    for n in row.get("neighbours") or []:
         if n:
             node_by_key[(n["normalized"], n["type"])] = n
-    for n in (row.get("anchors") or []):
+    for n in row.get("anchors") or []:
         if n:
             node_by_key[(n["normalized"], n["type"])] = n  # mentioned=true wins
 
@@ -896,7 +886,7 @@ async def get_meeting_knowledge_graph(
 
     edges = []
     seen_edges = set()
-    for r in (row.get("rels") or []):
+    for r in row.get("rels") or []:
         if not r:
             continue
         s = id_by_key.get((r["source_norm"], r["source_type"]))
@@ -935,9 +925,9 @@ async def query_meeting_context(
     body: dict,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    mid: UUID = Depends(require_owned_meeting),
 ):
-    """Manual RAG query during a meeting.
+    """Manual RAG query during a meeting (owner-scoped).
 
     Lets a participant ask the knowledge base a question mid-meeting
     (e.g. "what did we decide about pricing last quarter?"). Runs the
@@ -947,11 +937,6 @@ async def query_meeting_context(
 
     Body: ``{"query": str, "record": bool = true}``
     """
-    try:
-        mid = UUID(meeting_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid meeting ID format")
-
     query_text = (body.get("query") or "").strip()
     if not query_text:
         raise HTTPException(400, "Field 'query' is required")

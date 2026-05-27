@@ -27,11 +27,13 @@ class TestEmailTemplate:
                     {"decision": "Go with Beacon", "owner": "Alice", "deadline": "Q2"}
                 ],
                 "action_items": [
-                    {"item": "Draft contract", "assignee": "Charlie", "priority": "high"}
+                    {
+                        "item": "Draft contract",
+                        "assignee": "Charlie",
+                        "priority": "high",
+                    }
                 ],
-                "ai_insights_used": [
-                    {"insight": "Compliance edge", "impact": "high"}
-                ],
+                "ai_insights_used": [{"insight": "Compliance edge", "impact": "high"}],
                 "follow_up_recommendations": ["Schedule kickoff"],
             },
         )

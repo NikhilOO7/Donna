@@ -4,10 +4,9 @@ Shared test fixtures for the Voice Document Intelligence test suite.
 
 import asyncio
 import os
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import AsyncGenerator
 
 # Set test environment before importing app code
 os.environ["APP_ENV"] = "test"
@@ -15,8 +14,6 @@ os.environ["POSTGRES_HOST"] = "localhost"
 os.environ["REDIS_HOST"] = "localhost"
 os.environ["QDRANT_HOST"] = "localhost"
 os.environ["REQUIRE_API_KEY"] = "false"
-
-from httpx import AsyncClient, ASGITransport
 
 
 @pytest.fixture(scope="session")
@@ -42,7 +39,9 @@ def mock_openai_client():
     # Mock chat completions
     mock_chat_response = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.content = '{"intent_type": "factual", "key_entities": [], "query_complexity": "simple"}'
+    mock_choice.message.content = (
+        '{"intent_type": "factual", "key_entities": [], "query_complexity": "simple"}'
+    )
     mock_chat_response.choices = [mock_choice]
     client.chat.completions.create.return_value = mock_chat_response
 

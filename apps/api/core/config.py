@@ -9,10 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
 
     # Application
@@ -21,12 +18,21 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", env="APP_ENV")
     debug: bool = Field(default=False, env="APP_DEBUG")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    log_format: str = Field(default="json", env="LOG_FORMAT")  # "json" for prod, "console" for dev
+    log_format: str = Field(
+        default="json", env="LOG_FORMAT"
+    )  # "json" for prod, "console" for dev
 
     # API Settings
     api_prefix: str = "/api/v1"
     api_port: int = Field(default=8000, env="API_PORT")
-    cors_origins: list[str] = Field(default=["http://localhost:4321", "http://localhost:3000", "http://localhost:8000"], env="CORS_ORIGINS")
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:4321",
+            "http://localhost:3000",
+            "http://localhost:8000",
+        ],
+        env="CORS_ORIGINS",
+    )
 
     # Database Configuration - Updated for our setup
     postgres_user: str = Field(default="voicedoc", env="POSTGRES_USER")
@@ -66,7 +72,9 @@ class Settings(BaseSettings):
     qdrant_host: str = Field(default="localhost", env="QDRANT_HOST")
     qdrant_port: int = Field(default=6333, env="QDRANT_PORT")
     qdrant_grpc_port: int = Field(default=6334, env="QDRANT_GRPC_PORT")
-    qdrant_collection_name: str = Field(default="voice_doc_embeddings", env="QDRANT_COLLECTION_NAME")
+    qdrant_collection_name: str = Field(
+        default="voice_doc_embeddings", env="QDRANT_COLLECTION_NAME"
+    )
 
     # TigerGraph (Optional)
     tigergraph_host: str = Field(default="localhost", env="TIGERGRAPH_HOST")
@@ -79,7 +87,9 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4-turbo", env="OPENAI_MODEL")
     chat_model: str = Field(default="gpt-4", env="CHAT_MODEL")
-    embedding_model: str = Field(default="text-embedding-3-small", env="EMBEDDING_MODEL")
+    embedding_model: str = Field(
+        default="text-embedding-3-small", env="EMBEDDING_MODEL"
+    )
     embedding_dimensions: int = Field(default=1536, env="EMBEDDING_DIMENSIONS")
 
     # Deepgram Settings
@@ -90,7 +100,9 @@ class Settings(BaseSettings):
 
     # Cartesia Settings
     cartesia_api_key: Optional[str] = Field(default=None, env="CARTESIA_API_KEY")
-    cartesia_voice_id: str = Field(default="248be419-c632-4f23-adf1-5324ed7dbf1d", env="CARTESIA_VOICE_ID")
+    cartesia_voice_id: str = Field(
+        default="248be419-c632-4f23-adf1-5324ed7dbf1d", env="CARTESIA_VOICE_ID"
+    )
     cartesia_model: str = Field(default="sonic-turbo", env="CARTESIA_MODEL")
 
     # Voice Processing Settings
@@ -112,7 +124,9 @@ class Settings(BaseSettings):
     # Storage Configuration (NEW - Local Storage Option)
     storage_type: str = Field(default="local", env="STORAGE_TYPE")  # "local" or "minio"
     local_storage_path: str = Field(default="./data/uploads", env="LOCAL_STORAGE_PATH")
-    allowed_file_types: List[str] = Field(default=[".pdf", ".docx", ".txt", ".doc"], env="ALLOWED_FILE_TYPES")
+    allowed_file_types: List[str] = Field(
+        default=[".pdf", ".docx", ".txt", ".doc"], env="ALLOWED_FILE_TYPES"
+    )
 
     # MinIO Storage (Kept for compatibility)
     minio_endpoint: str = Field(default="localhost:9000", env="MINIO_ENDPOINT")
@@ -125,7 +139,7 @@ class Settings(BaseSettings):
     # Document Processing Settings
     chunk_size: int = Field(default=1000, env="CHUNK_SIZE")
     chunk_overlap: int = Field(default=200, env="CHUNK_OVERLAP")
-    max_file_size: int = Field(default=100*1024*1024, env="MAX_FILE_SIZE")  # 100MB
+    max_file_size: int = Field(default=100 * 1024 * 1024, env="MAX_FILE_SIZE")  # 100MB
 
     # Voyage AI (Better embeddings)
     voyage_api_key: Optional[str] = Field(default=None, env="VOYAGE_API_KEY")
@@ -136,7 +150,9 @@ class Settings(BaseSettings):
 
     # Postmark (Email delivery for post-meeting summaries)
     postmark_api_key: Optional[str] = Field(default=None, env="POSTMARK_API_KEY")
-    postmark_from_email: str = Field(default="meetings@example.com", env="POSTMARK_FROM_EMAIL")
+    postmark_from_email: str = Field(
+        default="meetings@example.com", env="POSTMARK_FROM_EMAIL"
+    )
 
     # Neo4j (Knowledge Graph)
     neo4j_uri: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
@@ -168,7 +184,9 @@ class Settings(BaseSettings):
     otlp_endpoint: str = Field(default="http://localhost:4317", env="OTLP_ENDPOINT")
 
     # Resilience
-    allow_local_embedding_fallback: bool = Field(default=False, env="ALLOW_LOCAL_EMBEDDING_FALLBACK")
+    allow_local_embedding_fallback: bool = Field(
+        default=False, env="ALLOW_LOCAL_EMBEDDING_FALLBACK"
+    )
 
     # Rate limiting
     rate_limit_upload: str = Field(default="5/minute", env="RATE_LIMIT_UPLOAD")
@@ -180,7 +198,7 @@ class Settings(BaseSettings):
     target_llm_latency_ms: int = Field(default=1000, env="TARGET_LLM_LATENCY_MS")
     target_total_latency_ms: int = Field(default=200, env="TARGET_TOTAL_LATENCY_MS")
 
-    @field_validator("deepgram_api_key", "cartesia_api_key", mode='before')
+    @field_validator("deepgram_api_key", "cartesia_api_key", mode="before")
     @classmethod
     def validate_required_keys(cls, v):
         # Make API keys optional for development
@@ -201,18 +219,18 @@ class Settings(BaseSettings):
                 "provider": "silero",
                 "threshold": self.vad_threshold,
                 "min_speech_duration": self.vad_min_speech_duration,
-                "min_silence_duration": self.vad_min_silence_duration
+                "min_silence_duration": self.vad_min_silence_duration,
             },
             "stt": {
                 "provider": "deepgram",
                 "model": self.deepgram_model,
                 "language": self.deepgram_language,
-                "tier": self.deepgram_tier
+                "tier": self.deepgram_tier,
             },
             "tts": {
                 "provider": "cartesia",
                 "model": self.cartesia_model,
-                "voice_id": self.cartesia_voice_id
+                "voice_id": self.cartesia_voice_id,
             },
             "performance": {
                 "audio_chunk_size_ms": self.audio_chunk_size_ms,
@@ -221,9 +239,9 @@ class Settings(BaseSettings):
                 "targets": {
                     "stt_ms": self.target_stt_latency_ms,
                     "tts_ms": self.target_tts_latency_ms,
-                    "total_ms": self.target_total_latency_ms
-                }
-            }
+                    "total_ms": self.target_total_latency_ms,
+                },
+            },
         }
 
     # Local Storage Helper Methods (NEW)
@@ -240,8 +258,10 @@ class Settings(BaseSettings):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+
 @lru_cache()
 def get_settings():
     return Settings()
+
 
 settings = get_settings()

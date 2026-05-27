@@ -54,9 +54,7 @@ class TableAgent:
         if not table:
             return ""
 
-        cleaned = [
-            [str(cell).strip() if cell else "" for cell in row] for row in table
-        ]
+        cleaned = [[str(cell).strip() if cell else "" for cell in row] for row in table]
 
         lines = []
         # Header

@@ -33,14 +33,18 @@ metadata = MetaData(
     }
 )
 
+
 # Modern SQLAlchemy 2.0 Base class (NOT declarative_base())
 class Base(DeclarativeBase):
     """SQLAlchemy 2.0 declarative base - use Mapped[] and mapped_column()"""
+
     metadata = metadata
     __allow_unmapped__ = False  # Enforce type safety
 
+
 # Global engine instance
 engine: Optional[AsyncEngine] = None
+
 
 def create_engine_instance() -> AsyncEngine:
     """Create modern async engine with SQLAlchemy 2.0 best practices"""
@@ -54,7 +58,9 @@ def create_engine_instance() -> AsyncEngine:
             "pool_size": 10 if not settings.is_production else 20,
             "max_overflow": 20 if not settings.is_production else 40,
             "pool_recycle": 3600,
-            "connect_args": {"server_settings": {"application_name": "voice-doc-intelligence"}},
+            "connect_args": {
+                "server_settings": {"application_name": "voice-doc-intelligence"}
+            },
         }
 
         # Only add NullPool in production if explicitly needed
@@ -70,6 +76,7 @@ def create_engine_instance() -> AsyncEngine:
         logger.info("✅ Async database engine created (SQLAlchemy 2.0)")
     return engine
 
+
 # Create session factory
 engine = create_engine_instance()
 AsyncSessionLocal = async_sessionmaker(
@@ -79,6 +86,7 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
     autocommit=False,
 )
+
 
 # Dependency for FastAPI
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -94,6 +102,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
 
+
 # Context manager for manual usage
 @asynccontextmanager
 async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
@@ -107,6 +116,7 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
 
 def _alembic_upgrade_head_sync() -> None:
     """Run `alembic upgrade head` programmatically (sync; call in a thread)."""
@@ -156,6 +166,7 @@ async def init_db():
             "(or set RUN_MIGRATIONS_ON_STARTUP=true)"
         )
 
+
 # Cleanup
 async def close_db() -> None:
     """Gracefully close database connections"""
@@ -163,6 +174,7 @@ async def close_db() -> None:
     if engine is not None:
         await engine.dispose()
         logger.info("✅ Database connections closed")
+
 
 # Health check
 async def check_db_health() -> bool:

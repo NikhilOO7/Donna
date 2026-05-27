@@ -151,9 +151,7 @@ class TestMeetingDispatchFlow:
             patch(
                 "apps.api.services.meeting.agent_dispatcher.meeting_service"
             ) as mock_ms,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.meeting_hub"
-            ) as mock_hub,
+            patch("apps.api.services.meeting.agent_dispatcher.meeting_hub") as mock_hub,
             patch(
                 "apps.api.services.meeting.agent_dispatcher.scribe_agent"
             ) as mock_scribe,
@@ -265,9 +263,7 @@ class TestMeetingDispatchFlow:
             patch(
                 "apps.api.services.meeting.agent_dispatcher.meeting_service"
             ) as mock_ms,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.meeting_hub"
-            ) as mock_hub,
+            patch("apps.api.services.meeting.agent_dispatcher.meeting_hub") as mock_hub,
             patch(
                 "apps.api.services.meeting.agent_dispatcher.scribe_agent"
             ) as mock_scribe,
@@ -288,9 +284,7 @@ class TestMeetingDispatchFlow:
             mock_ms.add_nudge = AsyncMock(side_effect=fake_add_nudge)
             mock_hub.broadcast = AsyncMock()
 
-            mock_scribe.analyze = AsyncMock(
-                side_effect=RuntimeError("scribe blew up")
-            )
+            mock_scribe.analyze = AsyncMock(side_effect=RuntimeError("scribe blew up"))
             mock_context.analyze = AsyncMock(
                 return_value=_make_canned_nudge("context", "C", "context_agent")
             )

@@ -5,28 +5,27 @@ Manages real-time voice interactions and conversation flow
 """
 
 import asyncio
-import json
 import logging
-from typing import Dict, Any, List, Optional, Callable, AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime
-from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
 
-from crewai.tools import tool
 import numpy as np
 
-from apps.api.services.agents.base_agent import BaseAgent, AgentContext
-from apps.api.core.config import settings
+# Cartesia SDK for standalone TTS
+from cartesia import AsyncCartesia
+from crewai.tools import tool
 
 # Deepgram SDK (v5) for standalone STT
 from deepgram import DeepgramClient
 
-# Cartesia SDK for standalone TTS
-from cartesia import AsyncCartesia
-
 # LiveKit plugin imports for LiveKit-integrated voice assistant
 from livekit import rtc
-from livekit.agents import Agent as LKAgent, AgentSession, AutoSubscribe, JobContext
-from livekit.plugins import deepgram, cartesia, silero
+from livekit.agents import Agent as LKAgent
+from livekit.plugins import cartesia, deepgram, silero
+
+from apps.api.core.config import settings
+from apps.api.services.agents.base_agent import AgentContext, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +33,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VoiceMetrics:
     """Track voice interaction metrics"""
+
     vad_latency: float = 0
     stt_latency: float = 0
     tts_latency: float = 0
@@ -41,17 +41,20 @@ class VoiceMetrics:
     interruption_count: int = 0
 
     def log_metrics(self):
-        logger.info(f"Voice Metrics - "
-                     f"VAD: {self.vad_latency:.2f}ms, "
-                     f"STT: {self.stt_latency:.2f}ms, "
-                     f"TTS: {self.tts_latency:.2f}ms, "
-                     f"Turn-taking: {self.turn_taking_latency:.2f}ms, "
-                     f"Interruptions: {self.interruption_count}")
+        logger.info(
+            f"Voice Metrics - "
+            f"VAD: {self.vad_latency:.2f}ms, "
+            f"STT: {self.stt_latency:.2f}ms, "
+            f"TTS: {self.tts_latency:.2f}ms, "
+            f"Turn-taking: {self.turn_taking_latency:.2f}ms, "
+            f"Interruptions: {self.interruption_count}"
+        )
 
 
 @dataclass
 class ConversationState:
     """Maintain conversation state"""
+
     is_speaking: bool = False
     is_listening: bool = True
     current_transcript: str = ""
@@ -79,7 +82,7 @@ class VoiceAgent(BaseAgent):
             goal="Provide seamless voice interaction with natural conversation flow and minimal latency",
             backstory="""I am an expert in voice interaction and natural conversation management.
             I excel at understanding spoken language, managing conversation turns, and providing
-            natural-sounding responses that make users feel heard and understood."""
+            natural-sounding responses that make users feel heard and understood.""",
         )
 
     def _initialize(self):
@@ -91,7 +94,9 @@ class VoiceAgent(BaseAgent):
         self._deepgram_client = None
         if settings.deepgram_api_key:
             try:
-                self._deepgram_client = DeepgramClient(api_key=settings.deepgram_api_key)
+                self._deepgram_client = DeepgramClient(
+                    api_key=settings.deepgram_api_key
+                )
                 logger.info("Deepgram client initialized")
             except Exception as e:
                 logger.warning(f"Deepgram client init failed: {e}")
@@ -169,7 +174,9 @@ class VoiceAgent(BaseAgent):
         self.register_tool(detect_voice_activity)
         self.register_tool(manage_flow)
 
-    async def process(self, input_data: Dict[str, Any], context: AgentContext) -> Dict[str, Any]:
+    async def process(
+        self, input_data: Dict[str, Any], context: AgentContext
+    ) -> Dict[str, Any]:
         """Process voice interaction"""
         try:
             action = input_data.get("action", "listen")
@@ -216,7 +223,9 @@ class VoiceAgent(BaseAgent):
         # Perform VAD
         vad_start = datetime.now()
         has_speech = await self._perform_vad(audio_data)
-        self.voice_metrics.vad_latency = (datetime.now() - vad_start).total_seconds() * 1000
+        self.voice_metrics.vad_latency = (
+            datetime.now() - vad_start
+        ).total_seconds() * 1000
 
         if not has_speech:
             return {
@@ -228,7 +237,9 @@ class VoiceAgent(BaseAgent):
         # Perform STT
         stt_start = datetime.now()
         transcript = await self._perform_stt(audio_data, context)
-        self.voice_metrics.stt_latency = (datetime.now() - stt_start).total_seconds() * 1000
+        self.voice_metrics.stt_latency = (
+            datetime.now() - stt_start
+        ).total_seconds() * 1000
 
         # Update conversation state
         conv_state.last_user_speech = transcript
@@ -261,7 +272,9 @@ class VoiceAgent(BaseAgent):
         # Perform TTS
         tts_start = datetime.now()
         audio_bytes = await self._perform_tts(text, emotion, context)
-        self.voice_metrics.tts_latency = (datetime.now() - tts_start).total_seconds() * 1000
+        self.voice_metrics.tts_latency = (
+            datetime.now() - tts_start
+        ).total_seconds() * 1000
 
         # Update conversation state
         conv_state.last_agent_response = text
@@ -332,7 +345,9 @@ class VoiceAgent(BaseAgent):
         if conv_state.turn_count == 0:
             conv_state.conversation_phase = "greeting"
             response_type = "greeting"
-        elif any(phrase in user_input.lower() for phrase in ["bye", "goodbye", "see you"]):
+        elif any(
+            phrase in user_input.lower() for phrase in ["bye", "goodbye", "see you"]
+        ):
             conv_state.conversation_phase = "closing"
             response_type = "closing"
         else:
@@ -376,9 +391,7 @@ class VoiceAgent(BaseAgent):
                 vad_stream = self._vad.stream()
                 vad_stream.push_frame(audio_frame)
                 # Check for speech event
-                event = await asyncio.wait_for(
-                    vad_stream.arecv(), timeout=0.1
-                )
+                event = await asyncio.wait_for(vad_stream.arecv(), timeout=0.1)
                 await vad_stream.aclose()
                 return event.type.name == "START_OF_SPEECH"
             except (asyncio.TimeoutError, Exception) as e:
@@ -388,7 +401,7 @@ class VoiceAgent(BaseAgent):
         # Energy-based fallback
         audio_array = np.frombuffer(audio_data, dtype=np.int16)
         audio_float = audio_array.astype(np.float32) / 32768.0
-        energy = np.sqrt(np.mean(audio_float ** 2))
+        energy = np.sqrt(np.mean(audio_float**2))
         return energy > 0.01
 
     async def _perform_stt(self, audio_data: bytes, context: AgentContext) -> str:
@@ -422,7 +435,9 @@ class VoiceAgent(BaseAgent):
                     if alternatives:
                         transcript = alternatives[0].get("transcript", "")
 
-            logger.info(f"STT result ({len(audio_data)} bytes -> {len(transcript)} chars)")
+            logger.info(
+                f"STT result ({len(audio_data)} bytes -> {len(transcript)} chars)"
+            )
             return transcript
 
         except Exception as e:
@@ -505,7 +520,9 @@ class VoiceAgent(BaseAgent):
 
     def _convert_speech_to_text(self, audio_data: bytes) -> str:
         """Tool method for STT conversion"""
-        return f"Converting {len(audio_data)} bytes of audio to text via Deepgram nova-3"
+        return (
+            f"Converting {len(audio_data)} bytes of audio to text via Deepgram nova-3"
+        )
 
     def _convert_text_to_speech(self, text: str, emotion: str) -> str:
         """Tool method for TTS conversion"""

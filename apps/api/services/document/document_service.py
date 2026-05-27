@@ -3,41 +3,41 @@ Document Service - PostgreSQL-backed document management
 Replaces in-memory document storage with persistent database storage
 """
 
-import logging
-from typing import List, Optional, Dict, Any
-from uuid import UUID, uuid4
-from datetime import datetime, timezone
 import hashlib
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
 
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from apps.api.models.document import (
     Document,
     DocumentChunk,
+    DocumentStats,
     Entity,
-    DocumentCreate,
-    DocumentResponse,
-    DocumentStats
 )
-from apps.api.core.database import get_db
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentNotFoundError(Exception):
     """Raised when document is not found"""
+
     pass
 
 
 class DocumentAlreadyExistsError(Exception):
     """Raised when document with same hash already exists"""
+
     pass
 
 
 class DocumentProcessingError(Exception):
     """Raised when document processing fails"""
+
     pass
 
 
@@ -53,7 +53,8 @@ class DocumentService:
         filename: str,
         file_content: bytes,
         file_type: Optional[str] = None,
-        user_metadata: Optional[Dict[str, Any]] = None
+        user_metadata: Optional[Dict[str, Any]] = None,
+        owner_id: Optional[UUID] = None,
     ) -> Document:
         """
         Create a new document in the database
@@ -76,11 +77,15 @@ class DocumentService:
             file_hash = hashlib.sha256(file_content).hexdigest()
             file_size = len(file_content)
 
-            # Check for duplicate
-            existing = await self.get_document_by_hash(session, file_hash)
+            # Check for duplicate (scoped per-owner for multi-tenancy)
+            existing = await self.get_document_by_hash(session, file_hash, owner_id)
             if existing:
-                self.logger.warning(f"Document with hash {file_hash} already exists: {existing.id}")
-                raise DocumentAlreadyExistsError(f"Document already exists with id: {existing.id}")
+                self.logger.warning(
+                    f"Document with hash {file_hash} already exists: {existing.id}"
+                )
+                raise DocumentAlreadyExistsError(
+                    f"Document already exists with id: {existing.id}"
+                )
 
             # Create document
             document = Document(
@@ -91,11 +96,12 @@ class DocumentService:
                 file_size=file_size,
                 file_hash=file_hash,
                 processing_status="pending",
+                owner_id=owner_id,
                 user_metadata=user_metadata or {},
                 doc_metadata={},
                 extracted_metadata={},
                 created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc)
+                updated_at=datetime.now(timezone.utc),
             )
 
             session.add(document)
@@ -113,10 +119,7 @@ class DocumentService:
             raise DocumentProcessingError(f"Failed to create document: {str(e)}")
 
     async def get_document(
-        self,
-        session: AsyncSession,
-        document_id: UUID,
-        include_chunks: bool = False
+        self, session: AsyncSession, document_id: UUID, include_chunks: bool = False
     ) -> Optional[Document]:
         """
         Get document by ID
@@ -131,8 +134,7 @@ class DocumentService:
         """
         try:
             query = select(Document).where(
-                Document.id == document_id,
-                Document.deleted_at.is_(None)
+                Document.id == document_id, Document.deleted_at.is_(None)
             )
 
             if include_chunks:
@@ -150,14 +152,21 @@ class DocumentService:
     async def get_document_by_hash(
         self,
         session: AsyncSession,
-        file_hash: str
+        file_hash: str,
+        owner_id: Optional[UUID] = None,
     ) -> Optional[Document]:
-        """Get document by file hash"""
+        """Get document by file hash, scoped to an owner when given.
+
+        Per-owner scoping means two tenants can independently upload the
+        same file; dedup only collapses within a tenant.
+        """
         try:
             query = select(Document).where(
                 Document.file_hash == file_hash,
-                Document.deleted_at.is_(None)
+                Document.deleted_at.is_(None),
             )
+            if owner_id is not None:
+                query = query.where(Document.owner_id == owner_id)
             result = await session.execute(query)
             return result.scalar_one_or_none()
         except Exception as e:
@@ -169,7 +178,8 @@ class DocumentService:
         session: AsyncSession,
         skip: int = 0,
         limit: int = 100,
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        owner_id: Optional[UUID] = None,
     ) -> List[Document]:
         """
         List documents with pagination
@@ -179,12 +189,16 @@ class DocumentService:
             skip: Number of records to skip
             limit: Maximum number of records to return
             status: Filter by processing status
+            owner_id: When set, only this owner's documents (tenant isolation)
 
         Returns:
             List of Document instances
         """
         try:
             query = select(Document).where(Document.deleted_at.is_(None))
+
+            if owner_id is not None:
+                query = query.where(Document.owner_id == owner_id)
 
             if status:
                 query = query.where(Document.processing_status == status)
@@ -205,7 +219,7 @@ class DocumentService:
         session: AsyncSession,
         document_id: UUID,
         status: str,
-        error: Optional[Dict[str, Any]] = None
+        error: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Update document processing status
@@ -222,7 +236,7 @@ class DocumentService:
         try:
             update_data = {
                 "processing_status": status,
-                "updated_at": datetime.now(timezone.utc)
+                "updated_at": datetime.now(timezone.utc),
             }
 
             if status == "processing":
@@ -234,9 +248,7 @@ class DocumentService:
                 update_data["processing_error"] = error
 
             query = (
-                update(Document)
-                .where(Document.id == document_id)
-                .values(**update_data)
+                update(Document).where(Document.id == document_id).values(**update_data)
             )
 
             await session.execute(query)
@@ -255,7 +267,7 @@ class DocumentService:
         session: AsyncSession,
         document_id: UUID,
         doc_metadata: Optional[Dict[str, Any]] = None,
-        extracted_metadata: Optional[Dict[str, Any]] = None
+        extracted_metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Update document metadata"""
         try:
@@ -267,9 +279,7 @@ class DocumentService:
                 update_data["extracted_metadata"] = extracted_metadata
 
             query = (
-                update(Document)
-                .where(Document.id == document_id)
-                .values(**update_data)
+                update(Document).where(Document.id == document_id).values(**update_data)
             )
 
             await session.execute(query)
@@ -283,10 +293,7 @@ class DocumentService:
             return False
 
     async def delete_document(
-        self,
-        session: AsyncSession,
-        document_id: UUID,
-        soft_delete: bool = True
+        self, session: AsyncSession, document_id: UUID, soft_delete: bool = True
     ) -> bool:
         """
         Delete document (soft or hard delete)
@@ -320,15 +327,14 @@ class DocumentService:
             self.logger.error(f"Failed to delete document: {e}")
             return False
 
-    async def get_document_stats(
-        self,
-        session: AsyncSession
-    ) -> DocumentStats:
+    async def get_document_stats(self, session: AsyncSession) -> DocumentStats:
         """Get aggregate statistics"""
         try:
             # Count documents
             doc_count = await session.scalar(
-                select(func.count()).select_from(Document).where(Document.deleted_at.is_(None))
+                select(func.count())
+                .select_from(Document)
+                .where(Document.deleted_at.is_(None))
             )
 
             # Count chunks
@@ -342,12 +348,11 @@ class DocumentService:
             )
 
             # Status counts
-            status_query = select(
-                Document.processing_status,
-                func.count().label('count')
-            ).where(
-                Document.deleted_at.is_(None)
-            ).group_by(Document.processing_status)
+            status_query = (
+                select(Document.processing_status, func.count().label("count"))
+                .where(Document.deleted_at.is_(None))
+                .group_by(Document.processing_status)
+            )
 
             result = await session.execute(status_query)
             status_counts = {row.processing_status: row.count for row in result}
@@ -356,7 +361,7 @@ class DocumentService:
                 total_documents=doc_count or 0,
                 total_chunks=chunk_count or 0,
                 total_entities=entity_count or 0,
-                processing_status_counts=status_counts
+                processing_status_counts=status_counts,
             )
 
         except Exception as e:
@@ -365,14 +370,11 @@ class DocumentService:
                 total_documents=0,
                 total_chunks=0,
                 total_entities=0,
-                processing_status_counts={}
+                processing_status_counts={},
             )
 
     async def add_chunks(
-        self,
-        session: AsyncSession,
-        document_id: UUID,
-        chunks: List[Dict[str, Any]]
+        self, session: AsyncSession, document_id: UUID, chunks: List[Dict[str, Any]]
     ) -> List[DocumentChunk]:
         """
         Add chunks to a document
@@ -407,21 +409,22 @@ class DocumentService:
                     is_table=chunk_data.get("is_table", False),
                     is_list=chunk_data.get("is_list", False),
                     chunk_metadata=chunk_data.get("metadata", {}),
-                    created_at=datetime.now(timezone.utc)
+                    created_at=datetime.now(timezone.utc),
                 )
                 session.add(chunk)
                 created_chunks.append(chunk)
 
             await session.commit()
 
-            self.logger.info(f"Added {len(created_chunks)} chunks to document {document_id}")
+            self.logger.info(
+                f"Added {len(created_chunks)} chunks to document {document_id}"
+            )
             return created_chunks
 
         except Exception as e:
             await session.rollback()
             self.logger.error(f"Failed to add chunks: {e}")
             raise DocumentProcessingError(f"Failed to add chunks: {str(e)}")
-
 
     async def add_entities(
         self,

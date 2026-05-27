@@ -4,11 +4,11 @@ Maps to the analytics_events and conversation_sessions tables in doc_intel schem
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import String, Integer, DateTime, JSON, ForeignKey, Text, ARRAY
-from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
+from sqlalchemy import ARRAY, JSON, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID  # noqa: N811
 from sqlalchemy.orm import Mapped, mapped_column
 
 from apps.api.core.database import Base

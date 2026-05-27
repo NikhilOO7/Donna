@@ -63,9 +63,15 @@ class ContextAgent:
         return self._vector_store
 
     async def analyze(
-        self, recent_utterances: List[Dict[str, Any]]
+        self,
+        recent_utterances: List[Dict[str, Any]],
+        owner_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Query knowledge base for context relevant to recent discussion."""
+        """Query knowledge base for context relevant to recent discussion.
+
+        ``owner_id`` scopes retrieval to the meeting owner's documents
+        (tenant isolation); None searches globally (auth off / demo).
+        """
         if not recent_utterances:
             return None
 
@@ -87,6 +93,7 @@ class ContextAgent:
                 query_embedding=query_embedding,
                 context_level="document",
                 top_k=TOP_K_CANDIDATES,
+                filters={"owner_id": owner_id} if owner_id else None,
             )
         except Exception as e:
             logger.warning(f"[Context] RAG search failed: {e}")

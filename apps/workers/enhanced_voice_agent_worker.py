@@ -5,11 +5,9 @@ Optimized for ultra-low latency meeting assistance
 
 import asyncio
 import logging
-import sys
-import os
-from pathlib import Path
-from typing import Dict, Any
 import signal
+import sys
+from pathlib import Path
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -17,82 +15,93 @@ sys.path.insert(0, str(project_root))
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
-env_path = project_root / '.env'
+
+env_path = project_root / ".env"
 if env_path.exists():
     load_dotenv(env_path)
     print(f"✅ Loaded environment from {env_path}")
 else:
     print(f"⚠️  No .env file found at {env_path}")
 
-from livekit.agents import WorkerOptions, cli
-from prometheus_client import Counter, Histogram, Gauge, start_http_server
-from apps.api.services.voice.enhanced_livekit_service import (
-    entrypoint, create_worker_options
-)
+from livekit.agents import cli
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
+
 from apps.api.core.config import settings
+from apps.api.services.voice.enhanced_livekit_service import create_worker_options
 
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('enhanced_voice_agent.log')
-    ]
+        logging.FileHandler("enhanced_voice_agent.log"),
+    ],
 )
 
 logger = logging.getLogger("enhanced-voice-agent-worker")
 
 # Prometheus metrics
-session_counter = Counter('voice_sessions_total', 'Total number of voice sessions')
-error_counter = Counter('voice_errors_total', 'Total number of errors', ['error_type'])
-latency_histogram = Histogram('voice_latency_seconds', 'Voice pipeline latency', ['component'])
-concurrent_sessions = Gauge('voice_concurrent_sessions', 'Number of concurrent sessions')
+session_counter = Counter("voice_sessions_total", "Total number of voice sessions")
+error_counter = Counter("voice_errors_total", "Total number of errors", ["error_type"])
+latency_histogram = Histogram(
+    "voice_latency_seconds", "Voice pipeline latency", ["component"]
+)
+concurrent_sessions = Gauge(
+    "voice_concurrent_sessions", "Number of concurrent sessions"
+)
+
 
 class MetricsCollector:
     """Collect and expose metrics for monitoring"""
 
     def __init__(self):
         import time
+
         self.start_time = time.time()
-        
+
     def record_session_start(self):
         session_counter.inc()
         concurrent_sessions.inc()
-        
+
     def record_session_end(self):
         concurrent_sessions.dec()
-        
+
     def record_error(self, error_type: str):
         error_counter.labels(error_type=error_type).inc()
-        
+
     def record_latency(self, component: str, duration: float):
         latency_histogram.labels(component=component).observe(duration)
+
 
 # Global metrics collector
 metrics = MetricsCollector()
 
+
 async def health_check_server():
     """Run a simple health check server"""
     from aiohttp import web
-    
+
     async def health(request):
-        return web.json_response({
-            "status": "healthy",
-            "uptime": asyncio.get_event_loop().time() - metrics.start_time,
-            "concurrent_sessions": concurrent_sessions._value.get(),
-            "environment": settings.environment,
-            "voice_config": settings.voice_pipeline_config
-        })
-    
+        return web.json_response(
+            {
+                "status": "healthy",
+                "uptime": asyncio.get_event_loop().time() - metrics.start_time,
+                "concurrent_sessions": concurrent_sessions._value.get(),
+                "environment": settings.environment,
+                "voice_config": settings.voice_pipeline_config,
+            }
+        )
+
     app = web.Application()
-    app.router.add_get('/health', health)
-    
+    app.router.add_get("/health", health)
+
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8081)
+    site = web.TCPSite(runner, "0.0.0.0", 8081)
     await site.start()
     logger.info("Health check server running on http://0.0.0.0:8081/health")
+
 
 def validate_configuration():
     """Validate required configuration (non-blocking)"""
@@ -117,13 +126,14 @@ def validate_configuration():
     logger.info("✅ API keys validated successfully")
     return True
 
+
 async def main():
     """Enhanced main entry point with monitoring and health checks"""
 
     logger.info("=" * 50)
     logger.info("Enhanced Voice Agent Worker Starting")
     logger.info(f"Environment: {settings.environment}")
-    logger.info(f"Voice Stack: Deepgram + Cartesia + LiveKit")
+    logger.info("Voice Stack: Deepgram + Cartesia + LiveKit")
     logger.info(f"Target Latency: {settings.target_total_latency_ms}ms")
     logger.info("=" * 50)
 
@@ -170,13 +180,14 @@ async def main():
         metrics.record_error("worker_crash")
         sys.exit(1)
 
+
 if __name__ == "__main__":
     # Note: cli.run_app() manages its own event loop, don't use asyncio.run()
 
     logger.info("=" * 50)
     logger.info("Enhanced Voice Agent Worker Starting")
     logger.info(f"Environment: {settings.environment}")
-    logger.info(f"Voice Stack: Deepgram + Cartesia + LiveKit")
+    logger.info("Voice Stack: Deepgram + Cartesia + LiveKit")
     logger.info(f"Target Latency: {settings.target_total_latency_ms}ms")
     logger.info("=" * 50)
 

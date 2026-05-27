@@ -3,15 +3,16 @@ Unit tests for the Document Service (PostgreSQL-backed CRUD).
 Tests validate the service logic with mocked database operations.
 """
 
-import pytest
 import hashlib
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
 
 from apps.api.services.document.document_service import (
-    DocumentService,
-    DocumentNotFoundError,
     DocumentAlreadyExistsError,
+    DocumentNotFoundError,
+    DocumentService,
 )
 
 

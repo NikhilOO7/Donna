@@ -57,6 +57,24 @@ class MeetingService:
             logger.error(f"Failed to create meeting: {e}")
             raise
 
+    async def get_owner_id(
+        self, session: AsyncSession, meeting_id: UUID
+    ) -> tuple[bool, Optional[UUID]]:
+        """Cheaply fetch (exists, owner_id) without loading the full tree.
+
+        Used by sub-endpoints to enforce row-level isolation without the
+        cost of ``get_meeting``'s eager loads (matters on the hot path).
+        """
+        result = await session.execute(
+            select(Meeting.id, Meeting.owner_id).where(
+                Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
+            )
+        )
+        row = result.first()
+        if row is None:
+            return (False, None)
+        return (True, row.owner_id)
+
     async def get_meeting(
         self, session: AsyncSession, meeting_id: UUID
     ) -> Optional[Meeting]:
@@ -259,9 +277,7 @@ class MeetingService:
         try:
             # Serialize concurrent appends for this meeting.
             await session.execute(
-                select(Meeting.id)
-                .where(Meeting.id == meeting_id)
-                .with_for_update()
+                select(Meeting.id).where(Meeting.id == meeting_id).with_for_update()
             )
 
             result = await session.execute(

@@ -2,8 +2,9 @@
 Unit tests for vector store services.
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from apps.api.core.config import settings
 
@@ -13,8 +14,10 @@ class TestVectorStoreService:
 
     def test_vector_size_matches_config(self):
         """VectorStoreService should use config-based dimensions."""
-        with patch("apps.api.services.document.vector_store.get_qdrant_client"), \
-             patch("apps.api.services.document.vector_store.get_redis_client"):
+        with (
+            patch("apps.api.services.document.vector_store.get_qdrant_client"),
+            patch("apps.api.services.document.vector_store.get_redis_client"),
+        ):
             from apps.api.services.document.vector_store import VectorStoreService
 
             service = VectorStoreService()
@@ -45,8 +48,10 @@ class TestModernVectorStore:
 
     def test_vector_size_uses_config(self):
         """ModernVectorStore should use config-based dimensions."""
-        with patch("apps.api.services.document.vector_store.get_qdrant_client"), \
-             patch("apps.api.services.document.vector_store.get_redis_client"):
+        with (
+            patch("apps.api.services.document.vector_store.get_qdrant_client"),
+            patch("apps.api.services.document.vector_store.get_redis_client"),
+        ):
             from apps.api.services.document.vector_store import ModernVectorStore
 
             store = ModernVectorStore()
@@ -54,8 +59,10 @@ class TestModernVectorStore:
 
     def test_collections_are_named_correctly(self):
         """ModernVectorStore should create 4 context-level collections."""
-        with patch("apps.api.services.document.vector_store.get_qdrant_client"), \
-             patch("apps.api.services.document.vector_store.get_redis_client"):
+        with (
+            patch("apps.api.services.document.vector_store.get_qdrant_client"),
+            patch("apps.api.services.document.vector_store.get_redis_client"),
+        ):
             from apps.api.services.document.vector_store import ModernVectorStore
 
             store = ModernVectorStore()

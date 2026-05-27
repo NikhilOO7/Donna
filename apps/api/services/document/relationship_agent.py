@@ -59,9 +59,7 @@ class RelationshipAgent:
             f"- {e['entity_value']} ({e['entity_type']})" for e in entities[:15]
         ]
 
-        relationships = await self._extract_with_gpt4(
-            entity_descriptions, chunk_text
-        )
+        relationships = await self._extract_with_gpt4(entity_descriptions, chunk_text)
 
         # Map entity values back to IDs
         value_to_id = {e["entity_value"]: e["id"] for e in entities}

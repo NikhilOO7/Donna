@@ -70,9 +70,14 @@ class KGQueryAgent:
         self,
         meeting_id: str,
         recent_utterances: List[Dict[str, Any]],
+        owner_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         if not neo4j_client.enabled or not recent_utterances:
             return None
+
+        from apps.api.core.neo4j_client import GLOBAL_OWNER
+
+        owner = str(owner_id) if owner_id else GLOBAL_OWNER
 
         # Window: last 3 utterances combined
         window = " ".join(u.get("text", "") for u in recent_utterances[-3:]).strip()
@@ -87,7 +92,7 @@ class KGQueryAgent:
             return None
 
         # Step 1: find which mentioned phrases match real entities in the graph
-        anchor = await self._find_anchor_entity(mentioned)
+        anchor = await self._find_anchor_entity(mentioned, owner)
         if not anchor:
             return None
 
@@ -96,6 +101,7 @@ class KGQueryAgent:
             anchor_normalized=anchor["normalized"],
             anchor_type=anchor["type"],
             already_mentioned=mentioned,
+            owner=owner,
         )
         if not connection:
             return None
@@ -103,8 +109,7 @@ class KGQueryAgent:
         # Cooldown: same src/tgt pair shouldn't re-fire within 90s.
         # Atomic check-and-claim, shared across replicas via Redis.
         cd_key = (
-            f"kg:{meeting_id}:{anchor['normalized']}:"
-            f"{connection['target_normalized']}"
+            f"kg:{meeting_id}:{anchor['normalized']}:{connection['target_normalized']}"
         )
         if not await cooldown_passed(cd_key, _COOLDOWN_SECONDS):
             return None
@@ -191,19 +196,19 @@ class KGQueryAgent:
         return out
 
     async def _find_anchor_entity(
-        self, candidate_labels: Set[str]
+        self, candidate_labels: Set[str], owner: str
     ) -> Optional[Dict[str, Any]]:
-        """Match any candidate phrase to a real :Entity node."""
+        """Match any candidate phrase to a real :Entity node in this tenant."""
         if not candidate_labels:
             return None
         cypher = """
         MATCH (e:Entity)
-        WHERE e.normalized IN $candidates
+        WHERE e.normalized IN $candidates AND e.owner_id = $owner
         RETURN e.label AS label, e.normalized AS normalized, e.type AS type
         LIMIT 1
         """
         result = await neo4j_client.execute(
-            cypher, {"candidates": list(candidate_labels)}
+            cypher, {"candidates": list(candidate_labels), "owner": owner}
         )
         if not result:
             return None
@@ -214,11 +219,13 @@ class KGQueryAgent:
         anchor_normalized: str,
         anchor_type: str,
         already_mentioned: Set[str],
+        owner: str,
     ) -> Optional[Dict[str, Any]]:
-        """Find a 1-2 hop neighbor that hasn't been mentioned yet."""
+        """Find a 1-2 hop neighbor (same tenant) not yet mentioned."""
         # 1-hop first (preferred — tighter connection)
         cypher_1hop = """
-        MATCH (a:Entity {normalized: $norm, type: $type})-[r:REL]-(b:Entity)
+        MATCH (a:Entity {normalized: $norm, type: $type, owner_id: $owner})
+              -[r:REL]-(b:Entity {owner_id: $owner})
         WHERE NOT b.normalized IN $exclude
         RETURN b.label AS target_label, b.normalized AS target_normalized,
                b.type AS target_type, r.type AS relationship,
@@ -231,6 +238,7 @@ class KGQueryAgent:
             {
                 "norm": anchor_normalized,
                 "type": anchor_type,
+                "owner": owner,
                 "exclude": list(already_mentioned),
             },
         )
@@ -239,8 +247,9 @@ class KGQueryAgent:
 
         # 2-hop fallback — a transitive connection through one bridge entity
         cypher_2hop = """
-        MATCH (a:Entity {normalized: $norm, type: $type})
-              -[r1:REL]-(mid:Entity)-[r2:REL]-(b:Entity)
+        MATCH (a:Entity {normalized: $norm, type: $type, owner_id: $owner})
+              -[r1:REL]-(mid:Entity {owner_id: $owner})
+              -[r2:REL]-(b:Entity {owner_id: $owner})
         WHERE NOT b.normalized IN $exclude
           AND NOT mid.normalized IN $exclude
           AND b.normalized <> $norm
@@ -256,6 +265,7 @@ class KGQueryAgent:
             {
                 "norm": anchor_normalized,
                 "type": anchor_type,
+                "owner": owner,
                 "exclude": list(already_mentioned),
             },
         )

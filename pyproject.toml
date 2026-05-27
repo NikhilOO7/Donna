@@ -274,6 +274,13 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# Workers load .env and mutate sys.path before importing app modules, so
+# their imports legitimately aren't at the top of the file.
+"apps/workers/*" = ["E402"]
+# alembic env loads settings before importing models to register metadata.
+"alembic/env.py" = ["E402"]
+
 [tool.black]
 line-length = 88
 target-version = ["py311"]
