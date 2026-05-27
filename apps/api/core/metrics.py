@@ -75,6 +75,25 @@ VOICE_SESSIONS_ACTIVE = Gauge(
     "Currently active voice sessions",
 )
 
+# Voice pipeline latency. Buckets straddle the sub-200ms perceived-latency target
+# (config.target_*_latency_ms) so the histogram quantiles directly answer "are we
+# under 200ms?". `stage` is one of: stt, tts, llm, end_to_end.
+VOICE_LATENCY_SECONDS = Histogram(
+    "voice_latency_seconds",
+    "Voice pipeline latency by stage",
+    ["stage"],
+    buckets=(0.05, 0.08, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0),
+)
+
+
+def observe_voice_latency(stage: str, latency_ms: float) -> None:
+    """Record a voice-pipeline stage latency (milliseconds) into Prometheus.
+
+    Single choke-point so the voice services and workers all report the same way.
+    `stage`: "stt" | "tts" | "llm" | "end_to_end".
+    """
+    VOICE_LATENCY_SECONDS.labels(stage=stage).observe(max(latency_ms, 0.0) / 1000.0)
+
 # ---------------------------------------------------------------------------
 # Cache metrics
 # ---------------------------------------------------------------------------

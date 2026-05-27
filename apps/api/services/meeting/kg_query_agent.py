@@ -130,7 +130,7 @@ class KGQueryAgent:
 
         return {
             "nudge_type": "knowledge_graph",
-            "title": f"Connection: {anchor['label']} ↔ {connection['target_label']}",
+            "title": f"You'll want to know: {anchor['label']} ↔ {connection['target_label']}",
             "content": content,
             "source_agent": "kg_query_agent",
             "source_data": {

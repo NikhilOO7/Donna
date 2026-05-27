@@ -24,6 +24,9 @@ limiter = Limiter(
     key_func=_key_func,
     storage_uri=settings.redis_url,
     strategy="fixed-window",
+    # Applied to every route via SlowAPIMiddleware; health/metrics are exempted
+    # with @limiter.exempt. Expensive routes add their own stricter @limiter.limit.
+    default_limits=[settings.rate_limit_default],
 )
 
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meeting Assistant — Architecture &amp; Flow Walkthrough</title>
+  <title>Donna — Architecture &amp; Flow Walkthrough</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -551,8 +551,8 @@
 
   <!-- =================== SIDEBAR =================== -->
   <aside class="sidebar">
-    <h1>Meeting Assistant</h1>
-    <div class="subtitle">Architecture &amp; Flow Walkthrough</div>
+    <h1>Donna</h1>
+    <div class="subtitle">She already knew. · Architecture &amp; Flow Walkthrough</div>
     <nav>
       <ul>
         <li><a href="#overview" class="section">Overview</a></li>
@@ -585,6 +585,25 @@
         <li><a href="#agent-execution" class="section">Agent Execution</a></li>
         <li><a href="#resilience" class="section">Production Patterns</a></li>
         <li><a href="#tradeoffs" class="section">Trade-offs</a></li>
+
+        <li><a href="#hld" class="section">HLD — System Design</a></li>
+        <li class="sub"><a href="#hld-topology">Deployment Topology</a></li>
+        <li class="sub"><a href="#hld-writepath">Write &amp; Read Paths</a></li>
+        <li><a href="#services" class="section">Services &amp; Infrastructure</a></li>
+        <li><a href="#lld" class="section">LLD — Internals</a></li>
+        <li class="sub"><a href="#lld-retrieval">Retrieval Pipeline</a></li>
+        <li class="sub"><a href="#lld-embeddings">3-Level Embeddings</a></li>
+        <li class="sub"><a href="#lld-voice">Voice Latency Budget</a></li>
+        <li class="sub"><a href="#lld-fanout">WebSocket Fan-out</a></li>
+        <li class="sub"><a href="#lld-data">Data Model</a></li>
+        <li><a href="#rationale" class="section">Why These Choices</a></li>
+        <li><a href="#scalability" class="section">Scaling: Sessions &amp; 1M Docs</a></li>
+        <li class="sub"><a href="#scale-bottlenecks">Bottleneck Map</a></li>
+        <li class="sub"><a href="#scale-sessions">Concurrent Sessions</a></li>
+        <li class="sub"><a href="#scale-docs">1M Documents</a></li>
+        <li class="sub"><a href="#scale-evolution">Architecture Evolution</a></li>
+        <li><a href="#production" class="section">Production &amp; Market</a></li>
+
         <li><a href="#api-ref" class="section">API Reference</a></li>
       </ul>
     </nav>
@@ -602,12 +621,12 @@
         <span class="badge emerald">Real-time voice</span>
         <span class="badge sky">Neo4j knowledge graph</span>
       </div>
-      <h1 style="margin-top:18px">Meeting Assistant — Flow &amp; Architecture</h1>
+      <h1 style="margin-top:18px">Donna — Flow &amp; Architecture</h1>
       <p class="lede">
-        An AI-powered 3-phase meeting intelligence platform. Documents become a queryable knowledge graph,
-        pre-meeting research is auto-generated, real-time agents surface nudge cards during the meeting,
-        and a structured summary is delivered after. This document walks every feature, every API,
-        every fallback.
+        Donna is an AI meeting partner who's always a step ahead — inspired by the one from Suits.
+        Documents become a queryable knowledge graph, pre-meeting research is auto-generated, real-time
+        agents surface proactive nudges during the meeting, and a structured summary is delivered after.
+        This document walks every feature, every API, every fallback. (She already knew.)
       </p>
 
       <!-- Phase ribbon -->
@@ -2745,6 +2764,686 @@
       </table>
     </section>
 
+    <!-- ============ HLD ============ -->
+    <section id="hld">
+      <h2>
+        <span class="h2-icon" style="background:var(--indigo-50);color:var(--indigo);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </span>
+        High-Level Design
+      </h2>
+      <p class="section-lede">
+        Donna is a <strong>stateless API tier</strong> in front of a <strong>five-store data layer</strong>, with voice and
+        heavy processing pushed to <strong>separate worker processes</strong>. Every component is chosen so the request path
+        stays non-blocking and any single datastore can fail without taking the product down.
+      </p>
+
+      <div class="grid-3">
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--indigo-50);color:var(--indigo);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+          <h4>Stateless edge</h4>
+          <p>FastAPI workers hold no session state — every request is self-describing (JWT + tenant). Scale = add replicas behind a load balancer.</p>
+        </div>
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--violet-50);color:var(--violet);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/></svg></div>
+          <h4>Polyglot persistence</h4>
+          <p>Each store does one job well: Postgres = truth, Qdrant = vectors, Neo4j = graph, Redis = coordination, MinIO/S3 = blobs.</p>
+        </div>
+        <div class="feat">
+          <div class="feat-icon" style="background:var(--amber-50);color:var(--amber);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"/></svg></div>
+          <h4>Work off the request path</h4>
+          <p>Document processing, research, summaries and voice all run async (BackgroundTasks → Arq queue). The API answers in milliseconds and the UI polls / streams.</p>
+        </div>
+      </div>
+
+      <h3 id="hld-topology">Deployment Topology</h3>
+      <p>The whole system on one canvas — clients, the stateless API, the worker fleet, the data layer, and the external AI providers. Solid edges are the synchronous request path; dashed edges are async / streaming.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 560" role="img" aria-label="Donna deployment topology">
+          <!-- lane labels -->
+          <text class="lane-label" x="120" y="24">CLIENTS</text>
+          <text class="lane-label" x="370" y="24">STATELESS API TIER</text>
+          <text class="lane-label" x="660" y="24">WORKERS (separate procs)</text>
+          <text class="lane-label" x="875" y="24">EXTERNAL AI</text>
+
+          <!-- clients -->
+          <g>
+            <rect class="node-bg sky" x="40" y="48" width="160" height="54" rx="10"/>
+            <text class="node-label" x="120" y="69">Next.js Web App</text>
+            <text class="node-sub" x="120" y="86">REST · WS · LiveKit</text>
+          </g>
+          <g>
+            <rect class="node-bg sky" x="40" y="120" width="160" height="50" rx="10"/>
+            <text class="node-label" x="120" y="145">Browser mic / speaker</text>
+          </g>
+
+          <!-- API tier -->
+          <g>
+            <rect class="node-bg indigo node-pulse" x="288" y="44" width="184" height="62" rx="10"/>
+            <text class="node-tag" x="380" y="64">FASTAPI</text>
+            <text class="node-label" x="380" y="82">API replicas (N)</text>
+            <text class="node-sub" x="380" y="98">auth · rate-limit · RAG · WS</text>
+          </g>
+          <g>
+            <rect class="node-bg" x="300" y="124" width="160" height="44" rx="9"/>
+            <text class="node-sub" x="380" y="150">ObservabilityMiddleware</text>
+          </g>
+
+          <!-- workers -->
+          <g>
+            <rect class="node-bg amber" x="588" y="44" width="172" height="54" rx="10"/>
+            <text class="node-label" x="674" y="65">Voice worker</text>
+            <text class="node-sub" x="674" y="82">LiveKit agent · STT/TTS</text>
+          </g>
+          <g>
+            <rect class="node-bg violet" x="588" y="112" width="172" height="54" rx="10"/>
+            <text class="node-label" x="674" y="133">Arq job worker</text>
+            <text class="node-sub" x="674" y="150">ingest · research · summary</text>
+          </g>
+          <g>
+            <rect class="node-bg amber" x="588" y="180" width="172" height="50" rx="10"/>
+            <text class="node-label" x="674" y="200">LiveKit server</text>
+            <text class="node-sub" x="674" y="216">WebRTC SFU :7880</text>
+          </g>
+
+          <!-- external -->
+          <g>
+            <rect class="node-bg green" x="800" y="44" width="150" height="48" rx="10"/>
+            <text class="node-label" x="875" y="64">OpenAI</text>
+            <text class="node-sub" x="875" y="80">GPT-4 · embeddings</text>
+          </g>
+          <g>
+            <rect class="node-bg green" x="800" y="104" width="150" height="44" rx="10"/>
+            <text class="node-label" x="875" y="129">Deepgram STT</text>
+          </g>
+          <g>
+            <rect class="node-bg green" x="800" y="160" width="150" height="44" rx="10"/>
+            <text class="node-label" x="875" y="185">Cartesia TTS</text>
+          </g>
+          <g>
+            <rect class="node-bg green" x="800" y="216" width="150" height="44" rx="10"/>
+            <text class="node-label" x="875" y="241">Exa · Postmark</text>
+          </g>
+
+          <!-- data layer -->
+          <text class="lane-label" x="490" y="300">DATA LAYER — polyglot persistence</text>
+          <g>
+            <rect class="node-bg" x="60" y="320" width="150" height="62" rx="10"/>
+            <text class="node-tag" x="135" y="340">SYSTEM OF RECORD</text>
+            <text class="node-label" x="135" y="358">PostgreSQL 15</text>
+            <text class="node-sub" x="135" y="374">SQLAlchemy · asyncpg</text>
+          </g>
+          <g>
+            <rect class="node-bg sky" x="230" y="320" width="150" height="62" rx="10"/>
+            <text class="node-tag" x="305" y="340">VECTORS</text>
+            <text class="node-label" x="305" y="358">Qdrant</text>
+            <text class="node-sub" x="305" y="374">HNSW · 1536-dim</text>
+          </g>
+          <g>
+            <rect class="node-bg violet" x="400" y="320" width="150" height="62" rx="10"/>
+            <text class="node-tag" x="475" y="340">GRAPH</text>
+            <text class="node-label" x="475" y="358">Neo4j</text>
+            <text class="node-sub" x="475" y="374">entities · meetings</text>
+          </g>
+          <g>
+            <rect class="node-bg pink" x="570" y="320" width="150" height="62" rx="10"/>
+            <text class="node-tag" x="645" y="340">COORDINATION</text>
+            <text class="node-label" x="645" y="358">Redis 7</text>
+            <text class="node-sub" x="645" y="374">cache · pub/sub · locks</text>
+          </g>
+          <g>
+            <rect class="node-bg" x="740" y="320" width="150" height="62" rx="10"/>
+            <text class="node-tag" x="815" y="340">BLOBS</text>
+            <text class="node-label" x="815" y="358">MinIO / S3</text>
+            <text class="node-sub" x="815" y="374">original files</text>
+          </g>
+
+          <!-- observability -->
+          <text class="lane-label" x="300" y="430">OBSERVABILITY</text>
+          <g>
+            <rect class="node-bg" x="60" y="448" width="150" height="48" rx="10"/>
+            <text class="node-label" x="135" y="468">Prometheus</text>
+            <text class="node-sub" x="135" y="484">/metrics scrape</text>
+          </g>
+          <g>
+            <rect class="node-bg" x="230" y="448" width="150" height="48" rx="10"/>
+            <text class="node-label" x="305" y="468">Tempo</text>
+            <text class="node-sub" x="305" y="484">OTel traces</text>
+          </g>
+          <g>
+            <rect class="node-bg amber" x="400" y="448" width="150" height="48" rx="10"/>
+            <text class="node-label" x="475" y="468">Grafana</text>
+            <text class="node-sub" x="475" y="484">dashboards</text>
+          </g>
+          <g>
+            <rect class="node-bg" x="570" y="448" width="320" height="48" rx="10"/>
+            <text class="node-label" x="730" y="468">structlog → JSON (request-id correlated)</text>
+          </g>
+
+          <!-- edges: clients → api -->
+          <path class="edge flow" d="M200 75 H288" marker-end="url(#ar)"/>
+          <path class="edge sky" d="M200 145 C 250 145, 540 250, 588 205" marker-end="url(#ar)"/>
+          <!-- api → workers -->
+          <path class="edge accent dashed" d="M472 80 C 530 70, 540 70, 588 71" marker-end="url(#ar)"/>
+          <path class="edge accent dashed" d="M472 96 C 530 130, 545 139, 588 139" marker-end="url(#ar)"/>
+          <!-- workers → external -->
+          <path class="edge emerald" d="M760 68 H800" marker-end="url(#ar)"/>
+          <path class="edge emerald" d="M760 126 H800" marker-end="url(#ar)"/>
+          <path class="edge emerald" d="M760 182 H800" marker-end="url(#ar)"/>
+          <!-- api → external (LLM/embeddings) -->
+          <path class="edge emerald dashed" d="M472 60 C 640 30, 700 40, 800 56" marker-end="url(#ar)"/>
+          <!-- api → data -->
+          <path class="edge flow" d="M360 106 C 300 230, 160 300, 135 320" marker-end="url(#ar)"/>
+          <path class="edge flow" d="M380 106 C 360 230, 320 300, 305 320" marker-end="url(#ar)"/>
+          <path class="edge accent" d="M400 106 C 440 230, 470 300, 475 320" marker-end="url(#ar)"/>
+          <path class="edge pink" d="M430 106 C 560 240, 630 300, 645 320" marker-end="url(#ar)"/>
+          <!-- worker → data (redis pub/sub, blobs) -->
+          <path class="edge pink dashed" d="M674 166 C 680 250, 660 300, 645 320" marker-end="url(#ar)"/>
+          <path class="edge flow dashed" d="M760 150 C 820 240, 818 300, 815 320" marker-end="url(#ar)"/>
+
+          <defs>
+            <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker>
+          </defs>
+        </svg>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="border-color:#6366f1"></span>API tier</span>
+          <span class="item"><span class="swatch" style="border-color:#f59e0b"></span>workers / voice</span>
+          <span class="item"><span class="swatch" style="border-color:#22c55e"></span>external AI</span>
+          <span class="item"><span class="swatch" style="border-color:#8b5cf6"></span>async / streaming</span>
+        </div>
+        <div class="caption">Solid = synchronous request path · dashed = async / streaming / pub-sub</div>
+      </div>
+
+      <table>
+        <thead><tr><th>Layer</th><th>Responsibility</th><th>State?</th><th>How it scales</th></tr></thead>
+        <tbody>
+          <tr><td>Client (Next.js)</td><td>UI, polling, WS subscribe, LiveKit join</td><td>Local only</td><td>CDN / static hosting</td></tr>
+          <tr><td>API tier (FastAPI)</td><td>Auth, rate-limit, RAG, CRUD, WS hub, token mint</td><td><strong>Stateless</strong></td><td>Horizontal — add replicas</td></tr>
+          <tr><td>Workers</td><td>Voice agent, ingestion, research, summary</td><td>Stateless / job-scoped</td><td>Horizontal — add consumers</td></tr>
+          <tr><td>Data layer</td><td>Truth, vectors, graph, coordination, blobs</td><td><strong>Stateful</strong></td><td>Per-store: replicas / shards (see Scaling)</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="hld-writepath">Write Path &amp; Read Path</h3>
+      <p>Two flows carry most of the system. <strong>Write path</strong>: a document becomes chunks + vectors + graph. <strong>Read path</strong>: a question becomes a cited answer. Both keep the synchronous portion thin.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 250" role="img" aria-label="Document write path">
+          <text class="lane-label" x="60" y="20">WRITE PATH · upload → searchable knowledge</text>
+          <g><rect class="node-bg sky" x="20" y="40" width="120" height="50" rx="9"/><text class="node-label" x="80" y="60">Upload</text><text class="node-sub" x="80" y="77">multipart</text></g>
+          <g><rect class="node-bg" x="166" y="40" width="120" height="50" rx="9"/><text class="node-label" x="226" y="60">Postgres row</text><text class="node-sub" x="226" y="77">status=processing</text></g>
+          <g><rect class="node-bg" x="312" y="40" width="120" height="50" rx="9"/><text class="node-label" x="372" y="60">MinIO / S3</text><text class="node-sub" x="372" y="77">store blob</text></g>
+          <g><rect class="node-bg violet node-pulse violet" x="458" y="36" width="140" height="58" rx="9"/><text class="node-tag" x="528" y="55">ASYNC TASK</text><text class="node-label" x="528" y="73">Docling parse</text><text class="node-sub" x="528" y="89">chunk + tables + images</text></g>
+          <g><rect class="node-bg green" x="624" y="40" width="130" height="50" rx="9"/><text class="node-label" x="689" y="60">OpenAI embed</text><text class="node-sub" x="689" y="77">3-level context</text></g>
+          <g><rect class="node-bg sky" x="780" y="40" width="120" height="50" rx="9"/><text class="node-label" x="840" y="60">Qdrant upsert</text><text class="node-sub" x="840" y="77">tenant-tagged</text></g>
+
+          <g><rect class="node-bg violet" x="458" y="150" width="140" height="52" rx="9"/><text class="node-label" x="528" y="170">spaCy + GPT NER</text><text class="node-sub" x="528" y="187">entities + relations</text></g>
+          <g><rect class="node-bg" x="624" y="150" width="130" height="52" rx="9"/><text class="node-label" x="689" y="170">Postgres chunks</text><text class="node-sub" x="689" y="187">+ entities (truth)</text></g>
+          <g><rect class="node-bg violet" x="780" y="150" width="120" height="52" rx="9"/><text class="node-label" x="840" y="170">Neo4j MERGE</text><text class="node-sub" x="840" y="187">dedup graph</text></g>
+          <g><rect class="node-bg" x="312" y="152" width="120" height="48" rx="9"/><text class="node-label" x="372" y="172">status=completed</text></g>
+
+          <path class="edge flow" d="M140 65 H166" marker-end="url(#ar2)"/>
+          <path class="edge flow" d="M286 65 H312" marker-end="url(#ar2)"/>
+          <path class="edge accent dashed" d="M432 65 H458" marker-end="url(#ar2)"/>
+          <path class="edge emerald" d="M598 65 H624" marker-end="url(#ar2)"/>
+          <path class="edge sky" d="M754 65 H780" marker-end="url(#ar2)"/>
+          <path class="edge accent" d="M528 94 V150" marker-end="url(#ar2)"/>
+          <path class="edge emerald" d="M598 176 H624" marker-end="url(#ar2)"/>
+          <path class="edge violet" d="M754 176 H780" marker-end="url(#ar2)"/>
+          <path class="edge flow dashed" d="M624 176 C 470 220, 430 200, 432 188" marker-end="url(#ar2)"/>
+          <defs><marker id="ar2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">The API returns at "status=processing" in ~ms; everything right of the dashed edge runs in a background task / Arq job.</div>
+      </div>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 170" role="img" aria-label="Query read path">
+          <text class="lane-label" x="60" y="20">READ PATH · question → cited answer</text>
+          <g><rect class="node-bg sky" x="20" y="44" width="120" height="52" rx="9"/><text class="node-label" x="80" y="64">Question</text><text class="node-sub" x="80" y="81">+ tenant</text></g>
+          <g><rect class="node-bg green" x="172" y="44" width="120" height="52" rx="9"/><text class="node-label" x="232" y="64">Embed query</text><text class="node-sub" x="232" y="81">OpenAI</text></g>
+          <g><rect class="node-bg sky" x="324" y="38" width="150" height="64" rx="9"/><text class="node-tag" x="399" y="57">HYBRID</text><text class="node-label" x="399" y="75">Dense + BM25</text><text class="node-sub" x="399" y="91">RRF fusion</text></g>
+          <g><rect class="node-bg" x="506" y="44" width="130" height="52" rx="9"/><text class="node-label" x="571" y="64">Re-rank</text><text class="node-sub" x="571" y="81">boost tables/charts</text></g>
+          <g><rect class="node-bg green node-pulse emerald" x="668" y="40" width="140" height="58" rx="9"/><text class="node-label" x="738" y="62">GPT-4 synth</text><text class="node-sub" x="738" y="79">Donna persona</text></g>
+          <g><rect class="node-bg emerald" x="840" y="44" width="120" height="52" rx="9"/><text class="node-label" x="900" y="64">Answer</text><text class="node-sub" x="900" y="81">+ sources</text></g>
+          <path class="edge flow" d="M140 70 H172" marker-end="url(#ar3)"/>
+          <path class="edge emerald" d="M292 70 H324" marker-end="url(#ar3)"/>
+          <path class="edge sky" d="M474 70 H506" marker-end="url(#ar3)"/>
+          <path class="edge flow" d="M636 70 H668" marker-end="url(#ar3)"/>
+          <path class="edge emerald" d="M808 70 H840" marker-end="url(#ar3)"/>
+          <defs><marker id="ar3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">Hybrid retrieval (dense + lexical BM25 via Reciprocal Rank Fusion) → element-aware re-rank → grounded synthesis with source attribution. Cached responses short-circuit at the question.</div>
+      </div>
+    </section>
+
+    <!-- ============ SERVICES & INFRA ============ -->
+    <section id="services">
+      <h2>
+        <span class="h2-icon" style="background:var(--violet-50);color:var(--violet);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+        </span>
+        Services &amp; Infrastructure Catalog
+      </h2>
+      <p class="section-lede">Every moving part, what it does, why it's there, and the first thing that breaks under load. Ports are the local-dev mapping (remapped to avoid collisions with other local stacks).</p>
+
+      <h4>Application &amp; Worker Tier</h4>
+      <table>
+        <thead><tr><th>Service</th><th>Tech</th><th>Role</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td>API</td><td>FastAPI + Uvicorn (async)</td><td>HTTP/WS, auth, rate-limit, RAG, meeting orchestration</td><td>Stateless</td></tr>
+          <tr><td>Voice worker</td><td>LiveKit Agents SDK</td><td>Joins meeting rooms, runs Deepgram STT + Cartesia TTS loop</td><td>Per-room</td></tr>
+          <tr><td>Job worker</td><td>Arq (Redis-backed)</td><td>Durable ingestion / research / summary jobs (gated by <code class="inline">USE_JOB_QUEUE</code>)</td><td>Job-scoped</td></tr>
+          <tr><td>Frontend</td><td>Next.js 14 (App Router)</td><td>Dashboard, meeting room, LiveKit React client</td><td>Stateless</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Data Tier</h4>
+      <table>
+        <thead><tr><th>Store</th><th>Port</th><th>Holds</th><th>Why this one</th></tr></thead>
+        <tbody>
+          <tr><td>PostgreSQL 15</td><td>5433</td><td>System of record: documents, chunks, meetings, decisions, users — all FK-consistent</td><td>ACID, relational integrity, JSON columns; the truth everything else is derived from</td></tr>
+          <tr><td>Qdrant</td><td>6333</td><td>Chunk embeddings (1536-dim), 3-level contextual collections, tenant payloads</td><td>Purpose-built ANN (HNSW), payload filtering, quantization, horizontal sharding</td></tr>
+          <tr><td>Neo4j</td><td>7687</td><td>Entity graph + meeting graph (decisions / action-items / topics)</td><td>Native multi-hop traversal in Cypher beats recursive SQL joins</td></tr>
+          <tr><td>Redis 7</td><td>6380</td><td>Response cache, WS pub/sub, distributed locks, rate-limit counters, Arq queue</td><td>One low-latency primitive for cache + coordination + fan-out</td></tr>
+          <tr><td>MinIO / S3</td><td>9000</td><td>Original uploaded files</td><td>S3-compatible object storage; cheap, infinite, off the DB</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Voice &amp; External AI</h4>
+      <table>
+        <thead><tr><th>Provider</th><th>Used for</th><th>Model</th></tr></thead>
+        <tbody>
+          <tr><td>LiveKit</td><td>WebRTC transport / SFU for the meeting room (:7880)</td><td>self-hosted server</td></tr>
+          <tr><td>Deepgram</td><td>Streaming speech-to-text</td><td>nova-2-meeting</td></tr>
+          <tr><td>Cartesia</td><td>Low-latency text-to-speech</td><td>sonic-turbo</td></tr>
+          <tr><td>Silero</td><td>Voice activity detection (endpointing)</td><td>VAD</td></tr>
+          <tr><td>OpenAI</td><td>Generation + embeddings</td><td>gpt-4-turbo · text-embedding-3-large (1536-d)</td></tr>
+          <tr><td>Exa / Postmark</td><td>Pre-meeting web search · summary email delivery</td><td>API</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Observability</h4>
+      <div class="grid-3">
+        <div class="panel accent-indigo"><h4 style="margin-top:0">Metrics</h4><p style="font-size:13px;margin:0">Prometheus scrapes <code class="inline">/metrics</code> — HTTP latency histograms, RAG &amp; document-processing durations, external-API call counters, cache hit/miss, and per-stage <code class="inline">voice_latency_seconds</code> against the 200&nbsp;ms target.</p></div>
+        <div class="panel accent-violet"><h4 style="margin-top:0">Traces</h4><p style="font-size:13px;margin:0">OpenTelemetry spans (per-agent) export to Tempo; request-id propagates from the edge through every log line and span.</p></div>
+        <div class="panel accent-amber"><h4 style="margin-top:0">Logs</h4><p style="font-size:13px;margin:0">structlog renders JSON in prod, correlated by request-id via contextvars. Noisy third-party loggers pinned; SQL echo gated behind <code class="inline">DB_ECHO</code>.</p></div>
+      </div>
+    </section>
+
+    <!-- ============ LLD ============ -->
+    <section id="lld">
+      <h2>
+        <span class="h2-icon" style="background:var(--sky-50);color:var(--sky);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        </span>
+        Low-Level Design — Subsystem Internals
+      </h2>
+      <p class="section-lede">The four subsystems that carry the most engineering weight, drawn out in detail: how retrieval actually ranks, how a chunk becomes a contextual vector, where the voice milliseconds go, and how a nudge reaches every browser.</p>
+
+      <h3 id="lld-retrieval">1 · Retrieval Pipeline (hybrid contextual RAG)</h3>
+      <p>Naive dense RAG embeds the raw chunk and does cosine top-k. Donna's <code class="inline">ContextAgent</code> runs <strong>hybrid retrieval</strong>: contextual dense vectors fused with lexical BM25 via Reciprocal Rank Fusion, then element-aware re-ranking. The benchmark (<code class="inline">tests/benchmarks/retrieval_eval.py</code>) measures this against naive dense as the baseline.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 320" role="img" aria-label="Hybrid retrieval pipeline">
+          <g><rect class="node-bg sky" x="20" y="130" width="120" height="56" rx="9"/><text class="node-label" x="80" y="152">Query</text><text class="node-sub" x="80" y="169">+ tenant filter</text></g>
+
+          <!-- two arms -->
+          <g><rect class="node-bg green" x="190" y="60" width="150" height="56" rx="9"/><text class="node-tag" x="265" y="79">DENSE</text><text class="node-label" x="265" y="97">Embed → Qdrant</text><text class="node-sub" x="265" y="112">HNSW ANN top-k</text></g>
+          <g><rect class="node-bg amber" x="190" y="200" width="150" height="56" rx="9"/><text class="node-tag" x="265" y="219">LEXICAL</text><text class="node-label" x="265" y="237">BM25</text><text class="node-sub" x="265" y="252">keyword anchors</text></g>
+
+          <g><rect class="node-bg violet node-pulse violet" x="400" y="128" width="150" height="60" rx="9"/><text class="node-tag" x="475" y="148">FUSION</text><text class="node-label" x="475" y="166">Reciprocal Rank</text><text class="node-sub" x="475" y="182">1/(k+rank)</text></g>
+
+          <g><rect class="node-bg sky" x="600" y="128" width="150" height="60" rx="9"/><text class="node-tag" x="675" y="148">RE-RANK</text><text class="node-label" x="675" y="166">Element-aware</text><text class="node-sub" x="675" y="182">boost tables/charts</text></g>
+
+          <g><rect class="node-bg green node-pulse emerald" x="800" y="128" width="150" height="60" rx="9"/><text class="node-label" x="875" y="150">GPT-4 synth</text><text class="node-sub" x="875" y="168">grounded + cited</text></g>
+
+          <path class="edge flow" d="M140 150 C 165 110, 170 90, 190 88" marker-end="url(#arl)"/>
+          <path class="edge flow" d="M140 166 C 165 210, 170 228, 190 228" marker-end="url(#arl)"/>
+          <path class="edge emerald" d="M340 88 C 370 100, 380 130, 400 145" marker-end="url(#arl)"/>
+          <path class="edge amber" d="M340 228 C 370 215, 380 185, 400 172" marker-end="url(#arl)"/>
+          <path class="edge accent" d="M550 158 H600" marker-end="url(#arl)"/>
+          <path class="edge emerald" d="M750 158 H800" marker-end="url(#arl)"/>
+          <defs><marker id="arl" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">Measured on the internal eval set: contextual+hybrid beats naive dense RAG by ~+9% mean across metrics, +15.8% Recall@1, +20% nDCG@1. Dense contextual embeddings <em>alone</em> regress (chunk homogenisation) — the lift comes from fusing with BM25.</div>
+      </div>
+      <div class="callout note"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg><div><strong>Why two stages.</strong> ANN (HNSW) gives sub-linear recall over millions of vectors but is approximate and embedding-bound; BM25 nails exact tokens (names, numbers, IDs) the embedder smooths over. RRF needs no score calibration between them — it fuses by rank, so a strong hit in either arm survives.</div></div>
+
+      <h3 id="lld-embeddings">2 · Three-Level Contextual Embeddings</h3>
+      <p>A chunk embedded in isolation loses the meaning its neighbours and document give it. Before embedding, each chunk is enriched with three weighted context bands, mirroring Anthropic's contextual-retrieval idea — local context dominates because it's <em>distinct per chunk</em>; document/global are lighter to avoid homogenising every chunk in a file.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 230" role="img" aria-label="Three-level contextual embedding">
+          <g><rect class="node-bg" x="30" y="92" width="140" height="56" rx="9"/><text class="node-label" x="100" y="114">Raw chunk</text><text class="node-sub" x="100" y="131">content</text></g>
+
+          <g><rect class="node-bg sky" x="220" y="24" width="170" height="48" rx="9"/><text class="node-label" x="305" y="44">Local · 50%</text><text class="node-sub" x="305" y="60">neighbours + section path</text></g>
+          <g><rect class="node-bg violet" x="220" y="96" width="170" height="48" rx="9"/><text class="node-label" x="305" y="116">Document · 30%</text><text class="node-sub" x="305" y="132">title · type · topics</text></g>
+          <g><rect class="node-bg amber" x="220" y="168" width="170" height="48" rx="9"/><text class="node-label" x="305" y="188">Global · 20%</text><text class="node-sub" x="305" y="204">cross-doc relations</text></g>
+
+          <g><rect class="node-bg green node-pulse emerald" x="450" y="92" width="160" height="56" rx="9"/><text class="node-tag" x="530" y="111">OPENAI</text><text class="node-label" x="530" y="129">embed enriched</text><text class="node-sub" x="530" y="145">1536-dim</text></g>
+
+          <g><rect class="node-bg sky" x="670" y="68" width="150" height="46" rx="9"/><text class="node-label" x="745" y="92">Qdrant collection</text><text class="node-sub" x="745" y="107">weighted vectors</text></g>
+          <g><rect class="node-bg" x="670" y="128" width="150" height="46" rx="9"/><text class="node-label" x="745" y="152">payload</text><text class="node-sub" x="745" y="167">tenant · element · page</text></g>
+
+          <path class="edge flow" d="M170 110 C 190 60, 200 50, 220 48" marker-end="url(#are)"/>
+          <path class="edge flow" d="M170 120 H220" marker-end="url(#are)"/>
+          <path class="edge flow" d="M170 130 C 190 180, 200 190, 220 192" marker-end="url(#are)"/>
+          <path class="edge sky" d="M390 48 C 420 70, 430 100, 450 112" marker-end="url(#are)"/>
+          <path class="edge accent" d="M390 120 H450" marker-end="url(#are)"/>
+          <path class="edge amber" d="M390 192 C 420 170, 430 140, 450 128" marker-end="url(#are)"/>
+          <path class="edge emerald" d="M610 112 C 640 100, 650 92, 670 91" marker-end="url(#are)"/>
+          <path class="edge emerald" d="M610 128 C 640 140, 650 148, 670 150" marker-end="url(#are)"/>
+          <defs><marker id="are" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">Each Qdrant point carries a tenant-scoped payload, so retrieval filters by <code style="color:#86efac">owner_id</code> before scoring — multi-tenant isolation at the index level, not just the app.</div>
+      </div>
+
+      <h3 id="lld-voice">3 · Voice Pipeline Latency Budget</h3>
+      <p>The "sub-200&nbsp;ms perceived" target is a budget across the turn. The trick is overlap: partial STT transcripts stream while the user is still talking, and TTS synthesis starts before the full answer is generated. Each stage is instrumented as a Prometheus histogram so the budget is measured, not assumed.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 180" role="img" aria-label="Voice turn latency budget">
+          <text class="lane-label" x="80" y="22">ONE CONVERSATIONAL TURN</text>
+          <g><rect class="node-bg sky" x="20" y="56" width="120" height="54" rx="9"/><text class="node-label" x="80" y="78">Mic capture</text><text class="node-sub" x="80" y="95">WebRTC · LiveKit</text></g>
+          <g><rect class="node-bg" x="166" y="56" width="110" height="54" rx="9"/><text class="node-label" x="221" y="78">Silero VAD</text><text class="node-sub" x="221" y="95">endpoint</text></g>
+          <g><rect class="node-bg green" x="302" y="56" width="120" height="54" rx="9"/><text class="node-label" x="362" y="74">Deepgram</text><text class="node-sub" x="362" y="90">STT ~100ms</text></g>
+          <g><rect class="node-bg sky" x="448" y="56" width="120" height="54" rx="9"/><text class="node-label" x="508" y="74">RAG / KG</text><text class="node-sub" x="508" y="90">context fetch</text></g>
+          <g><rect class="node-bg green" x="594" y="56" width="120" height="54" rx="9"/><text class="node-label" x="654" y="74">GPT-4</text><text class="node-sub" x="654" y="90">stream tokens</text></g>
+          <g><rect class="node-bg amber node-pulse amber" x="740" y="56" width="120" height="54" rx="9"/><text class="node-label" x="800" y="74">Cartesia</text><text class="node-sub" x="800" y="90">TTS ~80ms TTFB</text></g>
+          <g><rect class="node-bg sky" x="886" y="56" width="74" height="54" rx="9"/><text class="node-label" x="923" y="83">Speaker</text></g>
+
+          <path class="edge flow" d="M140 83 H166" marker-end="url(#arv)"/>
+          <path class="edge flow" d="M276 83 H302" marker-end="url(#arv)"/>
+          <path class="edge emerald" d="M422 83 H448" marker-end="url(#arv)"/>
+          <path class="edge sky" d="M568 83 H594" marker-end="url(#arv)"/>
+          <path class="edge emerald" d="M714 83 H740" marker-end="url(#arv)"/>
+          <path class="edge amber" d="M860 83 H886" marker-end="url(#arv)"/>
+          <!-- overlap markers -->
+          <path class="edge accent dashed" d="M362 110 C 400 150, 720 150, 800 110" marker-end="url(#arv)"/>
+          <text class="edge-label" x="580" y="150">streaming overlaps stages → perceived ≪ sum</text>
+          <defs><marker id="arv" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">Targets in config: STT 100&nbsp;ms · TTS 80&nbsp;ms · total 200&nbsp;ms. Exported via <code style="color:#86efac">observe_voice_latency(stage, ms)</code>; the 200&nbsp;ms target sits on a histogram bucket edge so a single PromQL quantile answers "are we under budget?".</div>
+      </div>
+
+      <h3 id="lld-fanout">4 · Per-Meeting WebSocket Fan-out</h3>
+      <p>Nudges must reach every participant's browser, but with N stateless API replicas the WebSocket for a meeting may live on a <em>different</em> replica than the one that generated the nudge. Redis pub/sub bridges them: the publisher fans out to a channel, every replica subscribed for that meeting pushes to its local sockets.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 260" role="img" aria-label="WebSocket fan-out via Redis pub/sub">
+          <g><rect class="node-bg sky" x="20" y="110" width="120" height="54" rx="9"/><text class="node-label" x="80" y="132">Utterance</text><text class="node-sub" x="80" y="149">POST</text></g>
+          <g><rect class="node-bg indigo" x="170" y="106" width="140" height="62" rx="9"/><text class="node-label" x="240" y="128">API replica A</text><text class="node-sub" x="240" y="146">dispatcher fans out</text></g>
+          <g><rect class="node-bg violet node-pulse violet" x="340" y="60" width="150" height="50" rx="9"/><text class="node-label" x="415" y="80">5 agents (gather)</text><text class="node-sub" x="415" y="96">scribe·context·insight…</text></g>
+          <g><rect class="node-bg pink node-pulse" x="340" y="164" width="150" height="52" rx="9"/><text class="node-tag" x="415" y="183">REDIS</text><text class="node-label" x="415" y="201">pub/sub channel</text></g>
+
+          <g><rect class="node-bg indigo" x="560" y="60" width="130" height="50" rx="9"/><text class="node-label" x="625" y="80">API replica A</text><text class="node-sub" x="625" y="97">local sockets</text></g>
+          <g><rect class="node-bg indigo" x="560" y="160" width="130" height="50" rx="9"/><text class="node-label" x="625" y="180">API replica B</text><text class="node-sub" x="625" y="197">local sockets</text></g>
+
+          <g><rect class="node-bg sky" x="740" y="60" width="120" height="50" rx="9"/><text class="node-label" x="800" y="85">Browser 1</text></g>
+          <g><rect class="node-bg sky" x="740" y="160" width="120" height="50" rx="9"/><text class="node-label" x="800" y="185">Browser 2</text></g>
+
+          <path class="edge flow" d="M140 137 H170" marker-end="url(#arf)"/>
+          <path class="edge accent" d="M310 122 C 325 95, 330 88, 340 85" marker-end="url(#arf)"/>
+          <path class="edge pink" d="M415 110 V164" marker-end="url(#arf)"/>
+          <path class="edge pink" d="M490 190 C 520 190, 530 90, 560 86" marker-end="url(#arf)"/>
+          <path class="edge pink" d="M490 190 C 525 190, 530 188, 560 185" marker-end="url(#arf)"/>
+          <path class="edge sky" d="M690 85 H740" marker-end="url(#arf)"/>
+          <path class="edge sky" d="M690 185 H740" marker-end="url(#arf)"/>
+          <defs><marker id="arf" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption"><code style="color:#86efac">MeetingHub</code> keeps a local socket set per meeting and bridges replicas over Redis. A nudge generated on replica A reaches a browser connected to replica B. Falls back to in-process fan-out if Redis pub/sub is unavailable; the client also polls as a safety net.</div>
+      </div>
+
+      <h3 id="lld-data">5 · Data Model — who owns what</h3>
+      <p>PostgreSQL is the system of record; Qdrant and Neo4j are <em>derived</em> indexes kept in sync on the write path. Every tenant-scoped row carries <code class="inline">owner_id</code> for row-level isolation.</p>
+      <table>
+        <thead><tr><th>Entity</th><th>Store(s)</th><th>Key relationships</th></tr></thead>
+        <tbody>
+          <tr><td>Document</td><td>Postgres + MinIO (blob)</td><td>→ chunks, entities; owned by user</td></tr>
+          <tr><td>DocumentChunk</td><td>Postgres + Qdrant (vector)</td><td>belongs to document; mirrored as embedding</td></tr>
+          <tr><td>Entity / EntityRelationship</td><td>Postgres + Neo4j</td><td>MERGE-deduped in graph on (normalized, type, owner)</td></tr>
+          <tr><td>Meeting</td><td>Postgres (+ Neo4j on completion)</td><td>→ transcript, nudges, decisions, action-items, research, summary</td></tr>
+          <tr><td>Decision / ActionItem</td><td>Postgres + Neo4j</td><td>Meeting→MADE_DECISION→Decision→(action items)</td></tr>
+          <tr><td>Nudge</td><td>Postgres</td><td>belongs to meeting; sourced by an agent</td></tr>
+          <tr><td>ResearchBrief / Summary</td><td>Postgres</td><td>BEFORE / AFTER artifacts</td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4m0 4h.01"/></svg><div><strong>Dual-write consistency.</strong> Postgres commits first; Qdrant/Neo4j sync is best-effort and idempotent (MERGE / upsert by stable key). A graph or vector outage degrades features but never corrupts the source of truth — and a re-index rebuilds the derived stores from Postgres.</div></div>
+    </section>
+
+    <!-- ============ RATIONALE ============ -->
+    <section id="rationale">
+      <h2>
+        <span class="h2-icon" style="background:var(--emerald-50);color:var(--emerald);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6m-5 4h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>
+        </span>
+        Why These Choices (defend every box)
+      </h2>
+      <p class="section-lede">For each major decision: the alternative considered, why this won, and the condition under which we'd revisit it. This is the section to read before a "why not X?" question.</p>
+
+      <table>
+        <thead><tr><th>Decision</th><th>Chosen</th><th>Over</th><th>Why · when we'd revisit</th></tr></thead>
+        <tbody>
+          <tr><td>API framework</td><td>FastAPI (async)</td><td>Django, Node/Express</td><td>Native async fits an I/O-bound LLM workload (every request awaits OpenAI/Qdrant/Postgres); Pydantic gives typed contracts for free. Revisit only if we needed Django's batteries (admin/ORM migrations) more than async throughput.</td></tr>
+          <tr><td>Vector store</td><td>Qdrant</td><td>pgvector, Pinecone</td><td>Purpose-built ANN with payload filtering, quantization and native sharding. pgvector couples vector scale to the OLTP DB; Pinecone is great but is a managed dependency + cost. Revisit pgvector at &lt;100k vectors (one less service); revisit managed (Pinecone/Turbopuffer) when ops cost &gt; license cost.</td></tr>
+          <tr><td>Graph</td><td>Neo4j</td><td>Recursive SQL, NetworkX</td><td>Multi-hop "how is A connected to B" is one Cypher line vs recursive CTEs; in-memory NetworkX doesn't survive a restart or share across replicas. Revisit to a managed graph (Neptune/Memgraph) at cluster scale.</td></tr>
+          <tr><td>Coordination</td><td>Redis</td><td>Kafka, in-process</td><td>One primitive covers cache + pub/sub fan-out + distributed locks + rate-limit + Arq queue. Kafka is the right call once we need durable, replayable event streams (audit, analytics) — see roadmap.</td></tr>
+          <tr><td>Voice transport</td><td>LiveKit</td><td>Raw WebRTC, Twilio</td><td>Handles SFU, TURN, reconnection, and has a server-side Agents SDK so STT/TTS run next to the media. Hand-rolling WebRTC is months of edge cases. Revisit Twilio/Daily only for telephony (PSTN) reach.</td></tr>
+          <tr><td>STT / TTS</td><td>Deepgram / Cartesia</td><td>Whisper / ElevenLabs</td><td>Streaming-first with low TTFB — essential for the 200&nbsp;ms budget. Whisper batch latency kills real-time; ElevenLabs quality is higher but slower/pricier. Revisit on a quality-over-latency product.</td></tr>
+          <tr><td>Job queue</td><td>Arq</td><td>Celery, in-process</td><td>Async-native, Redis-backed, tiny footprint — no extra broker. Celery's ecosystem wins at large fan-out / scheduling complexity. Today gated behind <code class="inline">USE_JOB_QUEUE</code>; the default in-process BackgroundTasks is the demo trade-off (see roadmap — durability).</td></tr>
+          <tr><td>Embeddings</td><td>OpenAI 3-large @ 1536-d</td><td>Local (MiniLM/BGE), Voyage</td><td>Strong quality with a managed SLA; 1536-d (truncated from 3072) halves storage for ~the same recall. Local models cut cost &amp; egress at scale but add GPU ops; Voyage is wired as an optional upgrade. Revisit to local/Voyage at high volume for cost + data residency.</td></tr>
+          <tr><td>LLM</td><td>GPT-4-turbo</td><td>smaller/cheaper tiers</td><td>Reasoning quality for synthesis &amp; agents. The obvious scale lever is <strong>model tiering</strong> — cheap models for classification/extraction, GPT-4 only for synthesis (roadmap, cost).</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ SCALABILITY ============ -->
+    <section id="scalability">
+      <h2>
+        <span class="h2-icon" style="background:var(--amber-50);color:var(--amber);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+        </span>
+        Scaling — Many Concurrent Sessions &amp; 1M Documents
+      </h2>
+      <p class="section-lede">
+        The POC runs single-replica on a laptop. This is the honest map of where it breaks first, and the architecture changes — not hand-waving — to take it to thousands of concurrent meetings and a million-document corpus.
+      </p>
+
+      <h3 id="scale-bottlenecks">Bottleneck Map — what saturates, in order</h3>
+      <table>
+        <thead><tr><th>#</th><th>Saturates first</th><th>Symptom</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>In-process BackgroundTasks</td><td>A restart/deploy kills in-flight ingestion; CPU-bound parsing blocks the worker</td><td>Move all heavy work to the Arq queue (already built, flip <code class="inline">USE_JOB_QUEUE</code>) + dedicated worker fleet</td></tr>
+          <tr><td>2</td><td>Postgres connection pool</td><td>429-like stalls under concurrency; pool exhaustion (10–20 conns)</td><td>PgBouncer (transaction pooling) + read replicas for the read-heavy meeting tree</td></tr>
+          <tr><td>3</td><td>Per-utterance agent fan-out</td><td>5 LLM calls × every utterance × every meeting → token spend + provider rate limits</td><td>Debounce/batch utterances, cache research, tier models, cap concurrency per tenant</td></tr>
+          <tr><td>4</td><td>Single Qdrant node</td><td>Memory-bound as vectors grow; tail latency on ANN</td><td>Quantization + sharding + replicas (below)</td></tr>
+          <tr><td>5</td><td>Voice worker count</td><td>One process per active room; provider concurrency caps</td><td>Autoscaled worker pool on active-room metric; multi-node LiveKit</td></tr>
+          <tr><td>6</td><td>Single LiveKit node</td><td>SFU bandwidth / CPU on many rooms</td><td>LiveKit cluster (multi-node + Redis) behind a region LB</td></tr>
+        </tbody>
+      </table>
+      <div class="callout ok"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><div><strong>Already done, which is why this scales cleanly:</strong> stateless API, tenant-scoped rows + vector payloads, Redis pub/sub fan-out (replica-independent), circuit breakers + retries on every provider call, and Prometheus instrumentation to <em>see</em> the bottleneck before guessing.</div></div>
+
+      <h3 id="scale-sessions">Scaling Concurrent Meeting Sessions</h3>
+      <p>The text/nudge path is already horizontal (stateless API + Redis fan-out). The constraints are the <strong>voice worker pool</strong>, <strong>LiveKit capacity</strong>, and <strong>LLM concurrency</strong>. The shape: stateless front, autoscaled worker fleet keyed on active rooms, providers behind a concurrency-limited, circuit-broken client.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 300" role="img" aria-label="Scaling concurrent sessions">
+          <g><rect class="node-bg sky" x="20" y="120" width="120" height="56" rx="9"/><text class="node-label" x="80" y="142">Clients</text><text class="node-sub" x="80" y="159">thousands</text></g>
+          <g><rect class="node-bg" x="170" y="120" width="110" height="56" rx="9"/><text class="node-label" x="225" y="142">LB / Ingress</text><text class="node-sub" x="225" y="159">TLS · routing</text></g>
+
+          <g><rect class="node-bg indigo" x="310" y="60" width="150" height="48" rx="9"/><text class="node-label" x="385" y="80">API replica ×N</text><text class="node-sub" x="385" y="97">stateless · HPA</text></g>
+          <g><rect class="node-bg pink node-pulse" x="310" y="128" width="150" height="44" rx="9"/><text class="node-label" x="385" y="154">Redis (pub/sub)</text></g>
+          <g><rect class="node-bg amber node-pulse amber" x="310" y="192" width="150" height="56" rx="9"/><text class="node-label" x="385" y="214">Voice worker pool</text><text class="node-sub" x="385" y="231">autoscale on rooms</text></g>
+
+          <g><rect class="node-bg amber" x="500" y="192" width="150" height="56" rx="9"/><text class="node-label" x="575" y="214">LiveKit cluster</text><text class="node-sub" x="575" y="231">multi-node SFU</text></g>
+
+          <g><rect class="node-bg green" x="700" y="60" width="150" height="48" rx="9"/><text class="node-label" x="775" y="80">OpenAI</text><text class="node-sub" x="775" y="97">concurrency-limited</text></g>
+          <g><rect class="node-bg green" x="700" y="120" width="150" height="44" rx="9"/><text class="node-label" x="775" y="146">Deepgram</text></g>
+          <g><rect class="node-bg green" x="700" y="176" width="150" height="44" rx="9"/><text class="node-label" x="775" y="202">Cartesia</text></g>
+          <g><rect class="node-bg" x="700" y="232" width="150" height="44" rx="9"/><text class="node-label" x="775" y="258">Postgres + PgBouncer</text></g>
+
+          <path class="edge flow" d="M140 148 H170" marker-end="url(#ars)"/>
+          <path class="edge flow" d="M280 140 C 295 100, 300 90, 310 86" marker-end="url(#ars)"/>
+          <path class="edge sky" d="M280 152 C 295 200, 300 215, 310 218" marker-end="url(#ars)"/>
+          <path class="edge pink" d="M385 108 V128" marker-end="url(#ars)"/>
+          <path class="edge amber" d="M460 220 H500" marker-end="url(#ars)"/>
+          <path class="edge emerald dashed" d="M460 84 H700" marker-end="url(#ars)"/>
+          <path class="edge emerald" d="M460 210 C 600 150, 640 142, 700 142" marker-end="url(#ars)"/>
+          <path class="edge emerald" d="M650 210 C 670 205, 685 200, 700 198" marker-end="url(#ars)"/>
+          <path class="edge flow" d="M460 100 C 600 250, 660 254, 700 254" marker-end="url(#ars)"/>
+          <defs><marker id="ars" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">Scale knobs: API replicas (HPA on CPU/RPS), voice workers (autoscale on active-room gauge), LiveKit nodes (SFU capacity), and a shared, concurrency-limited provider client so a token-rate spike degrades gracefully instead of cascading.</div>
+      </div>
+
+      <h3 id="scale-docs">Scaling to 1,000,000 Documents</h3>
+      <p>A million documents at ~30 chunks each is <strong>~30M vectors</strong>. The work is (a) ingesting them economically and (b) serving low-latency retrieval over them per-tenant.</p>
+
+      <div class="grid-2">
+        <div class="panel accent-sky">
+          <h4 style="margin-top:0">Storage math (1536-d)</h4>
+          <table style="margin:6px 0">
+            <tbody>
+              <tr><td>float32 raw</td><td>~6 KB/vec → <strong>~180 GB</strong></td></tr>
+              <tr><td>+ HNSW graph</td><td>~×1.4 → ~250 GB</td></tr>
+              <tr><td>int8 scalar quant</td><td>~1.5 KB/vec → <strong>~45 GB</strong></td></tr>
+              <tr><td>binary quant + rescore</td><td>~0.2 KB/vec → ~6 GB</td></tr>
+            </tbody>
+          </table>
+          <p style="font-size:12.5px;margin:0">Quantization turns "needs a huge box" into "fits across a few commodity shards with rescoring for accuracy."</p>
+        </div>
+        <div class="panel accent-emerald">
+          <h4 style="margin-top:0">Ingestion math</h4>
+          <table style="margin:6px 0">
+            <tbody>
+              <tr><td>Embeddings</td><td>30M chunks (batched)</td></tr>
+              <tr><td>One-time backfill</td><td>~hours on a parallel Arq fleet</td></tr>
+              <tr><td>Embedding cost</td><td>~6B tokens × $0.13/1M ≈ <strong>~$800 one-time</strong></td></tr>
+              <tr><td>Steady state</td><td>queue-driven, idempotent, resumable</td></tr>
+            </tbody>
+          </table>
+          <p style="font-size:12.5px;margin:0">Ingestion is embarrassingly parallel: shard the doc set across workers, checkpoint per-doc, retry failures.</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 280" role="img" aria-label="Sharded retrieval at 1M docs">
+          <text class="lane-label" x="120" y="22">RETRIEVAL AT SCALE · per-tenant, sharded, two-stage</text>
+          <g><rect class="node-bg sky" x="20" y="120" width="120" height="56" rx="9"/><text class="node-label" x="80" y="142">Query</text><text class="node-sub" x="80" y="159">tenant T</text></g>
+          <g><rect class="node-bg indigo" x="170" y="118" width="140" height="60" rx="9"/><text class="node-label" x="240" y="140">Router</text><text class="node-sub" x="240" y="157">tenant→shard set</text></g>
+
+          <g><rect class="node-bg sky" x="350" y="40" width="150" height="46" rx="9"/><text class="node-label" x="425" y="64">Shard 1 (HNSW)</text><text class="node-sub" x="425" y="79">quantized</text></g>
+          <g><rect class="node-bg sky" x="350" y="100" width="150" height="46" rx="9"/><text class="node-label" x="425" y="124">Shard 2</text><text class="node-sub" x="425" y="139">+ replica</text></g>
+          <g><rect class="node-bg sky" x="350" y="160" width="150" height="46" rx="9"/><text class="node-label" x="425" y="184">Shard 3</text><text class="node-sub" x="425" y="199">+ replica</text></g>
+          <g><rect class="node-bg sky" x="350" y="220" width="150" height="40" rx="9"/><text class="node-sub" x="425" y="244">… shard K</text></g>
+
+          <g><rect class="node-bg violet node-pulse violet" x="540" y="118" width="150" height="60" rx="9"/><text class="node-tag" x="615" y="138">STAGE 1</text><text class="node-label" x="615" y="156">gather top-k/shard</text><text class="node-sub" x="615" y="172">quantized ANN</text></g>
+          <g><rect class="node-bg" x="730" y="118" width="140" height="60" rx="9"/><text class="node-tag" x="800" y="138">STAGE 2</text><text class="node-label" x="800" y="156">rescore + rerank</text><text class="node-sub" x="800" y="172">full vec / BM25</text></g>
+          <g><rect class="node-bg green" x="888" y="120" width="72" height="56" rx="9"/><text class="node-label" x="924" y="148">GPT-4</text></g>
+
+          <path class="edge flow" d="M140 148 H170" marker-end="url(#ard)"/>
+          <path class="edge sky" d="M310 140 C 330 70, 335 64, 350 63" marker-end="url(#ard)"/>
+          <path class="edge sky" d="M310 148 C 330 123, 335 123, 350 123" marker-end="url(#ard)"/>
+          <path class="edge sky" d="M310 156 C 330 180, 335 183, 350 183" marker-end="url(#ard)"/>
+          <path class="edge sky dashed" d="M310 164 C 330 235, 335 240, 350 240" marker-end="url(#ard)"/>
+          <path class="edge accent" d="M500 63 C 525 120, 530 130, 540 138" marker-end="url(#ard)"/>
+          <path class="edge accent" d="M500 123 C 520 135, 530 140, 540 145" marker-end="url(#ard)"/>
+          <path class="edge accent" d="M500 183 C 520 165, 530 158, 540 158" marker-end="url(#ard)"/>
+          <path class="edge violet" d="M690 148 H730" marker-end="url(#ard)"/>
+          <path class="edge emerald" d="M870 148 H888" marker-end="url(#ard)"/>
+          <defs><marker id="ard" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">Tenant-aware routing + sharded HNSW + quantized stage-1 recall, then exact rescore on the small candidate set. Most tenants touch one shard; the payload <code style="color:#86efac">owner_id</code> filter (already in the index) keeps the search space small and isolated.</div>
+      </div>
+
+      <div class="grid-3">
+        <div class="feat"><div class="feat-icon" style="background:var(--sky-50);color:var(--sky);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div><h4>Shard by tenant</h4><p>Co-locate a tenant's vectors so a query hits one (or few) shards. Big tenants get dedicated shards; the long tail shares.</p></div>
+        <div class="feat"><div class="feat-icon" style="background:var(--violet-50);color:var(--violet);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7h-9M14 17H5M17 3l3 4-3 4M7 21l-3-4 3-4"/></svg></div><h4>Hot / cold tiering</h4><p>Recent / active docs in RAM-backed shards; archival corpora on disk-backed or on-demand shards. Most queries hit hot.</p></div>
+        <div class="feat"><div class="feat-icon" style="background:var(--emerald-50);color:var(--emerald);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg></div><h4>Postgres partitioning</h4><p>Partition chunks/meetings by tenant or time; read replicas for the read-heavy meeting tree; PgBouncer for pool fan-in.</p></div>
+      </div>
+
+      <h3 id="scale-evolution">Architecture Evolution</h3>
+      <p>Same code, three deployment postures. Nothing here is a rewrite — it's flipping flags, adding replicas, and sharding the stateful tier.</p>
+
+      <div class="diagram">
+        <svg viewBox="0 0 980 250" role="img" aria-label="Architecture evolution stages">
+          <!-- Stage 1 -->
+          <text class="node-tag" x="150" y="30" style="fill:#8a93ab">STAGE 1 · POC (today)</text>
+          <g><rect class="node-bg" x="40" y="48" width="220" height="160" rx="12" style="fill:#141b2e"/></g>
+          <g><rect class="node-bg indigo" x="60" y="66" width="180" height="40" rx="8"/><text class="node-label" x="150" y="86">1× API + BG tasks</text></g>
+          <g><rect class="node-bg" x="60" y="116" width="180" height="36" rx="8"/><text class="node-sub" x="150" y="138">5 stores, single node</text></g>
+          <g><rect class="node-bg amber" x="60" y="160" width="180" height="36" rx="8"/><text class="node-sub" x="150" y="182">1 voice worker</text></g>
+
+          <!-- Stage 2 -->
+          <text class="node-tag" x="490" y="30" style="fill:#8a93ab">STAGE 2 · HORIZONTAL</text>
+          <g><rect class="node-bg" x="380" y="48" width="220" height="160" rx="12" style="fill:#141b2e"/></g>
+          <g><rect class="node-bg indigo" x="400" y="66" width="180" height="38" rx="8"/><text class="node-label" x="490" y="86">API ×N + Arq fleet</text></g>
+          <g><rect class="node-bg pink" x="400" y="112" width="180" height="34" rx="8"/><text class="node-sub" x="490" y="133">Redis · PgBouncer · replicas</text></g>
+          <g><rect class="node-bg amber" x="400" y="154" width="180" height="44" rx="8"/><text class="node-sub" x="490" y="180">autoscaled workers + LiveKit cluster</text></g>
+
+          <!-- Stage 3 -->
+          <text class="node-tag" x="830" y="30" style="fill:#8a93ab">STAGE 3 · SHARDED / MULTI-REGION</text>
+          <g><rect class="node-bg" x="720" y="48" width="220" height="160" rx="12" style="fill:#141b2e"/></g>
+          <g><rect class="node-bg indigo" x="740" y="66" width="180" height="38" rx="8"/><text class="node-label" x="830" y="86">regional API + edge</text></g>
+          <g><rect class="node-bg sky" x="740" y="112" width="180" height="34" rx="8"/><text class="node-sub" x="830" y="133">sharded Qdrant + Neo4j cluster</text></g>
+          <g><rect class="node-bg violet" x="740" y="154" width="180" height="44" rx="8"/><text class="node-sub" x="830" y="180">Kafka events · model tiering · cost guard</text></g>
+
+          <path class="edge flow" d="M260 128 H380" marker-end="url(#arev)"/>
+          <path class="edge flow" d="M600 128 H720" marker-end="url(#arev)"/>
+          <text class="edge-label" x="320" y="118">add replicas</text>
+          <text class="edge-label" x="660" y="118">shard state</text>
+          <defs><marker id="arev" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5c6788"/></marker></defs>
+        </svg>
+        <div class="caption">The POC was built stateless-first precisely so Stage 2 is a config change, not a re-architecture. Stage 3 shards the stateful tier and goes multi-region for latency + residency.</div>
+      </div>
+    </section>
+
+    <!-- ============ PRODUCTION & MARKET ============ -->
+    <section id="production">
+      <h2>
+        <span class="h2-icon" style="background:var(--pink-50);color:var(--pink);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </span>
+        Production &amp; Market Readiness
+      </h2>
+      <p class="section-lede">What I'd harden to take this from an impressive demo to something a company pays for — framed the way an infra engineer at a frontier lab would phase it: correctness &amp; durability first, then cost &amp; safety, then scale &amp; compliance.</p>
+
+      <div class="ribbon">
+        <div class="step s1"><span class="step-num">1</span><h5>Durability</h5><p>BG tasks → Arq queue everywhere; idempotent, resumable jobs; dead-letter + retry; outbox for dual-writes.</p></div>
+        <div class="step s2"><span class="step-num">2</span><h5>Cost &amp; Safety</h5><p>Model tiering, prompt &amp; embedding caching, per-tenant budgets/quotas, PII redaction, eval gates in CI.</p></div>
+        <div class="step s3"><span class="step-num">3</span><h5>Scale</h5><p>Shard vectors, partition Postgres, autoscale workers + LiveKit, multi-region, Kafka event spine.</p></div>
+        <div class="step s4"><span class="step-num">4</span><h5>Compliance</h5><p>SOC 2, encryption at rest/in transit, tenant data isolation guarantees, audit log, data-retention &amp; deletion (GDPR).</p></div>
+      </div>
+
+      <h3>The gap between "demo" and "GA"</h3>
+      <div class="grid-2">
+        <div class="panel accent-emerald">
+          <h4 style="margin-top:0">Already production-shaped</h4>
+          <p style="font-size:13px;margin:0 0 6px">Stateless API · JWT auth (Argon2) · row-level multi-tenancy · circuit breakers + retries + timeouts on every provider call · Prometheus/OTel/structlog · rate limiting · Alembic migrations · 125 passing tests + retrieval &amp; latency benchmarks.</p>
+        </div>
+        <div class="panel accent-amber">
+          <h4 style="margin-top:0">Must close for GA</h4>
+          <p style="font-size:13px;margin:0 0 6px">Durable job queue on by default · provider cost controls + tiering · LLM output evals &amp; guardrails (hallucination, prompt-injection from documents) · SSO/RBAC · SOC 2 + data-residency · blue-green deploys + feature flags · per-tenant observability &amp; quotas · backup/restore + re-index runbooks.</p>
+        </div>
+      </div>
+
+      <h3>Cost — the real scaling constraint</h3>
+      <p>At scale the bill is LLM tokens, not servers. The levers, in order of impact:</p>
+      <table>
+        <thead><tr><th>Lever</th><th>What</th><th>Impact</th></tr></thead>
+        <tbody>
+          <tr><td>Model tiering</td><td>Cheap models for extraction/classification/nudge triage; GPT-4 only for final synthesis</td><td>Largest — most calls don't need a frontier model</td></tr>
+          <tr><td>Prompt caching</td><td>Cache the static system/persona + document context prefixes</td><td>High on repeated-context agent calls</td></tr>
+          <tr><td>Embedding reuse</td><td>Content-hash dedup; never re-embed unchanged chunks</td><td>High on re-ingest / versioned docs</td></tr>
+          <tr><td>Batch + async</td><td>Batch embeddings; debounce per-utterance fan-out</td><td>Cuts request overhead &amp; rate-limit pressure</td></tr>
+          <tr><td>Per-tenant budgets</td><td>Quotas + backpressure so one tenant can't blow the bill</td><td>Protects margin &amp; fairness</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout note"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg><div><strong>The honest one-liner.</strong> The POC proves the product and the architecture is deliberately stateless + tenant-isolated + instrumented so scaling is additive, not a rewrite. The path to market is durability, cost controls, evals, and compliance — engineering that's well-understood, not invention.</div></div>
+    </section>
+
     <!-- ============ API REFERENCE ============ -->
     <section id="api-ref">
       <h2>
@@ -2815,8 +3514,9 @@
     <!-- ============ FOOTER ============ -->
     <footer style="margin-top:64px; padding-top:24px; border-top: 1px solid var(--slate-200); font-size:13px; color:var(--slate-500);">
       <p style="margin:0;">
-        Meeting Assistant — 15 agents · 4 phases · 5 datastores · 83 passing tests.
-        Built for the staff-level interview demo. Source &amp; setup notes in <code class="inline">README.md</code> and <code class="inline">DEMO_SCRIPT.md</code>.
+        Donna — 15 agents · 4 phases · 5 datastores · 125 passing tests.
+        Single source of truth: workflow · HLD · LLD · services &amp; infra · design rationale · scaling to 1M docs &amp; many concurrent sessions · production roadmap.
+        Source &amp; setup notes in <code class="inline">README.md</code>, <code class="inline">DEMO_SCRIPT.md</code>, and <code class="inline">docs/AGENT_REGISTRY.md</code>.
       </p>
     </footer>
 

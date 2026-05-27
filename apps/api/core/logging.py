@@ -98,8 +98,29 @@ def configure_logging() -> None:
     root.setLevel(log_level)
 
     # Quiet noisy third-party loggers
-    for name in ("httpcore", "httpx", "urllib3", "asyncio"):
+    #  - neo4j: logs idempotent "index/constraint already exists" notices every startup
+    #  - sentence_transformers: logs "Use pytorch device... / Load pretrained..." per model
+    for name in (
+        "httpcore",
+        "httpx",
+        "urllib3",
+        "asyncio",
+        "neo4j",
+        "neo4j.notifications",
+        "sentence_transformers",
+        "sentence_transformers.SentenceTransformer",
+    ):
         logging.getLogger(name).setLevel(logging.WARNING)
+
+    # SQLAlchemy: route through structlog (propagate) and keep it quiet unless
+    # DB_ECHO is on. Pinning the level here also prevents the double-emit you
+    # get when the engine logger logs directly *and* propagates to root.
+    sql_level = logging.INFO if settings.db_echo else logging.WARNING
+    for name in ("sqlalchemy.engine", "sqlalchemy.pool", "sqlalchemy.dialects"):
+        sql_logger = logging.getLogger(name)
+        sql_logger.setLevel(sql_level)
+        sql_logger.handlers.clear()
+        sql_logger.propagate = True
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:

@@ -1,4 +1,6 @@
-# Meeting Assistant — Interview Demo Script
+# Donna — Interview Demo Script
+
+> *"She already knew."* — Donna, your AI meeting partner (à la Suits).
 
 A 12-minute walkthrough hitting every Staff-level signal in the system.
 Optimized to fail gracefully: even without Exa or Postmark keys, the

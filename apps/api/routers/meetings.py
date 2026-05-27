@@ -1,5 +1,5 @@
 """
-REST endpoints for the Meeting Assistant lifecycle.
+REST endpoints for the Donna meeting lifecycle.
 """
 
 from typing import Optional
@@ -967,7 +967,7 @@ async def query_meeting_context(
             await meeting_service.append_utterance(
                 session=session,
                 meeting_id=mid,
-                speaker="AI Assistant",
+                speaker="Donna",
                 text=f"Q: {query_text}\nA: {answer}",
             )
         except Exception:

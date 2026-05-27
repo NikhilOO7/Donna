@@ -144,13 +144,13 @@ class ContextAgent:
         snippet = content[:300] + ("..." if len(content) > 300 else "")
         doc_id = getattr(c, "document_id", "unknown")
 
-        # Differentiated title by source type
+        # Differentiated title by source type — Donna's anticipatory voice
         if element_type == "table":
-            title = "Relevant data from Knowledge Base"
+            title = "I pulled the numbers from your docs"
         elif element_type == "image":
-            title = "Relevant chart / figure from Knowledge Base"
+            title = "Found the chart you'll want"
         else:
-            title = "Relevant from Knowledge Base"
+            title = "I found this in your docs"
 
         logger.info(
             f"[Context] RAG hit type={element_type} base={base_score:.2f} "

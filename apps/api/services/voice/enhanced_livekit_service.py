@@ -26,6 +26,7 @@ from livekit.agents import (
 
 # Your app imports
 from apps.api.core.config import settings
+from apps.api.core.persona import DONNA_PERSONA
 
 # RAG services will be imported lazily to avoid blocking worker startup
 # DO NOT import them here at module level - they load heavy ML models
@@ -413,20 +414,20 @@ class EnhancedVoiceService:
         initial_ctx = llm.ChatContext()
         initial_ctx.add_message(
             role="system",
-            content="""You are an intelligent document assistant with voice capabilities.
+            content=f"""{DONNA_PERSONA}
 
-You have access to a comprehensive document knowledge base with contextual embeddings.
-Provide concise, helpful responses based on the documents available.
-When answering, be conversational and natural.""",
+You have access to the user's document knowledge base (contextual embeddings) and meeting
+context. This is a live voice conversation: lead with the answer, cite the source, keep it
+to a sentence or two, and speak naturally — no lists or markdown.""",
         )
 
         # Create voice agent with instructions
         agent = Agent(
-            instructions="""You are an intelligent document assistant with voice capabilities.
+            instructions=f"""{DONNA_PERSONA}
 
-You have access to a comprehensive document knowledge base with contextual embeddings.
-Provide concise, helpful responses based on the documents available.
-When answering, be conversational and natural.""",
+You have access to the user's document knowledge base (contextual embeddings) and meeting
+context. This is a live voice conversation: lead with the answer, cite the source, keep it
+to a sentence or two, and speak naturally — no lists or markdown.""",
             vad=vad_plugin,
             stt=stt_plugin,
             llm=custom_llm,
@@ -477,11 +478,14 @@ class DocumentAwareLLM(llm.LLM):
         enhanced_messages = []
 
         # Add system message with document context
-        system_msg = f"""You are an intelligent document assistant with access to the following relevant information:
+        system_msg = f"""{DONNA_PERSONA}
+
+Here's what you already pulled from the knowledge base for this question:
 
 {doc_context}
 
-Use this information to provide accurate, helpful responses. If the information doesn't fully answer the question, acknowledge what you found and suggest how to get more complete information."""
+Answer from this. Lead with the answer, cite the source, stay tight. If it doesn't fully
+cover the question, say what you've got and what you'd check next — don't pad or guess."""
 
         enhanced_messages.append({"role": "system", "content": system_msg})
 
@@ -570,12 +574,11 @@ class DocumentIntelligenceAgent(Agent):
 
     def __init__(self):
         super().__init__(
-            instructions="""You are an intelligent document assistant with voice capabilities.
+            instructions=f"""{DONNA_PERSONA}
 
-You have access to a comprehensive document knowledge base with contextual embeddings.
-Provide concise, helpful responses based on the documents available.
-When answering, be conversational and natural.
-Keep responses brief and to the point - aim for 2-3 sentences unless more detail is specifically requested."""
+You're in a live voice conversation with access to the user's document knowledge base.
+Lead with the answer, cite the source, and keep it to 2-3 sentences — spoken, natural, no
+lists or markdown. Confidence over volume."""
         )
 
 
@@ -638,7 +641,8 @@ async def entrypoint(ctx: JobContext):
         # Generate initial greeting
         logger.info("💬 Generating initial greeting...")
         await session.generate_reply(
-            instructions="Greet the user warmly and briefly introduce yourself as their document intelligence assistant. Keep it to one short sentence."
+            instructions="Greet the user as Donna — warm, confident, one short sentence. "
+            "Something like you're already on it and ready when they are."
         )
         logger.info("✅ Greeting generated")
 

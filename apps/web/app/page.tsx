@@ -29,16 +29,16 @@ export default function LandingPage() {
       <section className="py-20 bg-gradient-to-br from-[#1e1b4b] via-[#312e81] to-[#4338ca] text-white text-center">
         <div className="max-w-2xl mx-auto px-6">
           <h2 className="text-3xl lg:text-4xl font-bold mb-4">
-            Ready to see it in action?
+            Let Donna handle it.
           </h2>
           <p className="text-indigo-200 text-lg mb-8">
-            Create a meeting, run the research pipeline, start a live session, and generate an AI summary — all in one workflow.
+            She researches before the meeting, surfaces the right intel while you talk, and has the summary ready before you ask. You just show up.
           </p>
           <Link
             href="/dashboard"
             className="inline-flex items-center gap-2 px-8 py-4 bg-white text-[#312e81] font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 active:scale-[0.98] text-lg"
           >
-            Open Dashboard
+            Meet Donna
             <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
@@ -46,7 +46,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="bg-gray-900 text-gray-400 py-8 text-center text-sm">
-        <p>Meeting Assistant v2.0 &middot; 15 AI Agents &middot; 3-Phase Pipeline</p>
+        <p>Donna v2.0 &middot; She already knew. &middot; 15 AI Agents &middot; 3-Phase Pipeline</p>
         <p className="mt-1 text-gray-600">Built with FastAPI, Next.js, OpenAI, LiveKit, Qdrant, PostgreSQL</p>
       </footer>
     </main>

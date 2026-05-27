@@ -1,5 +1,5 @@
 """
-ORM models for Meeting Assistant lifecycle.
+ORM models for the Donna meeting lifecycle.
 
 Covers all 3 phases:
 - BEFORE: ResearchBrief

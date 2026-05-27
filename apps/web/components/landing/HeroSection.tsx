@@ -19,20 +19,21 @@ export default function HeroSection() {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full text-sm mb-8 animate-fade-up">
             <Zap className="w-4 h-4 text-yellow-300" />
-            <span>15 AI Agents &middot; 3-Phase Pipeline &middot; Real-Time Intelligence</span>
+            <span>Always a step ahead &middot; 15 AI Agents &middot; 3-Phase Pipeline</span>
           </div>
 
           {/* Headline */}
           <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight mb-6 animate-fade-up" style={{ animationDelay: '0.1s' }}>
-            Meeting
+            Meet
             <span className="block bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent animate-gradient">
-              Assistant
+              Donna
             </span>
           </h1>
 
           <p className="text-lg lg:text-xl text-indigo-200 max-w-2xl mx-auto mb-10 leading-relaxed animate-fade-up" style={{ animationDelay: '0.2s' }}>
-            AI-powered meeting intelligence that researches before your meeting,
-            provides real-time insights during, and delivers actionable summaries after.
+            Your AI meeting partner who's always a step ahead. Donna does the homework
+            before you walk in, surfaces exactly what you need while you talk, and has
+            the summary ready before you ask. She already knew.
           </p>
 
           {/* CTA */}
@@ -41,7 +42,7 @@ export default function HeroSection() {
               href="/dashboard"
               className="inline-flex items-center gap-2 px-8 py-4 bg-white text-[#312e81] font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 active:scale-[0.98] text-lg"
             >
-              Go to Dashboard
+              Meet Donna
               <ArrowRight className="w-5 h-5" />
             </Link>
           </div>

@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Meeting Assistant — AI-Powered Meeting Intelligence",
-  description: "3-phase meeting assistant with 15 AI agents: pre-meeting research, live intelligence with nudge cards, and automated post-meeting summaries.",
+  title: "Donna — She Already Knew",
+  description: "Donna is your AI meeting partner — always a step ahead. She researches before the meeting, surfaces the right intel live with nudge cards, and has the summary ready before you ask.",
 };
 
 export default function RootLayout({

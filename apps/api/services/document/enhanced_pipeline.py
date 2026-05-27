@@ -26,6 +26,11 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.document import DocumentChunk, Entity
+from apps.api.services.document.contextual_processor import (
+    ChunkMetadata,
+    ProcessedChunk,
+    chunk_to_row,
+)
 from apps.api.services.document.image_agent import ImageAgent
 from apps.api.services.document.knowledge_graph_service import knowledge_graph_service
 from apps.api.services.document.layout_agent import LayoutAgent
@@ -98,25 +103,29 @@ class EnhancedDocumentPipeline:
 
         tables, images = await asyncio.gather(_run_tables(), _run_images())
 
-        # Append synthetic chunks so they're embedded by the existing pipeline
+        # Append synthetic chunks so they're embedded by the existing pipeline.
+        # These MUST be ProcessedChunk (not dicts) so the chunk list stays
+        # homogeneous — the contextual-embedding generator does attribute access
+        # (chunk.content / chunk.metadata) and would crash on a raw dict.
+        # Rich table/image fields (row_count, ocr_text, …) are preserved on the
+        # DocumentElements written in extract_knowledge_graph, not here.
         for t in tables:
             md = (t.get("markdown") or "").strip()
             if not md:
                 continue
             chunks.append(
-                {
-                    "content": f"[TABLE]\n{md}",
-                    "metadata": {
-                        "element_type": "table",
-                        "is_table": True,
-                        "page": t.get("page"),
-                        "row_count": t.get("row_count"),
-                        "col_count": t.get("col_count"),
-                    },
-                    "start_page": t.get("page"),
-                    "end_page": t.get("page"),
-                    "is_table": True,
-                }
+                ProcessedChunk(
+                    content=f"[TABLE]\n{md}",
+                    metadata=ChunkMetadata(
+                        chunk_index=len(chunks),
+                        start_char=0,
+                        end_char=len(md),
+                        start_page=t.get("page"),
+                        end_page=t.get("page"),
+                        is_table=True,
+                        semantic_type="table",
+                    ),
+                )
             )
 
         for im in images:
@@ -126,17 +135,17 @@ class EnhancedDocumentPipeline:
             if not text or len(text) < 20:
                 continue
             chunks.append(
-                {
-                    "content": f"[IMAGE]\n{text}",
-                    "metadata": {
-                        "element_type": "image",
-                        "page": im.get("page"),
-                        "ocr_text": ocr,
-                        "caption": im.get("caption"),
-                    },
-                    "start_page": im.get("page"),
-                    "end_page": im.get("page"),
-                }
+                ProcessedChunk(
+                    content=f"[IMAGE]\n{text}",
+                    metadata=ChunkMetadata(
+                        chunk_index=len(chunks),
+                        start_char=0,
+                        end_char=len(text),
+                        start_page=im.get("page"),
+                        end_page=im.get("page"),
+                        semantic_type="image",
+                    ),
+                )
             )
 
         logger.info(
@@ -173,7 +182,7 @@ class EnhancedDocumentPipeline:
         chunk_entity_pairs: List[Tuple[DocumentChunk, List[Entity]]] = []
         all_persisted_entities: List[Entity] = []
         for chunk_obj, chunk_data in zip(persisted_chunks, original_chunks):
-            ents_meta = (chunk_data.get("metadata") or {}).get("entities") or []
+            ents_meta = (chunk_to_row(chunk_data)["metadata"] or {}).get("entities") or []
             if not ents_meta:
                 chunk_entity_pairs.append((chunk_obj, []))
                 continue
@@ -227,17 +236,17 @@ class EnhancedDocumentPipeline:
                 )
 
         # ---- Map synthetic chunks back so DocumentElements can link to them ----
+        # Synthetic table/image chunks carry a "[TABLE]"/"[IMAGE]" content prefix
+        # (see enrich_chunks); match on that — same key the link below uses — so we
+        # never have to read chunk metadata (which is a ProcessedChunk, not a dict).
         synth_table_chunks: Dict[str, UUID] = {}
         synth_image_chunks: Dict[str, UUID] = {}
-        for chunk_obj, chunk_data in zip(persisted_chunks, original_chunks):
-            etype = (chunk_data.get("metadata") or {}).get("element_type")
-            if etype == "table":
-                # Key by first 60 chars of markdown content
-                key = (chunk_obj.content or "")[:60]
-                synth_table_chunks[key] = chunk_obj.id
-            elif etype == "image":
-                key = (chunk_obj.content or "")[:60]
-                synth_image_chunks[key] = chunk_obj.id
+        for chunk_obj in persisted_chunks:
+            content = chunk_obj.content or ""
+            if content.startswith("[TABLE]"):
+                synth_table_chunks[content[:60]] = chunk_obj.id
+            elif content.startswith("[IMAGE]"):
+                synth_image_chunks[content[:60]] = chunk_obj.id
 
         # ---- Persist tables ----
         for idx, t in enumerate(tables):

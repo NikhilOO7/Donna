@@ -33,6 +33,7 @@ from silero import silero_vad
 
 # Your app imports
 from apps.api.core.config import settings
+from apps.api.core.metrics import observe_voice_latency
 from apps.api.services.rag.llamaindex_service import ModernRAGService
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,8 @@ class OptimizedDeepgramSTT(stt.STT):
 
                     # Calculate latency
                     latency = (time.time() - self._start_time) * 1000
+                    if is_final:
+                        observe_voice_latency("stt", latency)
 
                     return stt.SpeechEvent(
                         type=stt.SpeechEventType.FINAL_TRANSCRIPT
@@ -266,8 +269,9 @@ class OptimizedCartesiaTTS(tts.TTS):
                     experimental_flags={"reduce_latency": True, "enable_ssml": True},
                 ):
                     if chunk.audio:
-                        # Calculate metrics
+                        # Calculate metrics — time to first audio chunk (TTS TTFB)
                         latency = (time.time() - start_time) * 1000
+                        observe_voice_latency("tts", latency)
 
                         return tts.SynthesizedAudio(
                             text=self._text,
@@ -595,6 +599,14 @@ Remember: You have access to the entire document repository. Always search for r
 
         # Update metrics
         self.metrics.tts_latency = getattr(self, "_last_tts_latency", 0)
+        # End-to-end perceived latency (STT + LLM + TTS) — the sub-200ms SLA target.
+        self.metrics.total_latency = (
+            self.metrics.stt_latency
+            + self.metrics.llm_latency
+            + self.metrics.tts_latency
+        )
+        if self.metrics.total_latency > 0:
+            observe_voice_latency("end_to_end", self.metrics.total_latency)
         self.metrics.log_metrics()
 
         # Send transcription to participants

@@ -13,10 +13,14 @@ class Settings(BaseSettings):
     )
 
     # Application
-    app_name: str = "Voice Document Intelligence"
+    app_name: str = "Donna"
+    app_tagline: str = "She already knew."
     app_version: str = "0.2.0"
     environment: str = Field(default="development", env="APP_ENV")
     debug: bool = Field(default=False, env="APP_DEBUG")
+    # SQL statement echo — independent of debug so debug mode doesn't flood
+    # the console with every query. Opt in explicitly via DB_ECHO=true.
+    db_echo: bool = Field(default=False, env="DB_ECHO")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     log_format: str = Field(
         default="json", env="LOG_FORMAT"
@@ -191,6 +195,9 @@ class Settings(BaseSettings):
     # Rate limiting
     rate_limit_upload: str = Field(default="5/minute", env="RATE_LIMIT_UPLOAD")
     rate_limit_query: str = Field(default="30/minute", env="RATE_LIMIT_QUERY")
+    # Global default applied to every endpoint (health/metrics exempted). The
+    # per-endpoint limits above stack on top for the expensive routes.
+    rate_limit_default: str = Field(default="200/minute", env="RATE_LIMIT_DEFAULT")
 
     # Latency Targets
     target_stt_latency_ms: int = Field(default=100, env="TARGET_STT_LATENCY_MS")

@@ -246,6 +246,190 @@ class KnowledgeGraphService:
             n = result[0].get("upserted", 0)
             logger.info(f"[Neo4j] upserted {n} relationship edges")
 
+    # -- Meeting knowledge graph (Neo4j) -----------------------------------
+
+    @staticmethod
+    def _build_meeting_graph_rows(
+        meeting_id: str,
+        title: str,
+        status: str,
+        owner: str,
+        decisions: List[Dict[str, Any]],
+        action_items: List[Dict[str, Any]],
+        research_topics: List[str],
+        utterance_count: int,
+    ) -> Dict[str, Any]:
+        """Shape meeting data into Neo4j MERGE rows. Pure → unit-testable.
+
+        Models the meeting as a graph: a Meeting node connected to its
+        Decisions, ActionItems, ResearchTopics, and a Transcript node — the
+        decision/action/transcript/research relationships the platform claims.
+        """
+        mid = str(meeting_id)
+        decision_rows = [
+            {
+                "id": f"{mid}:d:{i}",
+                "text": (d.get("decision_text") or d.get("decision") or "")[:500],
+                "owner": d.get("owner") or "TBD",
+                "deadline": str(d.get("deadline") or "TBD"),
+                "status": d.get("status") or "open",
+                "meeting_id": mid,
+                "owner_id": owner,
+            }
+            for i, d in enumerate(decisions)
+            if (d.get("decision_text") or d.get("decision"))
+        ]
+        action_rows = [
+            {
+                "id": f"{mid}:a:{i}",
+                "description": (a.get("description") or a.get("item") or "")[:500],
+                "assignee": a.get("assignee") or "TBD",
+                "priority": a.get("priority") or "medium",
+                "status": a.get("status") or "open",
+                "meeting_id": mid,
+                "owner_id": owner,
+            }
+            for i, a in enumerate(action_items)
+            if (a.get("description") or a.get("item"))
+        ]
+        topic_rows = [
+            {"name": t.strip()[:200], "meeting_id": mid, "owner_id": owner}
+            for t in research_topics
+            if t and t.strip()
+        ]
+        return {
+            "meeting": {
+                "id": mid,
+                "title": (title or "")[:300],
+                "status": status or "completed",
+                "owner_id": owner,
+                "utterance_count": int(utterance_count or 0),
+            },
+            "decisions": decision_rows,
+            "actions": action_rows,
+            "topics": topic_rows,
+        }
+
+    async def sync_meeting_to_neo4j(
+        self,
+        meeting_id: str,
+        title: str,
+        status: str,
+        decisions: List[Dict[str, Any]],
+        action_items: List[Dict[str, Any]],
+        research_topics: Optional[List[str]] = None,
+        utterance_count: int = 0,
+        owner_id: Optional[str] = None,
+    ) -> int:
+        """Mirror a completed meeting into Neo4j as a typed subgraph.
+
+        Best-effort: a Neo4j outage must not break summary generation.
+        Returns the number of decision+action+topic nodes written.
+        """
+        if not neo4j_client.enabled:
+            return 0
+
+        from apps.api.core.neo4j_client import GLOBAL_OWNER
+
+        owner = str(owner_id) if owner_id else GLOBAL_OWNER
+        rows = self._build_meeting_graph_rows(
+            meeting_id=meeting_id,
+            title=title,
+            status=status,
+            owner=owner,
+            decisions=decisions or [],
+            action_items=action_items or [],
+            research_topics=research_topics or [],
+            utterance_count=utterance_count,
+        )
+
+        cypher = """
+        MERGE (m:Meeting {id: $meeting.id, owner_id: $meeting.owner_id})
+        SET m.title = $meeting.title,
+            m.status = $meeting.status,
+            m.utterance_count = $meeting.utterance_count,
+            m.updated_at = timestamp()
+        WITH m
+        // Transcript node (one per meeting)
+        FOREACH (_ IN CASE WHEN $meeting.utterance_count > 0 THEN [1] ELSE [] END |
+            MERGE (t:Transcript {meeting_id: $meeting.id, owner_id: $meeting.owner_id})
+            SET t.utterance_count = $meeting.utterance_count
+            MERGE (m)-[:HAS_TRANSCRIPT]->(t)
+        )
+        WITH m
+        UNWIND (CASE WHEN size($decisions) = 0 THEN [null] ELSE $decisions END) AS d
+        FOREACH (_ IN CASE WHEN d IS NULL THEN [] ELSE [1] END |
+            MERGE (dec:Decision {id: d.id, owner_id: d.owner_id})
+            SET dec.text = d.text, dec.owner = d.owner,
+                dec.deadline = d.deadline, dec.status = d.status,
+                dec.meeting_id = d.meeting_id
+            MERGE (m)-[:MADE_DECISION]->(dec)
+        )
+        WITH m
+        UNWIND (CASE WHEN size($actions) = 0 THEN [null] ELSE $actions END) AS a
+        FOREACH (_ IN CASE WHEN a IS NULL THEN [] ELSE [1] END |
+            MERGE (ai:ActionItem {id: a.id, owner_id: a.owner_id})
+            SET ai.description = a.description, ai.assignee = a.assignee,
+                ai.priority = a.priority, ai.status = a.status,
+                ai.meeting_id = a.meeting_id
+            MERGE (m)-[:HAS_ACTION]->(ai)
+        )
+        WITH m
+        UNWIND (CASE WHEN size($topics) = 0 THEN [null] ELSE $topics END) AS tp
+        FOREACH (_ IN CASE WHEN tp IS NULL THEN [] ELSE [1] END |
+            MERGE (rt:ResearchTopic {name: tp.name, meeting_id: tp.meeting_id,
+                                     owner_id: tp.owner_id})
+            MERGE (m)-[:RESEARCHED]->(rt)
+        )
+        RETURN 1 AS ok
+        """
+        try:
+            await neo4j_client.execute(cypher, rows, write=True)
+        except Exception as e:
+            logger.warning(f"[Neo4j] meeting sync failed (non-fatal): {e}")
+            return 0
+
+        n = len(rows["decisions"]) + len(rows["actions"]) + len(rows["topics"])
+        logger.info(
+            f"[Neo4j] synced meeting {meeting_id}: "
+            f"{len(rows['decisions'])} decisions, {len(rows['actions'])} actions, "
+            f"{len(rows['topics'])} topics"
+        )
+        return n
+
+    async def get_meeting_graph(
+        self, meeting_id: str, owner_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Read a meeting's decisions/actions/topics back out of Neo4j."""
+        if not neo4j_client.enabled:
+            return {"decisions": [], "actions": [], "topics": []}
+
+        from apps.api.core.neo4j_client import GLOBAL_OWNER
+
+        owner = str(owner_id) if owner_id else GLOBAL_OWNER
+        cypher = """
+        MATCH (m:Meeting {id: $meeting_id, owner_id: $owner})
+        OPTIONAL MATCH (m)-[:MADE_DECISION]->(d:Decision)
+        OPTIONAL MATCH (m)-[:HAS_ACTION]->(a:ActionItem)
+        OPTIONAL MATCH (m)-[:RESEARCHED]->(rt:ResearchTopic)
+        RETURN
+            collect(DISTINCT {text: d.text, owner: d.owner, status: d.status}) AS decisions,
+            collect(DISTINCT {description: a.description, assignee: a.assignee,
+                              priority: a.priority}) AS actions,
+            collect(DISTINCT rt.name) AS topics
+        """
+        result = await neo4j_client.execute(
+            cypher, {"meeting_id": str(meeting_id), "owner": owner}
+        )
+        if not result:
+            return {"decisions": [], "actions": [], "topics": []}
+        row = result[0]
+        return {
+            "decisions": [d for d in row.get("decisions", []) if d.get("text")],
+            "actions": [a for a in row.get("actions", []) if a.get("description")],
+            "topics": [t for t in row.get("topics", []) if t],
+        }
+
     async def get_relationships_for_entity(
         self, session: AsyncSession, entity_id: UUID
     ) -> List[EntityRelationship]:

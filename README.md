@@ -1,11 +1,13 @@
-# Meeting Assistant — 3-Phase AI Meeting Intelligence
+# Donna — AI Meeting Intelligence That's Always a Step Ahead
 
-> AI-powered meeting intelligence: documents become a queryable knowledge graph, pre-meeting research is auto-generated, real-time agents surface contextual nudges during the meeting, and a structured summary is delivered after.
+> *"She already knew."*
+>
+> Donna is your AI meeting partner, inspired by the one from Suits — she does the homework before you walk in, surfaces exactly the right intel while you talk, and has the summary ready before you ask. Documents become a queryable knowledge graph, pre-meeting research is auto-generated, real-time agents surface proactive nudges during the meeting, and a structured summary is delivered after.
 
 ![Status](https://img.shields.io/badge/status-active-success)
 ![Python](https://img.shields.io/badge/python-3.13-blue)
 ![Node](https://img.shields.io/badge/node-18+-green)
-![Tests](https://img.shields.io/badge/tests-83%20passing-success)
+![Tests](https://img.shields.io/badge/tests-111%20passing-success)
 ![Agents](https://img.shields.io/badge/agents-15-violet)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 

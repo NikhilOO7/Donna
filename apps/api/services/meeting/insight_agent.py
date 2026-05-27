@@ -68,7 +68,7 @@ class InsightAgent:
 
         return {
             "nudge_type": "insight",
-            "title": f"Research: {topic_name}"[:120],
+            "title": f"From my research on {topic_name}"[:120],
             "content": finding,
             "source_agent": "insight_agent",
             "source_data": {

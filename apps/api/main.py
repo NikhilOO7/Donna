@@ -1,7 +1,10 @@
 # apps/api/main.py
 """
-Enhanced FastAPI application for Voice Document Intelligence System
-Full implementation with contextual embeddings and voice integration
+Donna — AI meeting intelligence that's always a step ahead.
+
+FastAPI backend powering the BEFORE/DURING/AFTER meeting pipeline:
+contextual document intelligence, a knowledge graph, real-time voice,
+and proactive nudges. (She already knew.)
 """
 
 import asyncio
@@ -32,6 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -78,6 +82,7 @@ from apps.api.services.analytics_service import (
 from apps.api.services.document.contextual_processor import (
     ContextualEmbeddingGenerator,
     ModernDocumentProcessor,
+    chunk_to_row,
 )
 from apps.api.services.document.embeddings import EmbeddingService
 from apps.api.services.document.processor import DocumentProcessor
@@ -117,7 +122,7 @@ active_connections: List[WebSocket] = []
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    logger.info("Starting Voice Document Intelligence System...")
+    logger.info("Starting Donna — AI meeting intelligence...")
 
     try:
         # Initialize database
@@ -199,15 +204,18 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Voice Document Intelligence API",
-    description="API for voice-enabled document intelligence with contextual embeddings",
+    title="Donna API",
+    description="Donna — AI meeting intelligence that's always a step ahead. "
+    "Document intelligence, knowledge graph, real-time voice, and proactive nudges.",
     version="2.0.0",
     lifespan=lifespan,
 )
 
-# Rate limiting
+# Rate limiting — global default limit across all routes (health/metrics exempted),
+# with stricter per-endpoint limits stacked on the expensive routes.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # OpenTelemetry tracing (no-op when disabled)
 configure_tracing(app)
@@ -296,6 +304,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Prometheus metrics endpoint
 @app.get("/metrics", include_in_schema=False)
+@limiter.exempt
 async def prometheus_metrics():
     """Expose Prometheus metrics for scraping."""
     from starlette.responses import Response
@@ -305,6 +314,7 @@ async def prometheus_metrics():
 
 # Health check endpoint
 @app.get("/health")
+@limiter.exempt
 async def health_check():
     """Comprehensive health check with actual service verification"""
     services_status = {}
@@ -560,22 +570,13 @@ async def process_document_task(
                     owner_id=owner_id,
                 )
 
-                # 4. Add chunks to database (capture IDs for KG linkage)
-                chunk_dicts = []
-                for chunk in processing_result["chunks"]:
-                    chunk_dicts.append(
-                        {
-                            "content": chunk.get("content", ""),
-                            "token_count": chunk.get("token_count"),
-                            "start_char": chunk.get("start_char"),
-                            "end_char": chunk.get("end_char"),
-                            "start_page": chunk.get("start_page"),
-                            "end_page": chunk.get("end_page"),
-                            "metadata": chunk.get("metadata", {}),
-                            "is_table": chunk.get("is_table", False)
-                            or (chunk.get("metadata", {}) or {}).get("is_table", False),
-                        }
-                    )
+                # 4. Add chunks to database (capture IDs for KG linkage).
+                # chunk_to_row normalizes ProcessedChunk objects (and any legacy
+                # dicts) into the persistence shape add_chunks expects — the
+                # chunks here are ProcessedChunk dataclasses, not dicts.
+                chunk_dicts = [
+                    chunk_to_row(chunk) for chunk in processing_result["chunks"]
+                ]
 
                 persisted_chunks = await document_service.add_chunks(
                     session, doc_uuid, chunk_dicts
@@ -1282,7 +1283,7 @@ async def demo_test(request: Request):
     """Demo endpoint to test system"""
     svc = getattr(request.app.state, "services", None)
     return {
-        "message": "Voice Document Intelligence System v2.0",
+        "message": "Donna v2.0 — she already knew.",
         "features": {
             "contextual_embeddings": "3-level (local, document, global)",
             "voice_stack": "Deepgram Nova-3 + Cartesia Sonic + LiveKit",

@@ -53,7 +53,7 @@ def create_engine_instance() -> AsyncEngine:
         # For async engines, don't specify poolclass (uses AsyncAdaptedQueuePool by default)
         # Only use NullPool in production if needed
         engine_kwargs = {
-            "echo": settings.debug,
+            "echo": settings.db_echo,
             "pool_pre_ping": True,
             "pool_size": 10 if not settings.is_production else 20,
             "max_overflow": 20 if not settings.is_production else 40,

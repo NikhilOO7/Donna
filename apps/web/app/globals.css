@@ -122,6 +122,19 @@
 .animate-scale-in { animation: scale-in 0.5s ease-out forwards; }
 .animate-gradient { animation: gradient-shift 6s ease infinite; background-size: 200% 200%; }
 
+/* Donna avatar — soft indigo breathing glow + a slow diagonal sheen */
+@keyframes donna-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.0), 0 4px 14px -4px rgba(79, 70, 229, 0.45); }
+  50%      { box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12), 0 6px 20px -4px rgba(79, 70, 229, 0.6); }
+}
+.animate-donna-breathe { animation: donna-breathe 3.5s ease-in-out infinite; }
+
+@keyframes donna-sheen {
+  0%   { transform: translateX(-150%) skewX(-20deg); }
+  60%, 100% { transform: translateX(250%) skewX(-20deg); }
+}
+.animate-donna-sheen { animation: donna-sheen 4.5s ease-in-out infinite; }
+
 /* Staggered fade-in for children */
 .stagger-children > * {
   opacity: 0;

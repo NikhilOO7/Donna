@@ -6,7 +6,7 @@ Implements intelligent chunking and multi-level context extraction
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -186,6 +186,52 @@ class ProcessedChunk:
     document_context: Optional[str] = None
     global_context: Optional[str] = None
     embedding: Optional[List[float]] = None
+
+
+def chunk_to_row(chunk: Any) -> Dict[str, Any]:
+    """Normalize a chunk to a uniform dict for DB/KG persistence.
+
+    The pipeline carries chunks as ``ProcessedChunk`` dataclasses, but some
+    synthetic/legacy chunks arrive as plain dicts. This collapses both into one
+    shape (content, token_count, char/page spans, metadata dict, is_table) so
+    consumers never have to guess whether to call ``.get()`` or attribute access.
+    """
+    if isinstance(chunk, dict):
+        meta = chunk.get("metadata") or {}
+        content = chunk.get("content", "")
+        token_count = chunk.get("token_count") or meta.get("token_count")
+        start_char = chunk.get("start_char", meta.get("start_char"))
+        end_char = chunk.get("end_char", meta.get("end_char"))
+        start_page = chunk.get("start_page", meta.get("start_page"))
+        end_page = chunk.get("end_page", meta.get("end_page"))
+        is_table = bool(chunk.get("is_table") or meta.get("is_table"))
+    else:
+        # ProcessedChunk (or anything with .content/.metadata)
+        md = getattr(chunk, "metadata", None)
+        meta = asdict(md) if is_dataclass(md) else (md or {})
+        content = getattr(chunk, "content", "")
+        token_count = meta.get("token_count")
+        start_char = meta.get("start_char")
+        end_char = meta.get("end_char")
+        start_page = meta.get("start_page")
+        end_page = meta.get("end_page")
+        is_table = bool(meta.get("is_table"))
+
+    return {
+        "content": content,
+        "token_count": token_count,
+        "start_char": start_char,
+        "end_char": end_char,
+        "start_page": start_page,
+        "end_page": end_page,
+        # Surface these so DocumentChunk columns are populated (add_chunks reads
+        # them at the top level), not just buried in the metadata JSON.
+        "section_path": meta.get("section_path"),
+        "heading_level": meta.get("heading_level"),
+        "is_list": bool(meta.get("is_list")),
+        "is_table": is_table,
+        "metadata": meta,
+    }
 
 
 @dataclass

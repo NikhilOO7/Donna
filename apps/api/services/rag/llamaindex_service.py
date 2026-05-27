@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from openai import AsyncOpenAI, OpenAI
 
 from apps.api.core.config import settings
+from apps.api.core.persona import DONNA_PERSONA
 from apps.api.services.document.embeddings import (
     ContextualEmbeddingGenerator,
     EmbeddingService,
@@ -142,16 +143,17 @@ class RAGService:
             context_text = "\n\n".join(context_parts)
 
             # Generate answer using context
-            system_prompt = """
-            You are an intelligent document assistant. Use the provided context to answer the user's question accurately and helpfully.
+            system_prompt = (
+                DONNA_PERSONA
+                + """
 
-            Guidelines:
-            - Only use information from the provided context
-            - If the context doesn't contain enough information, say so
-            - Be concise but thorough
-            - Cite specific sources when possible
-            - If asked about something not in the context, clearly state that
+            You're answering a question from the user's documents. Here's how:
+            - Lead with the answer. Only use what's in the provided context.
+            - If the context doesn't cover it, say so plainly — don't guess.
+            - Cite the source you pulled it from.
+            - Keep it tight and in your voice.
             """
+            )
 
             user_prompt = f"""
             Context from documents:
@@ -389,15 +391,13 @@ class ModernRAGService:
             intent_type = analysis.get("intent_type", "factual")
             expected_length = analysis.get("expected_answer_length", "medium")
 
-            system_prompt = f"""
-            You are an advanced document intelligence assistant. Provide a {expected_length} {intent_type} response.
+            system_prompt = f"""{DONNA_PERSONA}
 
-            Guidelines for {intent_type} queries:
-            - Use the contextual information from multiple sources
-            - Be comprehensive yet concise
-            - Highlight key insights and connections
-            - If analyzing, provide structured reasoning
-            - If procedural, provide clear steps
+            You're answering a {intent_type} question, and it deserves a {expected_length} answer.
+            - Pull together what matters across the sources — connect the dots others would miss.
+            - Lead with the insight, cite your sources, stay in your voice.
+            - If it's analysis, show the reasoning. If it's a how-to, give the steps cleanly.
+            - Comprehensive when it earns it, never padded.
             """
 
             user_prompt = f"""

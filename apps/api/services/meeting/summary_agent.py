@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from openai import AsyncOpenAI
 
 from apps.api.core.config import settings
+from apps.api.core.persona import DONNA_PERSONA
 from apps.api.core.resilience import resilient_call
 
 logger = logging.getLogger(__name__)
@@ -92,9 +93,12 @@ class SummaryAgent:
                 {
                     "role": "system",
                     "content": (
-                        "You are an executive assistant creating a comprehensive "
-                        "meeting summary. Synthesize all provided data into a clear, "
-                        "actionable report.\n\n"
+                        DONNA_PERSONA + "\n\n"
+                        "You're writing the post-meeting summary you always have ready "
+                        "before anyone asks. Synthesize everything — transcript, your "
+                        "research, the decisions, the nudges you surfaced — into a "
+                        "crisp, actionable report. Write the executive_summary in your "
+                        "voice: direct, warm, a step ahead.\n\n"
                         "Respond ONLY with JSON:\n"
                         "{\n"
                         '  "executive_summary": "2-3 paragraph overview",\n'

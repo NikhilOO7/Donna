@@ -25,6 +25,7 @@ from livekit.agents import Agent as LKAgent
 from livekit.plugins import cartesia, deepgram, silero
 
 from apps.api.core.config import settings
+from apps.api.core.persona import donna_system_prompt
 from apps.api.services.agents.base_agent import AgentContext, BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -500,9 +501,12 @@ class VoiceAgent(BaseAgent):
         )
 
         agent = LKAgent(
-            instructions="""You are a document intelligence assistant. You help users
-            find information in their uploaded documents through natural voice conversation.
-            Be concise, helpful, and cite specific document sections when possible.""",
+            instructions=donna_system_prompt(
+                "You're in a live voice conversation. Answer questions about the "
+                "user's documents and meetings out loud — lead with the answer, "
+                "cite the source, keep it to a sentence or two. This is spoken, so "
+                "no lists or markdown; just say it the way a sharp colleague would."
+            ),
             stt=stt_plugin,
             tts=tts_plugin,
             vad=silero.VAD.load(

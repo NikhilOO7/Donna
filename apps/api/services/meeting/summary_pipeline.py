@@ -32,6 +32,7 @@ class SummaryPipeline:
         nudges: list,
         research_summary: str,
         notify: Optional[Callable[[Dict[str, Any]], Coroutine]] = None,
+        owner_id: Optional[str] = None,
     ) -> None:
         """Generate and store meeting summary as a background task."""
 
@@ -65,6 +66,31 @@ class SummaryPipeline:
                 )
                 session.add(summary)
                 await session.commit()
+
+                # Mirror the completed meeting into the Neo4j knowledge graph as a
+                # typed subgraph (Meeting → Decisions / ActionItems / ResearchTopics /
+                # Transcript). Best-effort: a graph outage must not fail the summary.
+                try:
+                    from apps.api.services.document.knowledge_graph_service import (
+                        knowledge_graph_service,
+                    )
+
+                    topics = [
+                        d.get("decision") or d.get("decision_text") or ""
+                        for d in result.get("key_discussion_points", [])
+                    ]
+                    await knowledge_graph_service.sync_meeting_to_neo4j(
+                        meeting_id=meeting_id,
+                        title=meeting_title,
+                        status="completed",
+                        decisions=result.get("decisions_summary", decisions),
+                        action_items=result.get("action_items", action_items),
+                        research_topics=[t for t in topics if t],
+                        utterance_count=len(transcript_text.split()) if transcript_text else 0,
+                        owner_id=owner_id,
+                    )
+                except Exception as kg_err:
+                    logger.warning(f"[Summary {meeting_id}] KG sync skipped: {kg_err}")
 
                 logger.info(f"[Summary {meeting_id}] Complete")
                 await _notify({"type": "summary_completed"})

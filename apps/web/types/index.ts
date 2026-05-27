@@ -147,7 +147,7 @@ export interface ConversationHistory {
   updated_at: string;
 }
 
-// Meeting Assistant Types
+// Donna — meeting domain types
 
 export interface Meeting {
   id: string;

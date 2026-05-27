@@ -246,6 +246,10 @@ class DocumentService:
 
             if error:
                 update_data["processing_error"] = error
+            elif status in ("processing", "completed"):
+                # Clear any stale error from a prior failed attempt so a recovered
+                # document doesn't keep reporting an error it no longer has.
+                update_data["processing_error"] = None
 
             query = (
                 update(Document).where(Document.id == document_id).values(**update_data)

@@ -8,9 +8,9 @@ import {
   Activity,
   CalendarDays,
   ChevronRight,
-  Zap,
   Circle,
 } from 'lucide-react';
+import DonnaLogo from '@/components/brand/DonnaLogo';
 import AnalyticsDashboard from '@/components/analytics/AnalyticsDashboard';
 import MeetingList from '@/components/meeting/MeetingList';
 import MeetingTimeline from '@/components/meeting/MeetingTimeline';
@@ -87,15 +87,7 @@ export default function Home() {
               >
                 {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center shadow-glow-primary">
-                  <Zap className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-base font-bold text-gray-900 leading-tight">Meeting Assistant</h1>
-                  <p className="text-[10px] text-gray-400 leading-tight">AI-Powered Meeting Intelligence</p>
-                </div>
-              </div>
+              <DonnaLogo size="sm" />
             </div>
 
             {/* Health Status Pill */}
@@ -209,7 +201,7 @@ export default function Home() {
                 <Activity className="w-3 h-3 text-primary-600" />
               </div>
               <div>
-                <p className="text-[11px] font-medium text-gray-600">Meeting Assistant v2.0</p>
+                <p className="text-[11px] font-medium text-gray-600">Donna v2.0</p>
                 <p className="text-[10px] text-gray-400">15 AI Agents &middot; 3-Phase Pipeline</p>
               </div>
             </div>

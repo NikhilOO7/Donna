@@ -257,7 +257,7 @@ export default function MeetingRoom({ meeting, onRefresh }: MeetingRoomProps) {
         <div className="bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-200/60 shadow-card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-gray-100 bg-gradient-to-r from-primary-50/50 to-white">
             <h3 className="text-xs font-bold text-primary-600 uppercase tracking-wider">
-              AI Nudge Cards
+              From Donna
             </h3>
           </div>
           <div className="p-4 min-h-[350px]">
@@ -276,9 +276,9 @@ export default function MeetingRoom({ meeting, onRefresh }: MeetingRoomProps) {
                 <div className="w-12 h-12 bg-primary-50 rounded-xl flex items-center justify-center mb-3">
                   <MessageSquare className="w-6 h-6 text-primary-300" />
                 </div>
-                <p className="text-sm font-medium text-gray-500">Waiting for AI insights</p>
+                <p className="text-sm font-medium text-gray-500">Donna's listening</p>
                 <p className="text-xs text-gray-300 mt-1 text-center max-w-[200px]">
-                  Nudge cards appear as agents detect strategic moments
+                  She'll jump in the moment something matters — a fact to check, a decision to log, a connection you should know.
                 </p>
               </div>
             )}

@@ -118,7 +118,7 @@ class FactCheckAgent:
         top = sources[0]
         return {
             "nudge_type": "fact_check",
-            "title": f"Fact-check: {status.title()}",
+            "title": f"I'd double-check that — {status.title()}",
             "content": (
                 f'Claim: "{claim}"\n\n'
                 f"{verdict.get('explanation', '')}\n\n"

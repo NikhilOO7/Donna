@@ -59,7 +59,7 @@ class ScribeAgent:
 
         return {
             "nudge_type": "decision_prompt",
-            "title": "Decision detected",
+            "title": "Sounds like a decision — want me to log it?",
             "content": result.get("decision_text", ""),
             "source_agent": "scribe_agent",
             "source_data": {

@@ -26,10 +26,14 @@ class ApiClient {
       timeout: 30000,
     });
 
+    // Verbose per-request logging only when explicitly opted in — otherwise
+    // polling (meetings, health) floods the console. Set NEXT_PUBLIC_API_DEBUG=true.
+    const apiDebug = process.env.NEXT_PUBLIC_API_DEBUG === 'true';
+
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
-        console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+        if (apiDebug) console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
       (error) => {
@@ -40,10 +44,11 @@ class ApiClient {
     // Response interceptor
     this.client.interceptors.response.use(
       (response) => {
-        console.log(`[API] Response:`, response.status);
+        if (apiDebug) console.log(`[API] Response:`, response.status);
         return response;
       },
       (error: AxiosError) => {
+        // Errors always surface — they matter regardless of debug flag.
         console.error(`[API] Error:`, error.response?.status, error.message);
         return Promise.reject(error);
       }
@@ -271,7 +276,17 @@ class ApiClient {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (pingInterval) clearInterval(pingInterval);
       if (ws) {
-        try { ws.close(); } catch {}
+        // Detach handlers so this teardown can't trigger a reconnect.
+        ws.onclose = null;
+        ws.onerror = null;
+        if (ws.readyState === WebSocket.CONNECTING) {
+          // Closing a CONNECTING socket logs a benign browser warning
+          // ("closed before the connection is established") — common under
+          // React StrictMode's mount/unmount. Wait for open, then close cleanly.
+          ws.onopen = () => { try { ws?.close(); } catch {} };
+        } else {
+          try { ws.close(); } catch {}
+        }
       }
     };
   }
@@ -350,7 +365,14 @@ class ApiClient {
       close: () => {
         intentionalClose = true;
         if (pingInterval) clearInterval(pingInterval);
-        currentWs.close();
+        // Closing a still-CONNECTING socket logs a benign browser warning
+        // ("closed before the connection is established") under React
+        // StrictMode's mount/unmount. Defer the close until it opens.
+        if (currentWs.readyState === WebSocket.CONNECTING) {
+          currentWs.onopen = () => { try { currentWs.close(); } catch {} };
+        } else {
+          try { currentWs.close(); } catch {}
+        }
       },
     };
   }
