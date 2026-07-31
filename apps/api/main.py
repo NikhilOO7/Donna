@@ -39,7 +39,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from apps.api.core.auth import require_user, verify_api_key
+from apps.api.core.auth import get_service_or_user, require_user
 from apps.api.core.cache import (
     get_cached_response,
     invalidate_document_cache,
@@ -71,8 +71,6 @@ from apps.api.models.requests import QueryRequest
 from apps.api.models.responses import QueryResponse
 from apps.api.routers import auth as auth_router
 from apps.api.routers import meetings, voice
-from apps.api.services.agents.agent_coordinator import DocumentIntelligenceCoordinator
-from apps.api.services.agents.crew_setup import DocumentIntelligenceAgents
 from apps.api.services.analytics_service import (
     append_message,
     get_conversation_history,
@@ -90,7 +88,7 @@ from apps.api.services.document.vector_store import (
     ModernVectorStore,
     VectorStoreService,
 )
-from apps.api.services.rag.llamaindex_service import ModernRAGService, RAGService
+from apps.api.services.rag.rag_service import ModernRAGService, RAGService
 from apps.api.services.voice.enhanced_livekit_service import (
     DocumentIntelligenceVoiceAgent,
     EnhancedVoiceService,
@@ -150,8 +148,6 @@ async def lifespan(app: FastAPI):
             modern_rag_service=ModernRAGService(),
             voice_service=VoiceService(),
             enhanced_voice_service=EnhancedVoiceService(),
-            doc_intelligence_agents=DocumentIntelligenceAgents(),
-            doc_intelligence_coordinator=DocumentIntelligenceCoordinator(),
         )
 
         logger.info("All services initialized successfully")
@@ -390,6 +386,9 @@ async def upload_document(
     use_enhanced: bool = Query(
         True, description="Use enhanced processing with contextual embeddings"
     ),
+    meeting_id: Optional[str] = Query(
+        None, description="Attach the document to this meeting (leader-only)"
+    ),
     session: AsyncSession = Depends(get_db),
     current_user=Depends(require_user),
 ):
@@ -425,6 +424,30 @@ async def upload_document(
         except DocumentAlreadyExistsError as e:
             raise HTTPException(409, f"Document already exists: {str(e)}")
 
+        # Optional: scope the document to a meeting (owner-checked)
+        if meeting_id:
+            try:
+                from uuid import UUID
+
+                from apps.api.models.meeting import MeetingDocument
+                from apps.api.services.meeting.meeting_service import meeting_service
+
+                mid = UUID(meeting_id)
+                exists, m_owner = await meeting_service.get_owner_id(session, mid)
+                owner_ok = (
+                    current_user is None
+                    or m_owner is None
+                    or str(m_owner) == str(current_user.id)
+                )
+                if exists and owner_ok:
+                    if await session.get(MeetingDocument, (mid, document.id)) is None:
+                        session.add(
+                            MeetingDocument(meeting_id=mid, document_id=document.id)
+                        )
+                        await session.commit()
+            except (ValueError, TypeError):
+                pass  # bad meeting id — upload still succeeds globally
+
         # Upload to storage (local or MinIO based on config)
         storage_result = await storage_service.upload_file(
             file_content=content,
@@ -449,15 +472,26 @@ async def upload_document(
             session=session, document_id=document.id, status="processing"
         )
 
-        # Process document in background
-        background_tasks.add_task(
-            process_document_task,
+        # Process document on the cold path: durable job queue when enabled
+        # (keeps CPU-heavy OCR/layout work out of the API process), else an
+        # in-process background task.
+        from apps.api.core.jobs import enqueue as enqueue_job
+
+        if not await enqueue_job(
+            "process_document_job",
             str(document.id),
             storage_result["file_path"],
             storage_result["content_type"],
             use_enhanced,
-            request.app.state.services,
-        )
+        ):
+            background_tasks.add_task(
+                process_document_task,
+                str(document.id),
+                storage_result["file_path"],
+                storage_result["content_type"],
+                use_enhanced,
+                request.app.state.services,
+            )
 
         # Notify WebSocket clients
         await notify_clients(
@@ -556,6 +590,7 @@ async def process_document_task(
                         document_metadata={
                             "document_id": document_id,
                             "title": document.filename,
+                            "owner_id": str(owner_id) if owner_id else None,
                             **processing_result["metadata"],
                         },
                         use_voyage=bool(settings.voyage_api_key),
@@ -702,6 +737,18 @@ async def process_document_task(
             )
 
 
+# Reused across requests: keeps conversation contexts alive and avoids
+# re-constructing the agent (and its RAG services) on every query.
+_voice_query_agent: Optional[DocumentIntelligenceVoiceAgent] = None
+
+
+def _get_voice_query_agent() -> DocumentIntelligenceVoiceAgent:
+    global _voice_query_agent
+    if _voice_query_agent is None:
+        _voice_query_agent = DocumentIntelligenceVoiceAgent()
+    return _voice_query_agent
+
+
 # Query endpoint with contextual search
 @app.post("/api/v1/query", response_model=QueryResponse)
 @limiter.limit(settings.rate_limit_query)
@@ -709,28 +756,37 @@ async def query_documents(
     query_req: QueryRequest,
     request: Request,
     session: AsyncSession = Depends(get_db),
-    _api_key: str = Depends(verify_api_key),
+    current_user=Depends(get_service_or_user),
 ):
-    """Query documents using contextual embeddings"""
+    """Query documents using contextual embeddings.
+
+    Auth: user JWT (retrieval scoped to their documents) or the service
+    API key (voice worker — unscoped). Same tenant isolation as the
+    document CRUD endpoints.
+    """
     import time as _time
 
     query_start = _time.monotonic()
     svc: ServiceContainer = request.app.state.services
     conversation_id = query_req.conversation_id or f"api-{uuid.uuid4()}"
+    owner_id = str(current_user.id) if current_user else None
 
     try:
         # Check Redis cache first (skip for conversations with history)
         context_level = query_req.context_level or "document"
         if not query_req.conversation_id:
-            cached = await get_cached_response(query_req.query, context_level)
+            cached = await get_cached_response(
+                query_req.query, context_level, owner_id=owner_id
+            )
             if cached:
+                cached["conversation_id"] = conversation_id
                 return QueryResponse(**cached)
 
         # Load conversation history from DB for context
         await get_conversation_history(session, conversation_id, last_n=5)
 
         if query_req.use_enhanced:
-            voice_agent = DocumentIntelligenceVoiceAgent()
+            voice_agent = _get_voice_query_agent()
             result = await voice_agent.process_voice_query(
                 query=query_req.query,
                 conversation_id=conversation_id,
@@ -738,6 +794,7 @@ async def query_documents(
                     "source": "api",
                     "context_level": query_req.context_level,
                 },
+                owner_id=owner_id,
             )
             answer = result["answer"]
             sources = result["sources"]
@@ -750,6 +807,7 @@ async def query_documents(
             result = await svc.rag_service.process_query(
                 query=query_req.query,
                 conversation_id=conversation_id,
+                owner_id=owner_id,
             )
             answer = result["answer"]
             sources = result.get("sources", [])
@@ -783,13 +841,17 @@ async def query_documents(
             sources=sources,
             conversation_id=conversation_id,
             context_level=context_level,
+            confidence=result.get("confidence"),
             metadata=metadata,
         )
 
-        # Cache the response for future identical queries
+        # Cache the response for future identical queries (per-owner key)
         if not query_req.conversation_id:
             await set_cached_response(
-                query_req.query, context_level, response.model_dump()
+                query_req.query,
+                context_level,
+                response.model_dump(),
+                owner_id=owner_id,
             )
 
         return response
@@ -1156,25 +1218,7 @@ async def delete_document(
         raise HTTPException(500, f"Deletion failed: {str(e)}")
 
 
-# Voice endpoints
-@app.get("/api/v1/voice/token")
-async def get_voice_token(
-    request: Request,
-    room_name: str = Query("document-chat", description="Room name"),
-    participant_name: str = Query("user", description="Participant name"),
-):
-    """Get LiveKit token for voice connection"""
-    try:
-        svc: ServiceContainer = request.app.state.services
-        token = await svc.voice_service.generate_token(
-            room_name=room_name, participant_name=participant_name
-        )
-
-        return {"token": token, "url": settings.livekit_url, "room_name": room_name}
-
-    except Exception as e:
-        logger.error(f"Token generation failed: {e}", exc_info=True)
-        raise HTTPException(500, "Failed to generate voice token")
+# Voice token endpoint lives in routers/voice.py (GET /api/v1/voice/token)
 
 
 # WebSocket endpoint for real-time updates

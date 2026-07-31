@@ -8,7 +8,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -92,7 +92,7 @@ class VectorStoreService:
                     "document_id": document_id,
                     "content": data["content"],
                     "metadata": data.get("metadata", {}),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
             )
             points.append(point)
@@ -112,24 +112,33 @@ class VectorStoreService:
         client = await get_qdrant_client()
 
         # Build filter
-        qdrant_filter = None
+        conditions = []
         if filters and filters.get("document_ids"):
-            qdrant_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id",
-                        match=MatchValue(value=filters["document_ids"]),
-                    )
-                ]
+            conditions.append(
+                FieldCondition(
+                    key="document_id",
+                    match=MatchValue(value=filters["document_ids"]),
+                )
             )
+        # Tenant scoping — this collection nests owner under metadata.
+        if filters and filters.get("owner_id"):
+            conditions.append(
+                FieldCondition(
+                    key="metadata.owner_id",
+                    match=MatchValue(value=str(filters["owner_id"])),
+                )
+            )
+        qdrant_filter = Filter(must=conditions) if conditions else None
 
         # Search
-        results = await client.search(
-            collection_name=self.collection_name,
-            query_vector=query_embedding,
-            query_filter=qdrant_filter,
-            limit=top_k,
-        )
+        results = (
+            await client.query_points(
+                collection_name=self.collection_name,
+                query=query_embedding,
+                query_filter=qdrant_filter,
+                limit=top_k,
+            )
+        ).points
 
         # Format results
         formatted_results = []
@@ -201,6 +210,52 @@ class ModernVectorStore:
                 )
                 logger.info(f"Created collection: {collection_name}")
 
+    async def store_memory_records(
+        self,
+        meeting_id: str,
+        records: List[Dict[str, Any]],
+        owner_id: Optional[str] = None,
+    ) -> int:
+        """Index meeting-memory records alongside document chunks.
+
+        Memory records are single-level by nature, so the same vector is
+        written to every collection — retrieval at any context level can
+        surface what the team discussed, decided, and committed to.
+        Idempotent per (meeting, kind, index): re-summarizing a meeting
+        overwrites its memories instead of duplicating them.
+        """
+        client = await get_qdrant_client()
+        points_by_collection: Dict[str, List[PointStruct]] = {
+            name: [] for name in self.collections.values()
+        }
+
+        stored = 0
+        for i, record in enumerate(records):
+            vector = record.get("embedding")
+            if not vector:
+                continue
+            metadata = record.get("metadata", {})
+            kind = metadata.get("memory_kind", "memory")
+            point_id = generate_point_id(f"memory:{meeting_id}:{kind}:{i}", "memory")
+            payload = {
+                "document_id": f"meeting:{meeting_id}",
+                "owner_id": str(owner_id) if owner_id else None,
+                "content": record.get("content", ""),
+                "metadata": metadata,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            for name in self.collections.values():
+                points_by_collection[name].append(
+                    PointStruct(id=point_id, vector=vector, payload=payload)
+                )
+            stored += 1
+
+        for name, points in points_by_collection.items():
+            if points:
+                await client.upsert(collection_name=name, points=points)
+
+        return stored
+
     async def store_contextual_embeddings(
         self,
         document_id: str,
@@ -230,7 +285,7 @@ class ModernVectorStore:
                 "chunk_index": idx,
                 "content": data["content"],
                 "metadata": data["metadata"],
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             # Add structure information
@@ -329,7 +384,7 @@ class ModernVectorStore:
             cache_data = {
                 "structure": document_structure.__dict__ if document_structure else {},
                 "chunk_count": len(embeddings_data),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             await redis_client.setex(cache_key, self.cache_ttl, json.dumps(cache_data))
 
@@ -356,14 +411,16 @@ class ModernVectorStore:
         qdrant_filter = self._build_filter(filters)
 
         # Search
-        results = await client.search(
-            collection_name=collection_name,
-            query_vector=query_embedding,
-            query_filter=qdrant_filter,
-            limit=top_k,
-            with_payload=True,
-            with_vectors=False,
-        )
+        results = (
+            await client.query_points(
+                collection_name=collection_name,
+                query=query_embedding,
+                query_filter=qdrant_filter,
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False,
+            )
+        ).points
 
         # Format results
         search_results = []
@@ -408,13 +465,15 @@ class ModernVectorStore:
             collection_name = self.collections[context_level]
 
             try:
-                results = await client.search(
-                    collection_name=collection_name,
-                    query_vector=query_embedding,
-                    query_filter=self._build_filter(filters),
-                    limit=top_k * 2,  # Get more results for merging
-                    with_payload=True,
-                )
+                results = (
+                    await client.query_points(
+                        collection_name=collection_name,
+                        query=query_embedding,
+                        query_filter=self._build_filter(filters),
+                        limit=top_k * 2,  # Get more results for merging
+                        with_payload=True,
+                    )
+                ).points
 
                 # Weight scores by context level
                 for result in results:
@@ -526,22 +585,24 @@ class ModernVectorStore:
         client = await get_qdrant_client()
 
         # Search in unified collection
-        results = await client.search(
-            collection_name=self.collections["unified"],
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id", match=MatchValue(value=document_id)
-                    ),
-                    FieldCondition(
-                        key="chunk_index", match=MatchValue(value=chunk_index)
-                    ),
-                ]
-            ),
-            limit=1,
-            with_payload=True,
-            with_vectors=False,
-        )
+        results = (
+            await client.query_points(
+                collection_name=self.collections["unified"],
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id", match=MatchValue(value=document_id)
+                        ),
+                        FieldCondition(
+                            key="chunk_index", match=MatchValue(value=chunk_index)
+                        ),
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False,
+            )
+        ).points
 
         if results:
             payload = results[0].payload
@@ -568,18 +629,20 @@ class ModernVectorStore:
         client = await get_qdrant_client()
 
         # Get first chunk to extract document structure
-        results = await client.search(
-            collection_name=self.collections["unified"],
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id", match=MatchValue(value=document_id)
-                    )
-                ]
-            ),
-            limit=1,
-            with_payload=True,
-        )
+        results = (
+            await client.query_points(
+                collection_name=self.collections["unified"],
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id", match=MatchValue(value=document_id)
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+            )
+        ).points
 
         if results:
             payload = results[0].payload
@@ -654,18 +717,20 @@ class ModernVectorStore:
         avg_embedding = np.mean(embeddings, axis=0).tolist()
 
         # Search for similar documents, excluding current
-        results = await client.search(
-            collection_name=self.collections["global"],
-            query_vector=avg_embedding,
-            query_filter=Filter(
-                must_not=[
-                    FieldCondition(
-                        key="document_id", match=MatchValue(value=document_id)
-                    )
-                ]
-            ),
-            limit=max_related * 3,  # Get more to ensure unique documents
-        )
+        results = (
+            await client.query_points(
+                collection_name=self.collections["global"],
+                query=avg_embedding,
+                query_filter=Filter(
+                    must_not=[
+                        FieldCondition(
+                            key="document_id", match=MatchValue(value=document_id)
+                        )
+                    ]
+                ),
+                limit=max_related * 3,  # Get more to ensure unique documents
+            )
+        ).points
 
         # Aggregate by document
         related_docs = {}

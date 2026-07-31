@@ -34,6 +34,12 @@ class EmbeddingService:
             # Enhance text with context if provided
             enhanced_text = self._enhance_with_context(text, context)
 
+            from apps.api.core.cache import get_cached_embedding, set_cached_embedding
+
+            cached = await get_cached_embedding(enhanced_text, self.model)
+            if cached is not None:
+                return cached
+
             # Generate embedding
             response = await asyncio.to_thread(
                 self.client.embeddings.create, model=self.model, input=enhanced_text
@@ -41,6 +47,7 @@ class EmbeddingService:
 
             embedding = response.data[0].embedding
             logger.debug(f"Generated embedding of dimension {len(embedding)}")
+            await set_cached_embedding(enhanced_text, self.model, embedding)
 
             return embedding
 
@@ -283,13 +290,15 @@ class ContextualEmbeddingGenerator:
             current_doc_id = chunk.get("document_id", "")
 
             try:
-                results = await client.search(
-                    collection_name=collection_name,
-                    query_vector=embedding_vector,
-                    limit=3,
-                    with_payload=True,
-                    with_vectors=False,
-                )
+                results = (
+                    await client.query_points(
+                        collection_name=collection_name,
+                        query=embedding_vector,
+                        limit=3,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
+                ).points
 
                 # Filter out results from the same document and build context
                 related_parts = []
@@ -355,13 +364,23 @@ class ContextualEmbeddingGenerator:
         embeddings = {}
 
         # Generate OpenAI embedding with standardized dimensions
+        # (Redis-cached: shared across API workers and job workers)
+        from apps.api.core.cache import get_cached_embedding, set_cached_embedding
+
         try:
-            response = await self.openai_client.embeddings.create(
-                input=text,
-                model=settings.embedding_model,
-                dimensions=settings.embedding_dimensions,
-            )
-            embeddings["openai"] = response.data[0].embedding
+            cached = await get_cached_embedding(text, settings.embedding_model)
+            if cached is not None:
+                embeddings["openai"] = cached
+            else:
+                response = await self.openai_client.embeddings.create(
+                    input=text,
+                    model=settings.embedding_model,
+                    dimensions=settings.embedding_dimensions,
+                )
+                embeddings["openai"] = response.data[0].embedding
+                await set_cached_embedding(
+                    text, settings.embedding_model, embeddings["openai"]
+                )
         except Exception as e:
             logger.error(f"OpenAI embedding failed: {e}")
             embeddings["openai"] = None
@@ -411,8 +430,11 @@ class ContextualEmbeddingGenerator:
                 "384-dim embeddings are incompatible with 1536-dim Qdrant collections."
             )
 
-        # Cache result
+        # Cache result (bounded FIFO — unbounded growth is a slow memory
+        # leak in a long-running API process; Redis is the durable cache)
         self._embedding_cache[cache_key] = embeddings
+        while len(self._embedding_cache) > 256:
+            self._embedding_cache.pop(next(iter(self._embedding_cache)))
 
         return embeddings
 

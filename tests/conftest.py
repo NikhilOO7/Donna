@@ -97,6 +97,11 @@ def mock_qdrant_client():
     }
     client.search.return_value = [mock_result]
 
+    # Mock query_points (current Qdrant API) — returns .points
+    query_response = MagicMock()
+    query_response.points = [mock_result]
+    client.query_points.return_value = query_response
+
     return client
 
 

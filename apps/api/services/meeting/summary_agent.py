@@ -34,6 +34,7 @@ class SummaryAgent:
         action_items: List[Dict[str, Any]],
         nudges: List[Dict[str, Any]],
         research_summary: str,
+        meeting_id: str | None = None,
     ) -> Dict[str, Any]:
         """Generate structured meeting summary.
 
@@ -67,17 +68,33 @@ class SummaryAgent:
             )
 
         if decisions:
-            dec_text = "\n".join(
-                f"- {d.get('decision_text', '')} "
-                f"(Owner: {d.get('owner', 'TBD')}, "
-                f"Deadline: {d.get('deadline', 'TBD')})"
-                for d in decisions
+            dec_lines = []
+            for d in decisions:
+                dec_lines.append(
+                    f"- {d.get('decision_text', '')} "
+                    f"(Owner: {d.get('owner', 'TBD')}, "
+                    f"Deadline: {d.get('deadline', 'TBD')})"
+                )
+                if d.get("context"):
+                    quoted = "\n".join(
+                        f"    > {line}" for line in d["context"].splitlines()
+                    )
+                    dec_lines.append(f"  Conversation trigger:\n{quoted}")
+            context_parts.append("\n## Decisions Made\n" + "\n".join(dec_lines))
+
+        if action_items:
+            items_text = "\n".join(
+                f"- {a.get('description') or a.get('item', '')} "
+                f"(Assignee: {a.get('assignee') or 'TBD'}, "
+                f"Priority: {a.get('priority') or 'medium'})"
+                for a in action_items
             )
-            context_parts.append(f"\n## Decisions Made\n{dec_text}")
+            context_parts.append(f"\n## Action Items Already Logged\n{items_text}")
 
         if nudges:
             nudge_text = "\n".join(
-                f"- [{n.get('type', 'insight')}] {n.get('title', '')}: "
+                f"- {'⭐ ' if n.get('pinned') else ''}"
+                f"[{n.get('type', 'insight')}] {n.get('title', '')}: "
                 f"{n.get('content', '')[:200]}"
                 for n in nudges[:10]
             )
@@ -88,7 +105,7 @@ class SummaryAgent:
         context = "\n".join(context_parts)
 
         response = await self.client.chat.completions.create(
-            model=settings.openai_model,
+            model=settings.model_smart,
             messages=[
                 {
                     "role": "system",
@@ -99,6 +116,10 @@ class SummaryAgent:
                         "research, the decisions, the nudges you surfaced — into a "
                         "crisp, actionable report. Write the executive_summary in your "
                         "voice: direct, warm, a step ahead.\n\n"
+                        "Nudges marked ⭐ were pinned by the user during the meeting — "
+                        "treat them as the most important context.\n"
+                        "In action_items, list only NEW items found in the transcript "
+                        "that are NOT already in 'Action Items Already Logged'.\n\n"
                         "Respond ONLY with JSON:\n"
                         "{\n"
                         '  "executive_summary": "2-3 paragraph overview",\n'
@@ -123,6 +144,10 @@ class SummaryAgent:
             temperature=0.3,
             max_tokens=3000,
         )
+
+        from apps.api.core.llm_meter import record as record_cost
+
+        await record_cost(meeting_id, "summary", settings.model_smart, response.usage)
 
         content = response.choices[0].message.content.strip()
         if content.startswith("```"):

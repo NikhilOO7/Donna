@@ -4,11 +4,14 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # Install system dependencies
+# libgl1 + libglib2.0-0 are required by opencv (EasyOCR image pipeline)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
     libpq-dev \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster package management
@@ -27,6 +30,10 @@ RUN uv pip install https://github.com/explosion/spacy-models/releases/download/e
 # Copy application code
 COPY apps/api ./apps/api
 COPY apps/__init__.py ./apps/
+
+# Alembic migrations (the CMD runs `alembic upgrade head` before uvicorn)
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 # Create necessary directories
 RUN mkdir -p logs data static

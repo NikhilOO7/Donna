@@ -105,3 +105,48 @@ class TestDocumentServiceDuplication:
                     file_content=b"test content",
                     file_type="application/pdf",
                 )
+
+    @pytest.mark.asyncio
+    async def test_completed_duplicate_still_blocks(self, document_service):
+        """A successfully processed duplicate must raise 409-style error."""
+        mock_session = AsyncMock()
+        existing_doc = MagicMock()
+        existing_doc.id = uuid4()
+        existing_doc.processing_status = "completed"
+
+        with patch.object(
+            document_service, "get_document_by_hash", return_value=existing_doc
+        ):
+            with pytest.raises(DocumentAlreadyExistsError):
+                await document_service.create_document(
+                    session=mock_session,
+                    filename="test.pdf",
+                    file_content=b"test content",
+                    file_type="application/pdf",
+                )
+        # The failed-replacement path must NOT have deleted anything
+        mock_session.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_failed_duplicate_is_replaced_not_blocked(self, document_service):
+        """Re-uploading a file whose processing failed must replace it, not 409."""
+        mock_session = AsyncMock()
+        existing_doc = MagicMock()
+        existing_doc.id = uuid4()
+        existing_doc.processing_status = "failed"
+
+        with patch.object(
+            document_service, "get_document_by_hash", return_value=existing_doc
+        ):
+            document = await document_service.create_document(
+                session=mock_session,
+                filename="test.pdf",
+                file_content=b"test content",
+                file_type="application/pdf",
+            )
+
+        # Old row (entities + chunks + document) deleted, new document created
+        assert mock_session.execute.call_count == 3
+        mock_session.add.assert_called_once()
+        assert document.filename == "test.pdf"
+        assert document.processing_status == "pending"

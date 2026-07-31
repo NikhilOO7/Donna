@@ -51,7 +51,8 @@ function VoiceAssistantUI() {
       {/* Instructions */}
       <div className="text-center max-w-md">
         <p className="text-sm text-gray-600">
-          {state === 'idle' && 'Click the microphone to start talking'}
+          {(state === 'disconnected' || state === 'connecting') &&
+            'Click the microphone to start talking'}
           {state === 'listening' && 'Speak your question...'}
           {state === 'thinking' && 'Processing your query...'}
           {state === 'speaking' && 'Playing response...'}

@@ -123,7 +123,7 @@ class DocumentIntelligenceVoiceAgent:
                     ContextualEmbeddingGenerator,
                 )
                 from apps.api.services.document.vector_store import ModernVectorStore
-                from apps.api.services.rag.llamaindex_service import ModernRAGService
+                from apps.api.services.rag.rag_service import ModernRAGService
 
                 self.rag_service = ModernRAGService()
                 self.vector_store = ModernVectorStore()
@@ -191,22 +191,26 @@ class DocumentIntelligenceVoiceAgent:
             for result in search_results:
                 # Get local context (surrounding chunks)
                 local_context = await self._get_local_context(
-                    chunk_id=result["chunk_id"], window_size=2
+                    chunk_id=result.chunk_id, window_size=2
                 )
 
                 # Get document context (document structure)
                 doc_context = await self._get_document_context(
-                    document_id=result["document_id"]
+                    document_id=result.document_id
                 )
 
                 # Get global context (related documents)
                 global_context = await self._get_global_context(
-                    document_id=result["document_id"], query=query
+                    document_id=result.document_id, query=query
                 )
 
                 enhanced_results.append(
                     {
-                        **result,
+                        "chunk_id": result.chunk_id,
+                        "document_id": result.document_id,
+                        "content": result.content,
+                        "score": result.score,
+                        "metadata": result.metadata,
                         "local_context": local_context,
                         "document_context": doc_context,
                         "global_context": global_context,
@@ -287,7 +291,11 @@ class DocumentIntelligenceVoiceAgent:
             return {}
 
     async def process_voice_query(
-        self, query: str, conversation_id: str, audio_metadata: Optional[Dict] = None
+        self,
+        query: str,
+        conversation_id: str,
+        audio_metadata: Optional[Dict] = None,
+        owner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process voice query with full contextual understanding"""
         try:
@@ -307,13 +315,6 @@ class DocumentIntelligenceVoiceAgent:
             context.add_message("user", query)
             context.last_query = query
 
-            # Search with appropriate context level
-            await self.search_documents_with_context(
-                query=query,
-                conversation_id=conversation_id,
-                context_level=context.active_context_level,
-            )
-
             # Generate response using RAG with contextual embeddings
             # If RAG service is not available, provide a fallback response
             if self.rag_service is None:
@@ -328,6 +329,7 @@ class DocumentIntelligenceVoiceAgent:
                     query=query,
                     conversation_id=conversation_id,
                     context_types=None,  # Will use all context types
+                    owner_id=owner_id,
                 )
 
             # Add response to conversation
@@ -349,6 +351,7 @@ class DocumentIntelligenceVoiceAgent:
             return {
                 "answer": response["answer"],
                 "sources": sources,  # Use sources from RAG response
+                "confidence": response.get("confidence"),
                 "context_level": context.active_context_level,
                 "conversation_id": conversation_id,
                 "metrics": {

@@ -80,12 +80,31 @@ class DocumentService:
             # Check for duplicate (scoped per-owner for multi-tenancy)
             existing = await self.get_document_by_hash(session, file_hash, owner_id)
             if existing:
-                self.logger.warning(
-                    f"Document with hash {file_hash} already exists: {existing.id}"
-                )
-                raise DocumentAlreadyExistsError(
-                    f"Document already exists with id: {existing.id}"
-                )
+                if existing.processing_status == "failed":
+                    # A failed upload must not block a retry — replace the
+                    # dead row (and any partial chunks/entities) and reprocess.
+                    self.logger.info(
+                        f"Replacing failed document {existing.id} to allow re-upload"
+                    )
+                    await session.execute(
+                        delete(Entity).where(Entity.document_id == existing.id)
+                    )
+                    await session.execute(
+                        delete(DocumentChunk).where(
+                            DocumentChunk.document_id == existing.id
+                        )
+                    )
+                    await session.execute(
+                        delete(Document).where(Document.id == existing.id)
+                    )
+                    await session.flush()
+                else:
+                    self.logger.warning(
+                        f"Document with hash {file_hash} already exists: {existing.id}"
+                    )
+                    raise DocumentAlreadyExistsError(
+                        f"Document already exists with id: {existing.id}"
+                    )
 
             # Create document
             document = Document(

@@ -25,6 +25,7 @@ type Status = 'idle' | 'connecting' | 'live' | 'error';
 
 export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCaptureProps) {
   const [status, setStatus] = useState<Status>('idle');
+  const [conference, setConference] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const roomRef = useRef<Room | null>(null);
@@ -36,11 +37,11 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
 
     try {
       // Fetch a meeting-scoped LiveKit token
-      const tokenResp = await apiClient.client.get(
-        `/api/v1/meetings/${meetingId}/voice-token`,
-        { params: { participant_name: speakerName || 'You' } },
+      const { token, url } = await apiClient.getMeetingVoiceToken(
+        meetingId,
+        speakerName || 'You',
+        conference,
       );
-      const { token, url } = tokenResp.data;
       if (!token || !url) throw new Error('Token response missing token/url');
 
       // Create + publish mic
@@ -77,7 +78,7 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
       roomRef.current = null;
       trackRef.current = null;
     }
-  }, [meetingId, speakerName]);
+  }, [meetingId, speakerName, conference]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -121,6 +122,18 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
             <span className="truncate">{error}</span>
           </div>
         )}
+        <label
+          className="flex items-center gap-1.5 text-[11px] text-gray-400 cursor-pointer select-none"
+          title="Several people share one microphone — Donna separates speakers acoustically"
+        >
+          <input
+            type="checkbox"
+            checked={conference}
+            onChange={(e) => setConference(e.target.checked)}
+            className="w-3 h-3 accent-indigo-500"
+          />
+          Conference room
+        </label>
         <button
           onClick={handleStart}
           className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"

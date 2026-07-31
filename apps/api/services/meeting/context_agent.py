@@ -66,6 +66,7 @@ class ContextAgent:
         self,
         recent_utterances: List[Dict[str, Any]],
         owner_id: Optional[str] = None,
+        attached_doc_ids: Optional[set] = None,
     ) -> Optional[Dict[str, Any]]:
         """Query knowledge base for context relevant to recent discussion.
 
@@ -119,6 +120,13 @@ class ContextAgent:
             else:
                 weight = 1.0
 
+            # Meeting materials rank ahead of the general knowledge base
+            if (
+                attached_doc_ids
+                and str(getattr(c, "document_id", "")) in attached_doc_ids
+            ):
+                weight *= 1.2
+
             scored.append(
                 {
                     "result": c,
@@ -144,8 +152,17 @@ class ContextAgent:
         snippet = content[:300] + ("..." if len(content) > 300 else "")
         doc_id = getattr(c, "document_id", "unknown")
 
+        # Human-readable citation fields (best-effort from indexed metadata)
+        chunk_meta = getattr(c, "metadata", None) or {}
+        document_title = (chunk_meta.get("document_structure") or {}).get("title")
+        section_path = chunk_meta.get("section_path") or []
+        page_number = chunk_meta.get("page_number")
+
         # Differentiated title by source type — Donna's anticipatory voice
-        if element_type == "table":
+        is_memory = chunk_meta.get("source_type") == "meeting_memory"
+        if is_memory:
+            title = "You've covered this before"
+        elif element_type == "table":
             title = "I pulled the numbers from your docs"
         elif element_type == "image":
             title = "Found the chart you'll want"
@@ -169,6 +186,18 @@ class ContextAgent:
                 "element_type": element_type,
                 "score": base_score,
                 "boosted_score": top["boosted_score"],
+                "document_title": document_title,
+                "section_path": section_path,
+                "page_number": page_number,
+                # Visual insight: ship the actual table so the card can
+                # render the data instead of describing it.
+                "visual_table": content[:1500] if element_type == "table" else None,
+                # Meeting-memory citation (when the hit is a past conversation)
+                "source_type": chunk_meta.get("source_type"),
+                "meeting_title": chunk_meta.get("meeting_title"),
+                "meeting_date": chunk_meta.get("meeting_date"),
+                "memory_kind": chunk_meta.get("memory_kind"),
+                "quote": chunk_meta.get("quote"),
             },
             "relevance_score": min(base_score, 1.0),
         }

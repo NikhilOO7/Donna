@@ -144,16 +144,33 @@ class ResearchPipeline:
                     topics=topics,
                     validated_sources=validated_sources,
                     meeting_title=title,
+                    meeting_id=meeting_id,
                 )
 
-                # Build topics data for storage
+                # Build topics data for storage. The synthesis agent's key
+                # findings are attached to the topic whose sources back them
+                # (matched by source URL); unmatched findings and data gaps go
+                # into a synthetic cross-topic entry so nothing is dropped.
+                all_findings = synthesis.get("key_findings", []) or []
+                matched_idx: set = set()
+
                 topics_data = []
                 for topic_info in topics:
                     topic_name = topic_info["topic"]
+                    t_sources = validated_sources.get(topic_name, [])
+                    topic_urls = {s.get("url", "") for s in t_sources if s.get("url")}
+
+                    topic_findings = []
+                    for i, f in enumerate(all_findings):
+                        if f.get("source_url") and f["source_url"] in topic_urls:
+                            topic_findings.append(f)
+                            matched_idx.add(i)
+
                     topics_data.append(
                         {
                             "topic": topic_name,
                             "rationale": topic_info.get("rationale", ""),
+                            "key_findings": topic_findings,
                             "sources": [
                                 {
                                     "url": s.get("url", ""),
@@ -162,8 +179,27 @@ class ResearchPipeline:
                                     "tier": s.get("tier", 3),
                                     "credibility_score": s.get("credibility_score", 0),
                                 }
-                                for s in validated_sources.get(topic_name, [])
+                                for s in t_sources
                             ],
+                        }
+                    )
+
+                unmatched = [
+                    f for i, f in enumerate(all_findings) if i not in matched_idx
+                ]
+                data_gaps = synthesis.get("data_gaps", []) or []
+                suggested = synthesis.get("suggested_topics", []) or []
+                if unmatched or data_gaps or suggested:
+                    topics_data.append(
+                        {
+                            "topic": "Cross-topic findings",
+                            "rationale": "Findings that draw on multiple sources, plus data limitations.",
+                            "key_findings": unmatched,
+                            "data_gaps": data_gaps,
+                            # H7 blind spots: adjacent topics the user didn't
+                            # ask about but the sources suggest watching.
+                            "suggested_topics": suggested,
+                            "sources": [],
                         }
                     )
 

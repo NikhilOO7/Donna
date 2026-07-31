@@ -94,6 +94,7 @@ def observe_voice_latency(stage: str, latency_ms: float) -> None:
     """
     VOICE_LATENCY_SECONDS.labels(stage=stage).observe(max(latency_ms, 0.0) / 1000.0)
 
+
 # ---------------------------------------------------------------------------
 # Cache metrics
 # ---------------------------------------------------------------------------

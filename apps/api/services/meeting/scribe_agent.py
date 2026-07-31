@@ -57,6 +57,19 @@ class ScribeAgent:
             f"[Scribe] decision detected: {result.get('decision_text', '')[:60]}"
         )
 
+        # Verbatim conversation lines that triggered this detection — these
+        # become Decision.context when the user logs the decision, so leaders
+        # can always see exactly who said what.
+        trigger_quotes = [
+            {
+                "speaker": u.get("speaker", "?"),
+                "text": u.get("text", ""),
+                "timestamp": u.get("timestamp"),
+            }
+            for u in recent_utterances[-3:]
+            if u.get("text")
+        ]
+
         return {
             "nudge_type": "decision_prompt",
             "title": "Sounds like a decision — want me to log it?",
@@ -66,6 +79,7 @@ class ScribeAgent:
                 "owner": result.get("owner"),
                 "deadline": result.get("deadline"),
                 "confidence": result.get("confidence", 0.7),
+                "trigger_quotes": trigger_quotes,
             },
             "relevance_score": result.get("confidence", 0.7),
         }
@@ -79,7 +93,7 @@ class ScribeAgent:
         )
 
         response = await self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.model_fast,
             messages=[
                 {
                     "role": "system",

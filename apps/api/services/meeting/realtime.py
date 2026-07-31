@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional
 
 from fastapi import WebSocket
 
@@ -32,7 +32,8 @@ class MeetingHub:
     CHANNEL = "meeting:events"
 
     def __init__(self) -> None:
-        self._connections: Dict[str, Set[WebSocket]] = {}
+        # meeting_id -> {websocket: {'role': str, 'name': str|None}}
+        self._connections: Dict[str, Dict[WebSocket, Dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
         self._redis = None
         self._redis_checked = False
@@ -79,8 +80,7 @@ class MeetingHub:
                 try:
                     envelope = json.loads(msg["data"])
                     await self._deliver_local(
-                        envelope["meeting_id"],
-                        json.dumps(envelope["payload"], default=str),
+                        envelope["meeting_id"], envelope["payload"]
                     )
                 except Exception as e:
                     logger.debug(f"[Hub] listener decode error: {e}")
@@ -93,21 +93,30 @@ class MeetingHub:
 
     # -- Public API --------------------------------------------------------
 
-    async def connect(self, meeting_id: str, websocket: WebSocket) -> None:
+    async def connect(
+        self,
+        meeting_id: str,
+        websocket: WebSocket,
+        role: str = "leader",
+        my_name: str | None = None,
+    ) -> None:
         await websocket.accept()
         async with self._lock:
-            self._connections.setdefault(meeting_id, set()).add(websocket)
+            self._connections.setdefault(meeting_id, {})[websocket] = {
+                "role": role,
+                "name": my_name,
+            }
         await self._ensure_listener()
         logger.info(
-            f"[Hub] meeting={meeting_id} subscribed "
-            f"(local={len(self._connections.get(meeting_id, set()))})"
+            f"[Hub] meeting={meeting_id} subscribed role={role} "
+            f"(local={len(self._connections.get(meeting_id, {}))})"
         )
 
     async def disconnect(self, meeting_id: str, websocket: WebSocket) -> None:
         async with self._lock:
             conns = self._connections.get(meeting_id)
             if conns and websocket in conns:
-                conns.remove(websocket)
+                conns.pop(websocket, None)
                 if not conns:
                     self._connections.pop(meeting_id, None)
         logger.info(f"[Hub] meeting={meeting_id} unsubscribed")
@@ -129,18 +138,42 @@ class MeetingHub:
                 logger.debug(f"[Hub] publish failed, local delivery: {e}")
 
         # Fallback: deliver directly to this replica's sockets
-        await self._deliver_local(meeting_id, json.dumps(message, default=str))
+        await self._deliver_local(meeting_id, message)
 
     # -- Internal ----------------------------------------------------------
 
-    async def _deliver_local(self, meeting_id: str, payload_str: str) -> None:
-        """Send an already-serialized payload to this replica's sockets."""
-        conns = list(self._connections.get(meeting_id, set()))
+    @staticmethod
+    def _visible_to(payload: Dict[str, Any], meta: Dict[str, Any]) -> bool:
+        """Per-connection visibility — the server-side privacy boundary.
+
+        Leaders see every event. Participants see everything EXCEPT
+        unshared nudges: only pinned (shared-board) nudges and activation
+        nudges addressed to them personally are delivered.
+        """
+        if meta.get("role") != "participant":
+            return True
+        if payload.get("type") != "nudge_created":
+            return True
+        nudge = payload.get("nudge") or {}
+        if nudge.get("pinned_at"):
+            return True
+        if nudge.get("type") == "activation":
+            person = ((nudge.get("source_data") or {}).get("person") or "").lower()
+            name = (meta.get("name") or "").lower()
+            return bool(name) and person == name
+        return False
+
+    async def _deliver_local(self, meeting_id: str, payload: Dict[str, Any]) -> None:
+        """Send a payload to this replica's sockets, filtered per connection."""
+        conns = dict(self._connections.get(meeting_id, {}))
         if not conns:
             return
 
+        payload_str = json.dumps(payload, default=str)
         dead: list[WebSocket] = []
-        for ws in conns:
+        for ws, meta in conns.items():
+            if not self._visible_to(payload, meta):
+                continue
             try:
                 await ws.send_text(payload_str)
             except Exception as e:
@@ -152,7 +185,7 @@ class MeetingHub:
                 live = self._connections.get(meeting_id)
                 if live:
                     for ws in dead:
-                        live.discard(ws)
+                        live.pop(ws, None)
                     if not live:
                         self._connections.pop(meeting_id, None)
 

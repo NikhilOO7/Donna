@@ -84,7 +84,9 @@ def load_corpus(path: Path = CORPUS_PATH) -> tuple[List[Chunk], List[dict]]:
     return chunks, data["queries"]
 
 
-def _neighbours(chunks: List[Chunk], idx: int, window: int = 2) -> tuple[List[str], List[str]]:
+def _neighbours(
+    chunks: List[Chunk], idx: int, window: int = 2
+) -> tuple[List[str], List[str]]:
     """Previous/next chunk snippets within the same document — the 'local' band."""
     cur = chunks[idx]
     prev, nxt = [], []
@@ -159,7 +161,9 @@ def ndcg_at_k(ranked_ids: List[str], relevant: set[str], k: int) -> float:
 # ---- evaluation -------------------------------------------------------------------
 
 
-def _cosine_rank(query_vec: np.ndarray, doc_matrix: np.ndarray, ids: List[str]) -> List[str]:
+def _cosine_rank(
+    query_vec: np.ndarray, doc_matrix: np.ndarray, ids: List[str]
+) -> List[str]:
     sims = doc_matrix @ query_vec  # vectors are L2-normalised → dot == cosine
     order = np.argsort(-sims)
     return [ids[i] for i in order]
@@ -169,7 +173,9 @@ def _cosine_rank(query_vec: np.ndarray, doc_matrix: np.ndarray, ids: List[str]) 
 
 
 def _tokenize(text: str) -> List[str]:
-    return [t for t in "".join(c.lower() if c.isalnum() else " " for c in text).split() if t]
+    return [
+        t for t in "".join(c.lower() if c.isalnum() else " " for c in text).split() if t
+    ]
 
 
 class BM25:
@@ -186,7 +192,8 @@ class BM25:
                 self.df[term] = self.df.get(term, 0) + 1
         n = len(docs)
         self.idf = {
-            term: math.log(1 + (n - df + 0.5) / (df + 0.5)) for term, df in self.df.items()
+            term: math.log(1 + (n - df + 0.5) / (df + 0.5))
+            for term, df in self.df.items()
         }
 
     def rank(self, query: str, ids: List[str]) -> List[str]:
@@ -209,7 +216,9 @@ class BM25:
         return [ids[i] for i in np.argsort(-scores)]
 
 
-def reciprocal_rank_fusion(rankings: List[List[str]], ids: List[str], k: int = 60) -> List[str]:
+def reciprocal_rank_fusion(
+    rankings: List[List[str]], ids: List[str], k: int = 60
+) -> List[str]:
     """Combine multiple ranked lists into one via RRF (the standard hybrid fusion)."""
     fused: Dict[str, float] = {cid: 0.0 for cid in ids}
     for ranking in rankings:
@@ -227,10 +236,14 @@ def run_eval(model=None) -> Dict[str, Dict[str, float]]:
     ids = [c.chunk_id for c in chunks]
 
     def embed(texts: List[str]) -> np.ndarray:
-        return np.asarray(model.encode(texts, normalize_embeddings=True, show_progress_bar=False))
+        return np.asarray(
+            model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        )
 
     baseline_docs = embed([c.content for c in chunks])
-    contextual_docs = embed([build_contextual_text(chunks, i) for i in range(len(chunks))])
+    contextual_docs = embed(
+        [build_contextual_text(chunks, i) for i in range(len(chunks))]
+    )
     query_vecs = embed([q["query"] for q in queries])
     bm25 = BM25([c.content for c in chunks])
 
@@ -265,7 +278,9 @@ def format_report(results: Dict[str, Dict[str, float]]) -> str:
     base = results["baseline"]
     ctx = results["contextual"]
     hyb = results["contextual_hybrid"]
-    metrics = [f"recall@{k}" for k in K_VALUES] + ["mrr"] + [f"ndcg@{k}" for k in K_VALUES]
+    metrics = (
+        [f"recall@{k}" for k in K_VALUES] + ["mrr"] + [f"ndcg@{k}" for k in K_VALUES]
+    )
     lines = [
         "Retrieval relevance: traditional dense RAG vs contextual vs contextual+hybrid",
         "(identical embedding model + query set; only the retrieval strategy differs)",

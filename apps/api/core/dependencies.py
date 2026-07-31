@@ -38,10 +38,6 @@ class ServiceContainer:
     voice_service: Any = None
     enhanced_voice_service: Any = None
 
-    # Multi-agent
-    doc_intelligence_agents: Any = None
-    doc_intelligence_coordinator: Any = None
-
 
 def _get_container(request: Request) -> ServiceContainer:
     return request.app.state.services

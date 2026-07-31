@@ -9,7 +9,7 @@ import logging
 from typing import Any, Callable, Coroutine, Dict, Optional
 
 from apps.api.core.database import AsyncSessionLocal
-from apps.api.models.meeting import MeetingSummary
+from apps.api.models.meeting import ActionItem, MeetingSummary
 from apps.api.services.meeting.summary_agent import SummaryAgent
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class SummaryPipeline:
                     action_items=action_items,
                     nudges=nudges,
                     research_summary=research_summary,
+                    meeting_id=meeting_id,
                 )
 
                 await _notify({"type": "summary_progress", "step": "saving"})
@@ -65,7 +66,43 @@ class SummaryPipeline:
                     decisions_summary=result.get("decisions_summary", []),
                 )
                 session.add(summary)
+
+                # Persist LLM-extracted action items as real rows, deduped
+                # against already-logged items (case-insensitive description).
+                existing_desc = {
+                    (a.get("description") or a.get("item") or "").strip().lower()
+                    for a in (action_items or [])
+                }
+                existing_desc.discard("")
+                new_items = 0
+                for item in result.get("action_items", []) or []:
+                    desc = (item.get("item") or item.get("description") or "").strip()
+                    if not desc or desc.lower() in existing_desc:
+                        continue
+                    existing_desc.add(desc.lower())
+                    priority = item.get("priority")
+                    if priority not in ("high", "medium", "low"):
+                        priority = "medium"
+                    assignee = (item.get("assignee") or "").strip()
+                    if not assignee or assignee.upper() in ("TBD", "UNASSIGNED"):
+                        assignee = None
+                    session.add(
+                        ActionItem(
+                            meeting_id=meeting_id,
+                            description=desc,
+                            assignee=assignee,
+                            priority=priority,
+                            status="pending",
+                        )
+                    )
+                    new_items += 1
+
                 await session.commit()
+                if new_items:
+                    logger.info(
+                        f"[Summary {meeting_id}] Persisted {new_items} "
+                        "extracted action items"
+                    )
 
                 # Mirror the completed meeting into the Neo4j knowledge graph as a
                 # typed subgraph (Meeting → Decisions / ActionItems / ResearchTopics /
@@ -86,11 +123,44 @@ class SummaryPipeline:
                         decisions=result.get("decisions_summary", decisions),
                         action_items=result.get("action_items", action_items),
                         research_topics=[t for t in topics if t],
-                        utterance_count=len(transcript_text.split()) if transcript_text else 0,
+                        utterance_count=len(transcript_text.split())
+                        if transcript_text
+                        else 0,
                         owner_id=owner_id,
                     )
                 except Exception as kg_err:
                     logger.warning(f"[Summary {meeting_id}] KG sync skipped: {kg_err}")
+
+                # Long-term memory: distill this meeting into the vector
+                # knowledge base so future meetings, Ask Donna, and the
+                # context agent can draw on it — with citations back here.
+                try:
+                    from apps.api.services.meeting.memory_indexer import (
+                        memory_indexer,
+                    )
+
+                    utterances = []
+                    if transcript_text:
+                        utterances = [
+                            {
+                                "speaker": line.split(":", 1)[0],
+                                "text": line.split(":", 1)[1].strip(),
+                            }
+                            for line in transcript_text.splitlines()
+                            if ":" in line
+                        ]
+                    await memory_indexer.index_meeting(
+                        meeting_id=meeting_id,
+                        meeting_title=meeting_title,
+                        summary_text=result.get("executive_summary", ""),
+                        decisions=decisions or result.get("decisions_summary", []),
+                        utterances=utterances,
+                        owner_id=owner_id,
+                    )
+                except Exception as mem_err:
+                    logger.warning(
+                        f"[Summary {meeting_id}] memory indexing skipped: {mem_err}"
+                    )
 
                 logger.info(f"[Summary {meeting_id}] Complete")
                 await _notify({"type": "summary_completed"})

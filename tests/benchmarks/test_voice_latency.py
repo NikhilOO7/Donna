@@ -28,7 +28,10 @@ def _bucket_count(stage: str, le: str) -> float:
 def _count(stage: str) -> float:
     for metric in VOICE_LATENCY_SECONDS.collect():
         for s in metric.samples:
-            if s.name == "voice_latency_seconds_count" and s.labels.get("stage") == stage:
+            if (
+                s.name == "voice_latency_seconds_count"
+                and s.labels.get("stage") == stage
+            ):
                 return s.value
     return 0.0
 

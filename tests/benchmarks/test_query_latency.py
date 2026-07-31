@@ -49,7 +49,7 @@ class TestQueryPipelineBenchmark:
         """Full RAG query should complete in <100ms (mocked)."""
         with (
             patch(
-                "apps.api.services.rag.llamaindex_service.OpenAI",
+                "apps.api.services.rag.rag_service.OpenAI",
                 return_value=mock_services["openai"],
             ),
             patch(
@@ -61,7 +61,7 @@ class TestQueryPipelineBenchmark:
                 return_value=mock_services["openai"],
             ),
         ):
-            from apps.api.services.rag.llamaindex_service import RAGService
+            from apps.api.services.rag.rag_service import RAGService
 
             service = RAGService()
             service.client = mock_services["openai"]

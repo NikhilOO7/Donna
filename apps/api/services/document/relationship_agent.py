@@ -100,7 +100,7 @@ class RelationshipAgent:
 
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=settings.model_fast,
                 messages=[
                     {
                         "role": "system",

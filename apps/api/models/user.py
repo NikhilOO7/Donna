@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID  # noqa: N811
 from sqlalchemy.orm import Mapped, mapped_column
@@ -68,6 +68,11 @@ class UserResponse(BaseModel):
     email: EmailStr
     full_name: str = ""
     is_active: bool = True
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _uuid_to_str(cls, v):
+        return str(v)
 
 
 class TokenResponse(BaseModel):

@@ -182,7 +182,9 @@ class EnhancedDocumentPipeline:
         chunk_entity_pairs: List[Tuple[DocumentChunk, List[Entity]]] = []
         all_persisted_entities: List[Entity] = []
         for chunk_obj, chunk_data in zip(persisted_chunks, original_chunks):
-            ents_meta = (chunk_to_row(chunk_data)["metadata"] or {}).get("entities") or []
+            ents_meta = (chunk_to_row(chunk_data)["metadata"] or {}).get(
+                "entities"
+            ) or []
             if not ents_meta:
                 chunk_entity_pairs.append((chunk_obj, []))
                 continue

@@ -50,6 +50,9 @@ def mock_services():
         "metadata": {"section": "Architecture", "word_count": 9},
     }
     mock_qdrant.search.return_value = [mock_search_result]
+    _qp = MagicMock()
+    _qp.points = [mock_search_result]
+    mock_qdrant.query_points.return_value = _qp
 
     return {
         "openai": mock_openai,
@@ -113,7 +116,7 @@ class TestRAGPipelineFlow:
         """Step 3: RAGService generates an answer from search results."""
         with (
             patch(
-                "apps.api.services.rag.llamaindex_service.OpenAI",
+                "apps.api.services.rag.rag_service.OpenAI",
                 return_value=mock_services["openai"],
             ),
             patch(
@@ -125,7 +128,7 @@ class TestRAGPipelineFlow:
                 return_value=mock_services["openai"],
             ),
         ):
-            from apps.api.services.rag.llamaindex_service import RAGService
+            from apps.api.services.rag.rag_service import RAGService
 
             service = RAGService()
             service.client = mock_services["openai"]
@@ -155,14 +158,14 @@ class TestRAGPipelineFlow:
                 return_value=mock_services["qdrant"],
             ),
             patch(
-                "apps.api.services.rag.llamaindex_service.OpenAI",
+                "apps.api.services.rag.rag_service.OpenAI",
                 return_value=mock_services["openai"],
             ),
         ):
             from apps.api.services.document.embeddings import EmbeddingService
             from apps.api.services.document.processor import DocumentProcessor
             from apps.api.services.document.vector_store import VectorStoreService
-            from apps.api.services.rag.llamaindex_service import RAGService
+            from apps.api.services.rag.rag_service import RAGService
 
             # 1. Process document into chunks - write to temp file first
             processor = DocumentProcessor()
@@ -227,7 +230,7 @@ class TestRAGEdgeCases:
 
         with (
             patch(
-                "apps.api.services.rag.llamaindex_service.OpenAI",
+                "apps.api.services.rag.rag_service.OpenAI",
                 return_value=mock_services["openai"],
             ),
             patch(
@@ -239,7 +242,7 @@ class TestRAGEdgeCases:
                 return_value=mock_services["openai"],
             ),
         ):
-            from apps.api.services.rag.llamaindex_service import RAGService
+            from apps.api.services.rag.rag_service import RAGService
 
             service = RAGService()
             service.client = mock_services["openai"]
@@ -257,7 +260,7 @@ class TestRAGEdgeCases:
         """RAGService should maintain conversation context across queries."""
         with (
             patch(
-                "apps.api.services.rag.llamaindex_service.OpenAI",
+                "apps.api.services.rag.rag_service.OpenAI",
                 return_value=mock_services["openai"],
             ),
             patch(
@@ -269,7 +272,7 @@ class TestRAGEdgeCases:
                 return_value=mock_services["openai"],
             ),
         ):
-            from apps.api.services.rag.llamaindex_service import RAGService
+            from apps.api.services.rag.rag_service import RAGService
 
             service = RAGService()
             service.client = mock_services["openai"]

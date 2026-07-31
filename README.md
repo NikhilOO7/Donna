@@ -54,7 +54,7 @@ Three temporal phases, fifteen specialized agents, one continuous data flow. Eac
 - **Multi-modal document intelligence** — Docling for layout, pdfplumber for tables, EasyOCR for charts, GPT-4o-mini to normalize. Tables and images become first-class searchable elements.
 - **Real knowledge graph (Neo4j)** — Cypher traversal during meetings. Entities deduped via `MERGE`. Multi-hop paths drive in-meeting nudges.
 - **Five parallel meeting agents** — Scribe, Context, Insight, Fact-check, KG-traversal. Run via `asyncio.gather` after each utterance.
-- **Real voice pipeline** — LiveKit WebRTC, Deepgram nova-3 streaming STT, Cartesia sonic-2 TTS. Worker auto-joins `meeting-<id>` rooms with reconnect + retry.
+- **Real voice pipeline** — LiveKit WebRTC, Deepgram nova-2-meeting streaming STT, Cartesia sonic-2 TTS. Worker auto-joins `meeting-<id>` rooms with reconnect + retry.
 - **Resilience first** — Circuit breakers per provider, retry with backoff, structured logs, Prometheus, rate limiting.
 - **Live UI updates** — Per-meeting WebSocket fans nudges + utterances to the React UI. 30s heartbeat is the safety net only.
 
@@ -65,8 +65,8 @@ Three temporal phases, fifteen specialized agents, one continuous data flow. Eac
 | Layer | Technology |
 |---|---|
 | **Backend** | FastAPI · SQLAlchemy 2.0 async · asyncpg · PostgreSQL 15 · Redis 7 · Qdrant · Neo4j 5 · MinIO · structlog · Prometheus · slowapi · tenacity |
-| **AI / ML** | OpenAI GPT-4 / 4o-mini · text-embedding-3-small · LlamaIndex · CrewAI · spaCy NER · Docling · EasyOCR · NetworkX · sentence-transformers |
-| **Voice / Real-time** | LiveKit WebRTC · livekit-agents · Deepgram nova-3 · Cartesia sonic-2 · Silero VAD · WebSocket fan-out |
+| **AI / ML** | OpenAI GPT-4 / 4o-mini · text-embedding-3-small · spaCy NER · Docling · EasyOCR · NetworkX · sentence-transformers |
+| **Voice / Real-time** | LiveKit WebRTC · livekit-agents · Deepgram nova-2-meeting · Cartesia sonic-2 · Silero VAD · WebSocket fan-out |
 | **External / Frontend** | Exa web search · Postmark email · Next.js 14 · React 18 · TypeScript · Tailwind CSS · livekit-client |
 
 ---
@@ -520,7 +520,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Built on the shoulders of: FastAPI · LiveKit · Deepgram · Cartesia · OpenAI · Exa · Neo4j · Qdrant · LlamaIndex · CrewAI · Docling · spaCy.
+Built on the shoulders of: FastAPI · LiveKit · Deepgram · Cartesia · OpenAI · Exa · Neo4j · Qdrant · Docling · spaCy.
 
 ---
 

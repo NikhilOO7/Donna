@@ -61,7 +61,10 @@ class TestChunkToRow:
         chunk = ProcessedChunk(
             content="[TABLE]\n| a | b |",
             metadata=ChunkMetadata(
-                chunk_index=9, start_char=0, end_char=16, is_table=True,
+                chunk_index=9,
+                start_char=0,
+                end_char=16,
+                is_table=True,
                 semantic_type="table",
             ),
         )
@@ -88,9 +91,7 @@ class TestChunkToRow:
 
     def test_returns_exact_persistence_shape(self):
         """Every key add_chunks reads must be present for both input types."""
-        pc = chunk_to_row(
-            ProcessedChunk(content="x", metadata=ChunkMetadata(0, 0, 1))
-        )
+        pc = chunk_to_row(ProcessedChunk(content="x", metadata=ChunkMetadata(0, 0, 1)))
         dc = chunk_to_row({"content": "x", "metadata": {}})
         assert EXPECTED_KEYS <= set(pc)
         assert EXPECTED_KEYS <= set(dc)

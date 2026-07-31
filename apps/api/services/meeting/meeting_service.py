@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import cast, func, literal, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB, JSONPATH
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -29,6 +30,60 @@ class MeetingService:
 
     # -- Meetings ----------------------------------------------------------
 
+    @staticmethod
+    def parse_transcript_text(text: str) -> List[Dict[str, str]]:
+        """Parse a pasted/uploaded transcript into speaker-attributed utterances.
+
+        Handles the common shapes:
+        - "Name: what they said"
+        - "[00:12:34] Name: what they said" / "(12:34) Name: ..."
+        - WebVTT / SRT (headers, cue numbers, and timestamp lines stripped)
+        - bare lines (appended to the previous speaker's utterance)
+        """
+        import re
+
+        ts_line = re.compile(
+            r"^\s*(\d+\s*$|WEBVTT|\d{1,2}:\d{2}(:\d{2})?[.,]?\d*\s*-->\s*.*)",
+            re.IGNORECASE,
+        )
+        leading_ts = re.compile(r"^\s*[\[(]?\d{1,2}:\d{2}(:\d{2})?[\])]?\s*")
+        speaker_line = re.compile(r"^([A-Za-z][\w .'\-]{0,60}?)\s*:\s+(.+)$")
+
+        utterances: List[Dict[str, str]] = []
+        for raw in (text or "").splitlines():
+            line = raw.strip()
+            if not line or ts_line.match(line):
+                continue
+            line = leading_ts.sub("", line).strip()
+            if not line:
+                continue
+
+            m = speaker_line.match(line)
+            if m:
+                utterances.append(
+                    {"speaker": m.group(1).strip(), "text": m.group(2).strip()}
+                )
+            elif utterances:
+                # Continuation of the previous utterance
+                utterances[-1]["text"] += " " + line
+            else:
+                utterances.append({"speaker": "Speaker", "text": line})
+
+        return [u for u in utterances if u["text"]]
+
+    @staticmethod
+    def normalize_attendees(attendees: Optional[list]) -> list:
+        """Lowercase attendee emails so invited-member lookups match reliably."""
+        out = []
+        for a in attendees or []:
+            if not isinstance(a, dict):
+                continue
+            entry = dict(a)
+            if entry.get("email"):
+                entry["email"] = str(entry["email"]).strip().lower()
+            out.append(entry)
+        return out
+
     async def create_meeting(
         self,
         session: AsyncSession,
@@ -37,15 +92,27 @@ class MeetingService:
         attendees: Optional[list] = None,
         scheduled_at: Optional[datetime] = None,
         owner_id: Optional[UUID] = None,
+        meeting_type: Optional[str] = None,
+        agenda: Optional[list] = None,
     ) -> Meeting:
         try:
+            agenda_items = [
+                {
+                    "title": str(a.get("title") if isinstance(a, dict) else a)[:300],
+                    "status": "pending",
+                }
+                for a in (agenda or [])
+                if str(a.get("title") if isinstance(a, dict) else a).strip()
+            ][:12]
             meeting = Meeting(
                 title=title,
                 description=description,
-                attendees=attendees or [],
+                attendees=self.normalize_attendees(attendees),
                 scheduled_at=scheduled_at,
                 status="scheduled",
                 owner_id=owner_id,
+                meeting_type=(meeting_type or None),
+                agenda=agenda_items,
             )
             session.add(meeting)
             await session.commit()
@@ -75,6 +142,20 @@ class MeetingService:
             return (False, None)
         return (True, row.owner_id)
 
+    async def get_access_row(
+        self, session: AsyncSession, meeting_id: UUID
+    ) -> tuple[bool, Optional[UUID], list]:
+        """Cheaply fetch (exists, owner_id, attendees) for access decisions."""
+        result = await session.execute(
+            select(Meeting.id, Meeting.owner_id, Meeting.attendees).where(
+                Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
+            )
+        )
+        row = result.first()
+        if row is None:
+            return (False, None, [])
+        return (True, row.owner_id, row.attendees or [])
+
     async def get_meeting(
         self, session: AsyncSession, meeting_id: UUID
     ) -> Optional[Meeting]:
@@ -97,6 +178,79 @@ class MeetingService:
             logger.error(f"Failed to get meeting {meeting_id}: {e}")
             return None
 
+    async def get_dispatch_state(
+        self, session: AsyncSession, meeting_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """Slim state for the agent dispatcher's hot path.
+
+        Loads ONLY what the meeting agents need — transcript utterances,
+        research topics, owner, attendees, attached document ids — via
+        targeted selects instead of ``get_meeting``'s full eager tree
+        (nudges, decisions, action items, summary). On a long meeting the
+        difference is dozens of rows per utterance.
+        """
+        try:
+            from apps.api.models.meeting import MeetingDocument, ResearchBrief
+
+            row = (
+                await session.execute(
+                    select(Meeting.owner_id, Meeting.attendees, Meeting.agenda).where(
+                        Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
+                    )
+                )
+            ).first()
+            if row is None:
+                return None
+
+            # Only the recent window leaves Postgres — agents look at the
+            # last few utterances, and shipping a 2-hour meeting's full
+            # JSON array on every dispatch cycle scales with meeting
+            # length. Lax jsonpath handles arrays shorter than the window.
+            t_row = (
+                await session.execute(
+                    select(
+                        func.jsonb_path_query_array(
+                            cast(MeetingTranscript.utterances, JSONB),
+                            cast(literal("$[last-11 to last]"), JSONPATH),
+                        ),
+                        func.jsonb_array_length(
+                            cast(MeetingTranscript.utterances, JSONB)
+                        ),
+                    ).where(MeetingTranscript.meeting_id == meeting_id)
+                )
+            ).first()
+            transcript = t_row[0] if t_row else None
+            utterance_count = int(t_row[1] or 0) if t_row else 0
+
+            topics = (
+                await session.execute(
+                    select(ResearchBrief.topics).where(
+                        ResearchBrief.meeting_id == meeting_id,
+                        ResearchBrief.status == "completed",
+                    )
+                )
+            ).scalar_one_or_none()
+
+            doc_rows = await session.execute(
+                select(MeetingDocument.document_id).where(
+                    MeetingDocument.meeting_id == meeting_id
+                )
+            )
+
+            attendees = row.attendees if isinstance(row.attendees, list) else []
+            return {
+                "owner_id": str(row.owner_id) if row.owner_id else None,
+                "attendees": attendees,
+                "agenda": row.agenda if isinstance(row.agenda, list) else [],
+                "utterances": list(transcript or []),
+                "utterance_count": utterance_count,
+                "research_topics": list(topics or []),
+                "attached_doc_ids": {str(r[0]) for r in doc_rows.all()},
+            }
+        except Exception as e:
+            logger.error(f"Failed to load dispatch state: {e}")
+            return None
+
     async def list_meetings(
         self,
         session: AsyncSession,
@@ -104,11 +258,21 @@ class MeetingService:
         limit: int = 50,
         status: Optional[str] = None,
         owner_id: Optional[UUID] = None,
+        member_email: Optional[str] = None,
     ) -> List[Meeting]:
+        """List meetings the user owns — plus, when ``member_email`` is given,
+        meetings they were invited to (email present in attendees)."""
         try:
             query = select(Meeting).where(Meeting.deleted_at.is_(None))
             if owner_id is not None:
-                query = query.where(Meeting.owner_id == owner_id)
+                conds = [Meeting.owner_id == owner_id]
+                if member_email:
+                    conds.append(
+                        cast(Meeting.attendees, JSONB).contains(
+                            [{"email": member_email.lower()}]
+                        )
+                    )
+                query = query.where(or_(*conds))
             if status:
                 query = query.where(Meeting.status == status)
             query = query.offset(skip).limit(limit).order_by(Meeting.created_at.desc())
@@ -117,6 +281,26 @@ class MeetingService:
         except Exception as e:
             logger.error(f"Failed to list meetings: {e}")
             return []
+
+    async def update_attendees(
+        self, session: AsyncSession, meeting_id: UUID, attendees: List[Dict[str, Any]]
+    ) -> bool:
+        """Replace the meeting's attendee list (voice-setup registration)."""
+        try:
+            await session.execute(
+                update(Meeting)
+                .where(Meeting.id == meeting_id)
+                .values(attendees=attendees, updated_at=datetime.now(timezone.utc))
+            )
+            await session.commit()
+            logger.info(
+                f"Meeting {meeting_id} attendees updated ({len(attendees)} entries)"
+            )
+            return True
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to update attendees: {e}")
+            return False
 
     async def update_meeting_status(
         self, session: AsyncSession, meeting_id: UUID, status: str
@@ -219,6 +403,75 @@ class MeetingService:
             logger.error(f"Failed to add action item: {e}")
             raise
 
+    async def set_decision_status(
+        self, session: AsyncSession, meeting_id: UUID, decision_id: UUID, status: str
+    ) -> bool:
+        """Move a decision through its lifecycle (pending → in_progress → done)."""
+        try:
+            result = await session.execute(
+                update(Decision)
+                .where(Decision.id == decision_id, Decision.meeting_id == meeting_id)
+                .values(status=status)
+            )
+            await session.commit()
+            return bool(result.rowcount)
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to update decision status: {e}")
+            raise
+
+    async def set_action_item_status(
+        self, session: AsyncSession, meeting_id: UUID, item_id: UUID, status: str
+    ) -> bool:
+        """Move an action item through its lifecycle (open → in_progress → done)."""
+        try:
+            result = await session.execute(
+                update(ActionItem)
+                .where(ActionItem.id == item_id, ActionItem.meeting_id == meeting_id)
+                .values(status=status)
+            )
+            await session.commit()
+            return bool(result.rowcount)
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to update action item status: {e}")
+            raise
+
+    async def list_open_action_items(
+        self, session: AsyncSession, owner_id: Optional[UUID], limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Cross-meeting open items — the dashboard's "what's still owed" view."""
+        try:
+            query = (
+                select(ActionItem, Meeting.title)
+                .join(Meeting, Meeting.id == ActionItem.meeting_id)
+                .where(ActionItem.status != "done", Meeting.deleted_at.is_(None))
+                .order_by(
+                    ActionItem.deadline.asc().nulls_last(),
+                    ActionItem.created_at.desc(),
+                )
+                .limit(limit)
+            )
+            if owner_id:
+                query = query.where(Meeting.owner_id == owner_id)
+            rows = (await session.execute(query)).all()
+            return [
+                {
+                    "id": str(item.id),
+                    "meeting_id": str(item.meeting_id),
+                    "meeting_title": title,
+                    "description": item.description,
+                    "assignee": item.assignee,
+                    "deadline": item.deadline.isoformat() if item.deadline else None,
+                    "priority": item.priority,
+                    "status": item.status,
+                }
+                for item, title in rows
+            ]
+        except Exception as e:
+            logger.error(f"Failed to list open action items: {e}")
+            return []
+
     # -- Nudges ------------------------------------------------------------
 
     async def add_nudge(
@@ -253,7 +506,75 @@ class MeetingService:
             logger.error(f"Failed to add nudge: {e}")
             raise
 
+    async def set_nudge_feedback(
+        self,
+        session: AsyncSession,
+        meeting_id: UUID,
+        nudge_id: UUID,
+        *,
+        dismissed: Optional[bool] = None,
+        pinned: Optional[bool] = None,
+    ) -> Optional[Nudge]:
+        """Set/clear dismissed_at or pinned_at on a nudge.
+
+        Scoped by meeting_id so a nudge can only be modified through its
+        own (owner-checked) meeting.
+        """
+        try:
+            result = await session.execute(
+                select(Nudge).where(
+                    Nudge.id == nudge_id, Nudge.meeting_id == meeting_id
+                )
+            )
+            nudge = result.scalar_one_or_none()
+            if nudge is None:
+                return None
+
+            now = datetime.now(timezone.utc)
+            if dismissed is not None:
+                nudge.dismissed_at = now if dismissed else None
+            if pinned is not None:
+                nudge.pinned_at = now if pinned else None
+
+            await session.commit()
+            await session.refresh(nudge)
+            return nudge
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to set nudge feedback: {e}")
+            raise
+
     # -- Transcript --------------------------------------------------------
+
+    async def set_transcript(
+        self,
+        session: AsyncSession,
+        meeting_id: UUID,
+        utterances: List[Dict[str, str]],
+    ) -> MeetingTranscript:
+        """Create the meeting's transcript wholesale (transcript import)."""
+        try:
+            full_text = "\n".join(
+                f"{u.get('speaker', 'Speaker')}: {u.get('text', '')}"
+                for u in utterances
+            )
+            transcript = MeetingTranscript(
+                meeting_id=meeting_id,
+                utterances=utterances,
+                full_text=full_text,
+            )
+            session.add(transcript)
+            await session.commit()
+            await session.refresh(transcript)
+            logger.info(
+                f"Imported transcript for meeting {meeting_id} "
+                f"({len(utterances)} utterances)"
+            )
+            return transcript
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to import transcript: {e}")
+            raise
 
     async def append_utterance(
         self,

@@ -14,6 +14,7 @@ class QueryResponse(BaseModel):
     sources: List[Dict[str, Any]]
     conversation_id: str
     context_level: str
+    confidence: Optional[float] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

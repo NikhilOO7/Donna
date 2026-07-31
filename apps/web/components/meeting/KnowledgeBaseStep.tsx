@@ -8,12 +8,15 @@ import DocumentElementsView from './DocumentElementsView';
 
 type DetailTab = 'graph' | 'elements';
 
-export default function KnowledgeBaseStep() {
+type Notice = { kind: 'info' | 'error'; text: string } | null;
+
+export default function KnowledgeBaseStep({ meetingId }: { meetingId?: string }) {
   const [documents, setDocuments] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('graph');
+  const [notice, setNotice] = useState<Notice>(null);
 
   const fetchDocs = async () => {
     try {
@@ -28,19 +31,42 @@ export default function KnowledgeBaseStep() {
     fetchDocs();
   }, []);
 
+  // Poll while any document is still processing so spinners resolve on their own
+  const hasProcessing = documents.some((d) => d.processing_status === 'processing');
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const t = setInterval(fetchDocs, 4000);
+    return () => clearInterval(t);
+  }, [hasProcessing]);
+
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
-    try {
-      for (const file of Array.from(files)) {
-        await apiClient.uploadDocument(file, true);
+    setNotice(null);
+    const duplicates: string[] = [];
+    const failures: string[] = [];
+    for (const file of Array.from(files)) {
+      try {
+        await apiClient.uploadDocument(file, true, meetingId);
+      } catch (error: any) {
+        if (error?.response?.status === 409) {
+          duplicates.push(file.name);
+        } else {
+          console.error('Upload failed:', error);
+          failures.push(file.name);
+        }
       }
-      fetchDocs();
-    } catch (error) {
-      console.error('Upload failed:', error);
-    } finally {
-      setUploading(false);
     }
+    if (failures.length > 0) {
+      setNotice({ kind: 'error', text: `Upload failed for: ${failures.join(', ')}` });
+    } else if (duplicates.length > 0) {
+      setNotice({
+        kind: 'info',
+        text: `Already in your knowledge base: ${duplicates.join(', ')}`,
+      });
+    }
+    fetchDocs();
+    setUploading(false);
   };
 
   const handleDelete = async (docId: string) => {
@@ -57,8 +83,10 @@ export default function KnowledgeBaseStep() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Upload company documents, reports, or meeting materials. These will be available to AI agents
-        during your meeting for context-aware answers.
+        Upload company documents, reports, or meeting materials.
+        {meetingId
+          ? ' Files uploaded here are attached to this meeting — Donna ranks them ahead of your general knowledge base.'
+          : ' These will be available to AI agents during your meeting for context-aware answers.'}
       </p>
 
       {/* Compact Upload Area */}
@@ -96,6 +124,19 @@ export default function KnowledgeBaseStep() {
           Browse Files
         </label>
       </div>
+
+      {/* Upload notice */}
+      {notice && (
+        <div
+          className={`px-3.5 py-2.5 rounded-lg text-sm border ${
+            notice.kind === 'error'
+              ? 'bg-red-50 border-red-200 text-red-700'
+              : 'bg-blue-50 border-blue-200 text-blue-700'
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
 
       {/* Document List */}
       {documents.length > 0 && (

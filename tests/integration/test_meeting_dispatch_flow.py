@@ -4,10 +4,10 @@ End-to-end integration test for the DURING-phase meeting dispatch loop.
 Exercises the real ``agent_dispatcher.dispatch`` orchestration with
 every external dependency mocked:
 
-  * Five agents (scribe, context, insight, fact-check, kg-query) are
-    patched to return canned nudges.
-  * ``meeting_service.get_meeting`` returns a synthetic meeting with
-    a transcript + research brief.
+  * The seven agents (scribe, context, insight, fact-check, kg-query,
+    activation, memory) are patched to return canned nudges.
+  * ``meeting_service.get_dispatch_state`` returns a synthetic slim
+    state (utterances + research topics + attendees).
   * ``meeting_service.add_nudge`` is recorded so we can assert what
     was persisted.
   * ``meeting_hub.broadcast`` is recorded so we can assert each
@@ -40,20 +40,20 @@ from apps.api.services.meeting.agent_dispatcher import agent_dispatcher
 # ---- Test fixtures --------------------------------------------------------
 
 
-@dataclass
-class _FakeTranscript:
-    utterances: List[Dict[str, Any]]
-
-
-@dataclass
-class _FakeResearch:
-    topics: List[Dict[str, Any]]
-
-
-@dataclass
-class _FakeMeeting:
-    transcript: Optional[_FakeTranscript] = None
-    research_brief: Optional[_FakeResearch] = None
+def _make_state(
+    utterances: List[Dict[str, Any]],
+    research_topics: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Shape returned by ``meeting_service.get_dispatch_state``."""
+    return {
+        "utterances": utterances,
+        "utterance_count": len(utterances),
+        "owner_id": str(uuid.uuid4()),
+        "attendees": [],
+        "agenda": [],
+        "attached_doc_ids": [],
+        "research_topics": research_topics or [],
+    }
 
 
 @dataclass
@@ -84,6 +84,41 @@ def _make_canned_nudge(nudge_type: str, title: str, agent: str) -> Dict[str, Any
     }
 
 
+def _fake_session_ctx() -> MagicMock:
+    fake_session = AsyncMock()
+    session_ctx = MagicMock()
+    session_ctx.__aenter__ = AsyncMock(return_value=fake_session)
+    session_ctx.__aexit__ = AsyncMock(return_value=None)
+    return session_ctx
+
+
+def _patch_dispatcher(mock_ms_state):
+    """Patch every dispatcher dependency; returns the patch context + mocks."""
+    patches = {
+        "ms": patch("apps.api.services.meeting.agent_dispatcher.meeting_service"),
+        "hub": patch("apps.api.services.meeting.agent_dispatcher.meeting_hub"),
+        "scribe": patch("apps.api.services.meeting.agent_dispatcher.scribe_agent"),
+        "context": patch("apps.api.services.meeting.agent_dispatcher.context_agent"),
+        "insight": patch("apps.api.services.meeting.agent_dispatcher.insight_agent"),
+        "fc": patch("apps.api.services.meeting.agent_dispatcher.fact_check_agent"),
+        "kg": patch("apps.api.services.meeting.agent_dispatcher.kg_query_agent"),
+        "activation": patch(
+            "apps.api.services.meeting.agent_dispatcher.activation_agent"
+        ),
+        "memory": patch("apps.api.services.meeting.agent_dispatcher.memory_agent"),
+        "agenda": patch("apps.api.services.meeting.agent_dispatcher.agenda_agent"),
+        "suppress": patch(
+            "apps.api.services.meeting.agent_dispatcher.should_suppress",
+            new=AsyncMock(return_value=False),
+        ),
+        "session": patch(
+            "apps.api.services.meeting.agent_dispatcher.AsyncSessionLocal",
+            return_value=_fake_session_ctx(),
+        ),
+    }
+    return patches
+
+
 # ---- The test --------------------------------------------------------------
 
 
@@ -92,19 +127,17 @@ class TestMeetingDispatchFlow:
     async def test_full_dispatch_loop_persists_and_broadcasts_all_nudges(self):
         meeting_id = str(uuid.uuid4())
 
-        fake_meeting = _FakeMeeting(
-            transcript=_FakeTranscript(
-                utterances=[
-                    {"speaker": "Alice", "text": "Let's pick Beacon Cloud."},
-                    {
-                        "speaker": "Bob",
-                        "text": "Their compliance posture grew 15% last quarter.",
-                    },
-                ]
-            ),
-            research_brief=_FakeResearch(
-                topics=[{"topic": "compliance posture", "summary": "Beacon leads."}]
-            ),
+        state = _make_state(
+            utterances=[
+                {"speaker": "Alice", "text": "Let's pick Beacon Cloud."},
+                {
+                    "speaker": "Bob",
+                    "text": "Their compliance posture grew 15% last quarter.",
+                },
+            ],
+            research_topics=[
+                {"topic": "compliance posture", "summary": "Beacon leads."}
+            ],
         )
 
         # Track what add_nudge persisted
@@ -137,38 +170,22 @@ class TestMeetingDispatchFlow:
         async def fake_broadcast(mid: str, payload: Dict[str, Any]):
             broadcasts.append({"meeting_id": mid, "payload": payload})
 
-        # Fake DB session context manager
-        fake_session = AsyncMock()
-        session_ctx = MagicMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=fake_session)
-        session_ctx.__aexit__ = AsyncMock(return_value=None)
-
+        p = _patch_dispatcher(state)
         with (
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.AsyncSessionLocal",
-                return_value=session_ctx,
-            ),
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.meeting_service"
-            ) as mock_ms,
-            patch("apps.api.services.meeting.agent_dispatcher.meeting_hub") as mock_hub,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.scribe_agent"
-            ) as mock_scribe,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.context_agent"
-            ) as mock_context,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.insight_agent"
-            ) as mock_insight,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.fact_check_agent"
-            ) as mock_fc,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.kg_query_agent"
-            ) as mock_kg,
+            p["session"],
+            p["ms"] as mock_ms,
+            p["hub"] as mock_hub,
+            p["scribe"] as mock_scribe,
+            p["context"] as mock_context,
+            p["insight"] as mock_insight,
+            p["fc"] as mock_fc,
+            p["kg"] as mock_kg,
+            p["activation"] as mock_activation,
+            p["memory"] as mock_memory,
+            p["agenda"] as mock_agenda,
+            p["suppress"],
         ):
-            mock_ms.get_meeting = AsyncMock(return_value=fake_meeting)
+            mock_ms.get_dispatch_state = AsyncMock(return_value=state)
             mock_ms.add_nudge = AsyncMock(side_effect=fake_add_nudge)
             mock_hub.broadcast = AsyncMock(side_effect=fake_broadcast)
 
@@ -188,6 +205,9 @@ class TestMeetingDispatchFlow:
                 )
             )
             mock_fc.analyze = AsyncMock(return_value=None)  # no claim → no nudge
+            mock_activation.analyze = AsyncMock(return_value=None)
+            mock_memory.analyze = AsyncMock(return_value=None)
+            mock_agenda.analyze = AsyncMock(return_value=None)
             mock_kg.analyze = AsyncMock(
                 return_value=_make_canned_nudge(
                     "knowledge_graph", "Connection found", "kg_query_agent"
@@ -198,12 +218,14 @@ class TestMeetingDispatchFlow:
 
         # --- Assertions ---
 
-        # All five agents were invoked exactly once
+        # All seven agents were invoked exactly once
         mock_scribe.analyze.assert_awaited_once()
         mock_context.analyze.assert_awaited_once()
         mock_insight.analyze.assert_awaited_once()
         mock_fc.analyze.assert_awaited_once()
         mock_kg.analyze.assert_awaited_once()
+        mock_activation.analyze.assert_awaited_once()
+        mock_memory.analyze.assert_awaited_once()
 
         # Only the 4 agents that returned a nudge resulted in persistence
         assert len(persisted) == 4
@@ -225,14 +247,11 @@ class TestMeetingDispatchFlow:
 
     @pytest.mark.asyncio
     async def test_agent_exception_does_not_break_the_batch(self):
-        """If one agent raises, the other four still produce nudges."""
+        """If one agent raises, the others still produce nudges."""
         meeting_id = str(uuid.uuid4())
 
-        fake_meeting = _FakeMeeting(
-            transcript=_FakeTranscript(
-                utterances=[{"speaker": "A", "text": "Something to discuss here"}]
-            ),
-            research_brief=None,
+        state = _make_state(
+            utterances=[{"speaker": "A", "text": "Something to discuss here"}]
         )
 
         persisted: List[_PersistedNudge] = []
@@ -250,37 +269,22 @@ class TestMeetingDispatchFlow:
             persisted.append(n)
             return n
 
-        fake_session = AsyncMock()
-        session_ctx = MagicMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=fake_session)
-        session_ctx.__aexit__ = AsyncMock(return_value=None)
-
+        p = _patch_dispatcher(state)
         with (
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.AsyncSessionLocal",
-                return_value=session_ctx,
-            ),
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.meeting_service"
-            ) as mock_ms,
-            patch("apps.api.services.meeting.agent_dispatcher.meeting_hub") as mock_hub,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.scribe_agent"
-            ) as mock_scribe,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.context_agent"
-            ) as mock_context,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.insight_agent"
-            ) as mock_insight,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.fact_check_agent"
-            ) as mock_fc,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.kg_query_agent"
-            ) as mock_kg,
+            p["session"],
+            p["ms"] as mock_ms,
+            p["hub"] as mock_hub,
+            p["scribe"] as mock_scribe,
+            p["context"] as mock_context,
+            p["insight"] as mock_insight,
+            p["fc"] as mock_fc,
+            p["kg"] as mock_kg,
+            p["activation"] as mock_activation,
+            p["memory"] as mock_memory,
+            p["agenda"] as mock_agenda,
+            p["suppress"],
         ):
-            mock_ms.get_meeting = AsyncMock(return_value=fake_meeting)
+            mock_ms.get_dispatch_state = AsyncMock(return_value=state)
             mock_ms.add_nudge = AsyncMock(side_effect=fake_add_nudge)
             mock_hub.broadcast = AsyncMock()
 
@@ -292,6 +296,9 @@ class TestMeetingDispatchFlow:
                 return_value=_make_canned_nudge("insight", "I", "insight_agent")
             )
             mock_fc.analyze = AsyncMock(return_value=None)
+            mock_activation.analyze = AsyncMock(return_value=None)
+            mock_memory.analyze = AsyncMock(return_value=None)
+            mock_agenda.analyze = AsyncMock(return_value=None)
             mock_kg.analyze = AsyncMock(
                 return_value=_make_canned_nudge(
                     "knowledge_graph", "K", "kg_query_agent"
@@ -313,28 +320,16 @@ class TestMeetingDispatchFlow:
         """Empty meeting → dispatcher returns early, agents never run."""
         meeting_id = str(uuid.uuid4())
 
-        fake_meeting = _FakeMeeting(transcript=None)
-        fake_session = AsyncMock()
-        session_ctx = MagicMock()
-        session_ctx.__aenter__ = AsyncMock(return_value=fake_session)
-        session_ctx.__aexit__ = AsyncMock(return_value=None)
+        state = _make_state(utterances=[])
 
+        p = _patch_dispatcher(state)
         with (
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.AsyncSessionLocal",
-                return_value=session_ctx,
-            ),
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.meeting_service"
-            ) as mock_ms,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.scribe_agent"
-            ) as mock_scribe,
-            patch(
-                "apps.api.services.meeting.agent_dispatcher.context_agent"
-            ) as mock_context,
+            p["session"],
+            p["ms"] as mock_ms,
+            p["scribe"] as mock_scribe,
+            p["context"] as mock_context,
         ):
-            mock_ms.get_meeting = AsyncMock(return_value=fake_meeting)
+            mock_ms.get_dispatch_state = AsyncMock(return_value=state)
             mock_scribe.analyze = AsyncMock()
             mock_context.analyze = AsyncMock()
 

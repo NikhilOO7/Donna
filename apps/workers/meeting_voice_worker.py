@@ -81,6 +81,47 @@ _TTS_SAMPLE_RATE = 24000
 _TTS_CHANNELS = 1
 
 
+# -- Interim transcripts + barge-in signal ---------------------------------
+# Partials are broadcast straight onto the hub's Redis channel (no DB), and
+# every voice event stamps _last_voice_at so TTS playback can yield to humans.
+
+_partial_redis = None
+_partial_last: dict = {}
+_last_voice_at: dict = {}
+
+_PARTIAL_MIN_INTERVAL = 0.3  # seconds between partial broadcasts per speaker
+
+
+async def _publish_partial(meeting_id: str, speaker: str, text: str) -> None:
+    """Broadcast an in-progress utterance (ghost text) via the meeting hub."""
+    global _partial_redis
+    now = asyncio.get_event_loop().time()
+    key = f"{meeting_id}:{speaker}"
+    if now - _partial_last.get(key, 0.0) < _PARTIAL_MIN_INTERVAL:
+        return
+    _partial_last[key] = now
+    try:
+        if _partial_redis is None:
+            _partial_redis = aioredis.from_url(
+                settings.redis_url, decode_responses=True
+            )
+        await _partial_redis.publish(
+            "meeting:events",
+            json.dumps(
+                {
+                    "meeting_id": meeting_id,
+                    "payload": {
+                        "type": "utterance_partial",
+                        "speaker": speaker,
+                        "text": text,
+                    },
+                }
+            ),
+        )
+    except Exception:
+        _partial_redis = None  # rebuild the connection on the next partial
+
+
 def _meeting_id_from_room(room_name: str) -> Optional[str]:
     """Extract meeting UUID from room name pattern ``meeting-<uuid>``."""
     if not room_name or not room_name.startswith("meeting-"):
@@ -155,11 +196,16 @@ async def _transcribe_track(
     meeting_id: str,
     track: rtc.Track,
     speaker: str,
+    conference: bool = False,
 ) -> None:
     """Stream one participant's audio to Deepgram, reconnecting on drops.
 
     Holds an audio buffer between reconnects so a brief Deepgram outage
     doesn't lose data once the websocket is back up.
+
+    ``conference`` enables Deepgram diarization for shared-microphone
+    rooms: utterances are attributed to "<name> — Speaker N" using the
+    acoustic speaker index instead of a single participant identity.
     """
     if not settings.deepgram_api_key:
         logger.error("DEEPGRAM_API_KEY not set — skipping transcription")
@@ -177,15 +223,37 @@ async def _transcribe_track(
 
         async def _on_transcript(_self, result, **_kwargs):
             try:
-                if not result or not getattr(result, "is_final", False):
+                if not result:
                     return
                 channel = getattr(result, "channel", None)
                 if not channel or not channel.alternatives:
                     return
-                text = (channel.alternatives[0].transcript or "").strip()
+                alt = channel.alternatives[0]
+                text = (alt.transcript or "").strip()
                 if not text:
                     return
-                await _post_utterance(meeting_id, speaker, text)
+
+                # Any human speech (even partial) marks the room live —
+                # in-flight TTS playback yields to it (barge-in).
+                _last_voice_at[meeting_id] = asyncio.get_event_loop().time()
+
+                if not getattr(result, "is_final", False):
+                    # Word-by-word ghost text — broadcast only, never stored
+                    await _publish_partial(meeting_id, speaker, text)
+                    return
+                label = speaker
+                if conference:
+                    # Majority acoustic speaker for this final
+                    words = getattr(alt, "words", None) or []
+                    ids = [
+                        getattr(w, "speaker", None)
+                        for w in words
+                        if getattr(w, "speaker", None) is not None
+                    ]
+                    if ids:
+                        majority = max(set(ids), key=ids.count)
+                        label = f"{speaker} — Speaker {int(majority) + 1}"
+                await _post_utterance(meeting_id, label, text)
             except Exception as e:
                 logger.warning(f"transcript handler error: {e}")
 
@@ -199,11 +267,13 @@ async def _transcribe_track(
             model=settings.deepgram_model or "nova-2-meeting",
             language=settings.deepgram_language or "en-US",
             smart_format=True,
-            interim_results=False,
+            interim_results=True,
+            utterance_end_ms="1000",
             punctuate=True,
             sample_rate=48000,
             channels=1,
             encoding="linear16",
+            diarize=conference,
         )
 
         try:
@@ -267,6 +337,7 @@ async def _transcribe_track(
 async def _synthesize_and_publish(
     text: str,
     audio_source: rtc.AudioSource,
+    meeting_id: Optional[str] = None,
 ) -> None:
     """Call Cartesia, slice the PCM stream into AudioFrames, push to room."""
     if not settings.cartesia_api_key:
@@ -311,7 +382,14 @@ async def _synthesize_and_publish(
     total = len(pcm)
     logger.info(f"[TTS] publishing {total} samples ({total / _TTS_SAMPLE_RATE:.2f}s)")
 
+    # Barge-in: any human speech detected after this point stops playback —
+    # Donna never talks over a person.
+    playback_started = asyncio.get_event_loop().time()
+
     for offset in range(0, total, samples_per_frame):
+        if meeting_id and _last_voice_at.get(meeting_id, 0.0) > playback_started:
+            logger.info("[TTS] barge-in — a human is speaking, stopping playback")
+            return
         chunk = pcm[offset : offset + samples_per_frame]
         if len(chunk) == 0:
             break
@@ -380,7 +458,7 @@ async def _tts_subscriber(
                 )
                 if not text:
                     continue
-                await _synthesize_and_publish(text, audio_source)
+                await _synthesize_and_publish(text, audio_source, meeting_id)
             except Exception as e:
                 logger.warning(f"[TTS] failed to handle speak message: {e}")
     finally:
@@ -437,8 +515,14 @@ async def entrypoint(ctx: JobContext):
         if track.kind != rtc.TrackKind.KIND_AUDIO:
             return
         speaker = participant.identity or participant.name or "Speaker"
-        logger.info(f"Subscribing to audio track from {speaker}")
-        task = asyncio.create_task(_transcribe_track(meeting_id, track, speaker))
+        attrs = getattr(participant, "attributes", None) or {}
+        conference = str(attrs.get("conference", "")) == "1"
+        logger.info(
+            f"Subscribing to audio track from {speaker} (conference={conference})"
+        )
+        task = asyncio.create_task(
+            _transcribe_track(meeting_id, track, speaker, conference=conference)
+        )
         stt_tasks.append(task)
 
     # Catch participants already in the room when we joined

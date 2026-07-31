@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   BarChart3,
   Menu,
@@ -9,13 +11,17 @@ import {
   CalendarDays,
   ChevronRight,
   Circle,
+  LogOut,
+  Mic,
+  Home as HomeIcon,
 } from 'lucide-react';
 import DonnaLogo from '@/components/brand/DonnaLogo';
 import AnalyticsDashboard from '@/components/analytics/AnalyticsDashboard';
 import MeetingList from '@/components/meeting/MeetingList';
-import MeetingTimeline from '@/components/meeting/MeetingTimeline';
+import OpenItemsPanel from '@/components/meeting/OpenItemsPanel';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { apiClient } from '@/lib/api-client';
+import IntelligenceBanner from '@/components/IntelligenceBanner';
+import { apiClient, type AuthUser } from '@/lib/api-client';
 import type { HealthStatus, WebSocketMessage } from '@/types';
 
 type View = 'meetings' | 'analytics';
@@ -29,11 +35,36 @@ const STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
 };
 
 export default function Home() {
+  const router = useRouter();
   const [activeView, setActiveView] = useState<View>('meetings');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
-  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [recentMeetings, setRecentMeetings] = useState<any[]>([]);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [sessionSearch, setSessionSearch] = useState('');
+
+  // Auth guard: no session → login page. With a session, hydrate the user
+  // (stored copy first for instant paint, then verified against the API).
+  useEffect(() => {
+    if (!apiClient.isAuthenticated()) {
+      router.replace('/login');
+      return;
+    }
+    setUser(apiClient.getStoredUser());
+    setAuthChecked(true);
+    apiClient
+      .me()
+      .then(setUser)
+      .catch(() => {
+        /* 401 interceptor handles redirect */
+      });
+  }, [router]);
+
+  const handleSignOut = () => {
+    apiClient.logout();
+    router.replace('/');
+  };
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -74,8 +105,14 @@ export default function Home() {
     { id: 'analytics' as View, name: 'Analytics', icon: BarChart3 },
   ];
 
+  // Avoid flashing the dashboard while the auth guard decides
+  if (!authChecked) {
+    return <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-primary-50/30" />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-primary-50/30">
+      <IntelligenceBanner />
       {/* Header — gradient with glass effect */}
       <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/60 sticky top-0 z-50">
         <div className="px-4 sm:px-6 lg:px-8">
@@ -87,21 +124,46 @@ export default function Home() {
               >
                 {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
-              <DonnaLogo size="sm" />
+              <Link href="/" title="Back to homepage" className="hover:opacity-80 transition-opacity">
+                <DonnaLogo size="sm" />
+              </Link>
             </div>
 
-            {/* Health Status Pill */}
-            {healthStatus && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full border border-gray-200/60">
-                <div className={`w-2 h-2 rounded-full ${
-                  healthStatus.status === 'healthy' ? 'bg-emerald-500 shadow-glow-green' :
-                  healthStatus.status === 'degraded' ? 'bg-amber-500' : 'bg-red-500 shadow-glow-red'
-                }`} />
-                <span className="text-xs font-medium text-gray-600 hidden sm:inline">
-                  {healthStatus.status === 'healthy' ? 'All Systems Online' : healthStatus.status}
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {/* Health Status Pill */}
+              {healthStatus && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full border border-gray-200/60">
+                  <div className={`w-2 h-2 rounded-full ${
+                    healthStatus.status === 'healthy' ? 'bg-emerald-500 shadow-glow-green' :
+                    healthStatus.status === 'degraded' ? 'bg-amber-500' : 'bg-red-500 shadow-glow-red'
+                  }`} />
+                  <span className="text-xs font-medium text-gray-600 hidden sm:inline">
+                    {healthStatus.status === 'healthy' ? 'All Systems Online' : healthStatus.status}
+                  </span>
+                </div>
+              )}
+
+              {/* User chip + sign out */}
+              {user && (
+                <div className="flex items-center gap-2">
+                  <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-indigo-50 rounded-full border border-indigo-100">
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-[10px] font-bold">
+                      {(user.full_name || user.email)[0]?.toUpperCase()}
+                    </div>
+                    <span className="text-xs font-medium text-indigo-700 max-w-[140px] truncate">
+                      {user.full_name || user.email}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleSignOut}
+                    title="Sign out"
+                    className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -115,17 +177,26 @@ export default function Home() {
           transition-all duration-300 ease-out
           mt-14 lg:mt-0 flex flex-col
         `}>
+          {/* Search (filters recent sessions) */}
+          <div className="p-3 pb-0">
+            <input
+              value={sessionSearch}
+              onChange={(e) => setSessionSearch(e.target.value)}
+              placeholder="Search meetings..."
+              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[13px] focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-shadow"
+            />
+          </div>
+
           {/* Nav Links */}
           <nav className="p-3 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeView === item.id && !selectedMeetingId;
+              const isActive = activeView === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => {
                     setActiveView(item.id);
-                    setSelectedMeetingId(null);
                     setSidebarOpen(false);
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 text-sm group ${
@@ -159,16 +230,20 @@ export default function Home() {
               </h3>
               {recentMeetings.length > 0 ? (
                 <div className="space-y-0.5">
-                  {recentMeetings.map((m) => {
+                  {recentMeetings
+                    .filter((m) =>
+                      !sessionSearch.trim() ||
+                      m.title?.toLowerCase().includes(sessionSearch.trim().toLowerCase()),
+                    )
+                    .map((m) => {
                     const cfg = STATUS_CONFIG[m.status] || STATUS_CONFIG.scheduled;
-                    const isSelected = selectedMeetingId === m.id;
+                    const isSelected = false;
                     return (
                       <button
                         key={m.id}
                         onClick={() => {
-                          setActiveView('meetings');
-                          setSelectedMeetingId(m.id);
                           setSidebarOpen(false);
+                          router.push(`/meetings/${m.id}`);
                         }}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all duration-200 group ${
                           isSelected
@@ -195,14 +270,28 @@ export default function Home() {
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-gray-100/80">
-            <div className="flex items-center gap-2 px-1">
+          <div className="p-3 border-t border-gray-100/80 space-y-1">
+            <Link
+              href="/assistant"
+              className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <Mic className="w-[18px] h-[18px]" />
+              Talk to Donna
+            </Link>
+            <Link
+              href="/"
+              className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <HomeIcon className="w-[18px] h-[18px]" />
+              Homepage
+            </Link>
+            <div className="flex items-center gap-2 px-4 pt-1">
               <div className="w-6 h-6 bg-gradient-to-br from-primary-100 to-primary-200 rounded-md flex items-center justify-center">
                 <Activity className="w-3 h-3 text-primary-600" />
               </div>
               <div>
                 <p className="text-[11px] font-medium text-gray-600">Donna v2.0</p>
-                <p className="text-[10px] text-gray-400">15 AI Agents &middot; 3-Phase Pipeline</p>
+                <p className="text-[10px] text-gray-400">She already knew.</p>
               </div>
             </div>
           </div>
@@ -223,16 +312,10 @@ export default function Home() {
             {activeView === 'meetings' && (
               <ErrorBoundary sectionName="Meetings">
                 <div className="animate-fade-up">
-                  {selectedMeetingId ? (
-                    <MeetingTimeline
-                      meetingId={selectedMeetingId}
-                      onBack={() => setSelectedMeetingId(null)}
-                    />
-                  ) : (
-                    <MeetingList
-                      onSelectMeeting={(id) => setSelectedMeetingId(id)}
-                    />
-                  )}
+                  <OpenItemsPanel />
+                  <MeetingList
+                    onSelectMeeting={(id) => router.push(`/meetings/${id}`)}
+                  />
                 </div>
               </ErrorBoundary>
             )}

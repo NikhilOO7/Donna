@@ -28,6 +28,7 @@ RUN uv pip install https://github.com/explosion/spacy-models/releases/download/e
 
 # Copy application code
 COPY apps/api ./apps/api
+COPY apps/workers ./apps/workers
 COPY apps/__init__.py ./apps/
 
 # Create necessary directories
@@ -36,5 +37,5 @@ RUN mkdir -p logs data
 # Expose port (if needed for health checks)
 EXPOSE 8001
 
-# Run the LiveKit voice worker
-CMD ["uv", "run", "python", "-m", "apps.api.services.voice.enhanced_livekit_service"]
+# Run the LiveKit meeting voice worker (production mode)
+CMD ["uv", "run", "python", "-m", "apps.workers.meeting_voice_worker", "start"]

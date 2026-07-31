@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
 
 from .config import settings
 
@@ -50,22 +49,20 @@ def create_engine_instance() -> AsyncEngine:
     """Create modern async engine with SQLAlchemy 2.0 best practices"""
     global engine
     if engine is None:
-        # For async engines, don't specify poolclass (uses AsyncAdaptedQueuePool by default)
-        # Only use NullPool in production if needed
+        # AsyncAdaptedQueuePool (the async default) in every environment —
+        # pooled connections are correct for a long-running API. Production
+        # gets a bigger pool. (NullPool + pool sizing is an invalid combo
+        # and NullPool would mean a fresh TCP connect per checkout.)
         engine_kwargs = {
             "echo": settings.db_echo,
             "pool_pre_ping": True,
-            "pool_size": 10 if not settings.is_production else 20,
-            "max_overflow": 20 if not settings.is_production else 40,
+            "pool_size": 20 if settings.is_production else 10,
+            "max_overflow": 40 if settings.is_production else 20,
             "pool_recycle": 3600,
             "connect_args": {
                 "server_settings": {"application_name": "voice-doc-intelligence"}
             },
         }
-
-        # Only add NullPool in production if explicitly needed
-        if settings.is_production:
-            engine_kwargs["poolclass"] = NullPool
 
         engine = create_async_engine(settings.postgres_url, **engine_kwargs)
 

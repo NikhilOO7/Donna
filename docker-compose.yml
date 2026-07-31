@@ -133,7 +133,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      # Explicitly empty: the compose redis container runs without auth
+      - REDIS_PASSWORD=
 
       # Qdrant
       - QDRANT_HOST=qdrant
@@ -156,6 +157,14 @@ services:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
       - VOYAGEAI_API_KEY=${VOYAGEAI_API_KEY}
+
+      # Server-side auth enforcement (P0 hardening). The service API key
+      # lets the voice worker POST transcripts without a user JWT.
+      - REQUIRE_AUTH=${REQUIRE_AUTH:-true}
+      - API_KEY=${API_KEY:-donna-dev-service-key}
+
+      # Durable job queue (dispatch/research/summary run in job-worker)
+      - USE_JOB_QUEUE=${USE_JOB_QUEUE:-true}
 
     ports:
       - "8000:8000"
@@ -196,6 +205,58 @@ services:
       - voice-doc-network
     restart: unless-stopped
 
+  # Durable job worker (Arq): agent dispatch, research, summaries, nightly cron
+  job-worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: voice-doc-job-worker
+    command: ["uv", "run", "arq", "apps.workers.job_worker.WorkerSettings"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - NEO4J_URI=${NEO4J_URI:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EXA_API_KEY=${EXA_API_KEY:-}
+      - POSTMARK_API_KEY=${POSTMARK_API_KEY:-}
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
+  # Conversational voice agent ("Talk to Donna" — /assistant page)
+  assistant-worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: voice-doc-assistant-worker
+    command: ["uv", "run", "python", "-m", "apps.workers.enhanced_voice_agent_worker", "start"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY}
+    depends_on:
+      - redis
+      - livekit
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
   # LiveKit Voice Worker
   voice-worker:
     build:
@@ -209,6 +270,7 @@ services:
       # Redis
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
+      - REDIS_PASSWORD=
 
       # Qdrant
       - QDRANT_HOST=qdrant
@@ -223,6 +285,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
+
+      # Backend API (worker POSTs transcribed utterances here)
+      - BACKEND_URL=http://backend:8000
+      - API_KEY=${API_KEY:-donna-dev-service-key}
 
     depends_on:
       - postgres

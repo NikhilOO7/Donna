@@ -14,7 +14,7 @@ import openai  # OpenAI Python SDK for Whisper and TTS
 from livekit import api
 
 from apps.api.core.config import settings
-from apps.api.services.rag.llamaindex_service import ModernRAGService, RAGService
+from apps.api.services.rag.rag_service import ModernRAGService, RAGService
 
 # Note: function_tool and other livekit.agents imports are commented out
 # as they're only needed for the deprecated entrypoint function
@@ -31,9 +31,12 @@ class VoiceService:
         self.sessions = {}  # Active voice sessions
 
     async def generate_token(
-        self, room_name: str = "document-chat", participant_name: str = "user"
+        self,
+        room_name: str = "document-chat",
+        participant_name: str = "user",
+        attributes: dict | None = None,
     ) -> str:
-        """Original generate_token method - preserved exactly"""
+        """Issue a LiveKit access token (optionally with participant attributes)."""
         try:
             token = api.AccessToken(
                 settings.livekit_api_key, settings.livekit_api_secret
@@ -41,6 +44,8 @@ class VoiceService:
 
             token.with_identity(participant_name)
             token.with_name(participant_name)
+            if attributes:
+                token.with_attributes({str(k): str(v) for k, v in attributes.items()})
             token.with_grants(
                 api.VideoGrants(
                     room_join=True,

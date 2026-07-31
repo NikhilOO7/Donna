@@ -72,6 +72,11 @@ class Meeting(Base):
         DateTime(timezone=True), nullable=True
     )
     attendees: Mapped[list] = mapped_column(JSON, default=list)
+    meeting_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # Shared canvas layout: {nudge_id: {"x": float, "y": float}}
+    canvas_positions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Structured agenda: [{"title": str, "status": "pending|covered"}]
+    agenda: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="scheduled")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -180,11 +185,38 @@ class Nudge(Base):
     shown_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    dismissed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    pinned_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     meeting: Mapped["Meeting"] = relationship(back_populates="nudges")
+
+
+class MeetingDocument(Base):
+    """Join table: documents attached to a meeting (meeting-scoped knowledge)."""
+
+    __tablename__ = "meeting_documents"
+    __table_args__ = {"schema": "doc_intel"}
+
+    meeting_id: Mapped[str] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("doc_intel.meetings.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    document_id: Mapped[str] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("doc_intel.documents.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
 
 class Decision(Base):
@@ -374,6 +406,8 @@ class MeetingCreate(BaseModel):
     description: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     attendees: list = Field(default_factory=list)
+    meeting_type: Optional[str] = Field(default=None, max_length=120)
+    agenda: list = Field(default_factory=list)
 
 
 class MeetingResponse(BaseModel):

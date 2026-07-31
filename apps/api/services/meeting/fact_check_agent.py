@@ -67,6 +67,7 @@ class FactCheckAgent:
         fact-check attempt per ``_PER_MEETING_MIN_GAP_S`` per meeting, and
         the same claim isn't re-verified within ``_CLAIM_COOLDOWN_S``.
         """
+        self._current_meeting_id = meeting_id
         if not settings.exa_api_key or not recent_utterances:
             return None
 
@@ -142,7 +143,7 @@ class FactCheckAgent:
         """Use GPT-4o-mini to extract a single verifiable claim, if present."""
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=settings.model_fast,
                 messages=[
                     {
                         "role": "system",
@@ -180,7 +181,7 @@ class FactCheckAgent:
         )
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=settings.model_fast,
                 messages=[
                     {
                         "role": "system",
@@ -201,6 +202,14 @@ class FactCheckAgent:
                 temperature=0.1,
                 max_tokens=200,
                 response_format={"type": "json_object"},
+            )
+            from apps.api.core.llm_meter import record as record_cost
+
+            await record_cost(
+                self._current_meeting_id,
+                "fact_check",
+                settings.model_fast,
+                response.usage,
             )
             return json.loads(response.choices[0].message.content or "{}")
         except Exception as e:

@@ -830,45 +830,159 @@ class ContextualEmbeddingGenerator:
         document_metadata: Dict[str, Any],
         use_voyage: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Generate contextual embeddings for chunks"""
-        embeddings = []
+        """Generate TRUE 3-level contextual embeddings for chunks.
+
+        Each chunk gets three genuinely distinct vectors:
+
+        * **local** — the chunk + its neighbouring chunks and section path
+        * **document** — the chunk + document title/sections/topics
+        * **global** — the chunk + related documents actually found in the
+          vector store (tenant-scoped), not a placeholder
+
+        All texts for a document are embedded in batched API calls
+        (2 calls for a typical document instead of one per chunk), and the
+        per-level vectors are stored so the multi-collection weighted
+        retrieval merge compares different representations — the thing the
+        architecture always claimed.
+        """
+        if not chunks:
+            return []
+
+        document_context = await self._get_document_context(chunks, document_metadata)
+
+        # Real global context: one tenant-scoped related-documents lookup per
+        # document (keyed off the document context), shared across its chunks.
+        related_summary = await self._find_related_documents(
+            document_context, document_metadata
+        )
+
+        local_texts: List[str] = []
+        doc_texts: List[str] = []
+        global_texts: List[str] = []
+        contexts: List[Dict[str, str]] = []
 
         for i, chunk in enumerate(chunks):
-            # Get local context
             local_context = await self._get_local_context(chunks, i)
+            global_context = self._build_global_context(chunk, related_summary)
 
-            # Get document context
-            document_context = await self._get_document_context(
-                chunks, document_metadata
+            snippet = chunk.content[:1000]
+            local_texts.append(f"{chunk.content} {local_context}")
+            doc_texts.append(f"{snippet} {document_context}")
+            global_texts.append(f"{snippet} {global_context}")
+            contexts.append(
+                {
+                    "local_context": local_context,
+                    "document_context": document_context,
+                    "global_context": global_context,
+                }
             )
 
-            # Get global context (would query existing documents)
-            global_context = await self._get_global_context(chunk, document_metadata)
+        # Batch-embed all three levels (local set first — it carries the
+        # full chunk text and dominates retrieval quality).
+        all_vectors = await self._embed_batch(local_texts + doc_texts + global_texts)
+        n = len(chunks)
+        local_vecs = all_vectors[:n]
+        doc_vecs = all_vectors[n : 2 * n]
+        global_vecs = all_vectors[2 * n : 3 * n]
 
-            # Generate contextual embedding
-            embedding = await self._generate_contextual_embedding(
-                chunk.content,
-                local_context,
-                document_context,
-                global_context,
-                use_voyage,
-            )
-
+        embeddings = []
+        for i, chunk in enumerate(chunks):
+            unified = [
+                (lv + dv + gv) / 3.0
+                for lv, dv, gv in zip(local_vecs[i], doc_vecs[i], global_vecs[i])
+            ]
             embeddings.append(
                 {
                     "chunk_id": f"{document_metadata.get('document_id', 'unknown')}_chunk_{i}",
                     "content": chunk.content,
-                    "embedding": embedding,
+                    "embedding": unified,
+                    "embeddings": {
+                        "local": local_vecs[i],
+                        "document": doc_vecs[i],
+                        "global": global_vecs[i],
+                    },
                     "metadata": {
                         **chunk.metadata.__dict__,
-                        "local_context": local_context,
-                        "document_context": document_context,
-                        "global_context": global_context,
+                        **contexts[i],
                     },
                 }
             )
 
         return embeddings
+
+    async def _embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Embed a list of texts in batched OpenAI calls."""
+        vectors: List[List[float]] = []
+        batch_size = 96
+        for i in range(0, len(texts), batch_size):
+            response = await self.openai_client.embeddings.create(
+                input=[t[:8000] for t in texts[i : i + batch_size]],
+                model=settings.embedding_model,
+                dimensions=settings.embedding_dimensions,
+            )
+            vectors.extend(d.embedding for d in response.data)
+        return vectors
+
+    async def _find_related_documents(
+        self, document_context: str, metadata: Dict[str, Any]
+    ) -> str:
+        """Find genuinely related documents in the vector store (best-effort).
+
+        Tenant-scoped when an owner is known; excludes the document being
+        indexed. Returns a short summary string, or "" when the store is
+        empty/unavailable (first document, cold start).
+        """
+        try:
+            from apps.api.services.document.vector_store import ModernVectorStore
+
+            store = ModernVectorStore()
+            probe = await self._embed_batch([document_context[:4000]])
+            filters: Dict[str, Any] = {}
+            if metadata.get("owner_id"):
+                filters["owner_id"] = metadata["owner_id"]
+            results = await store.search_with_context(
+                query_embedding=probe[0],
+                context_level="document",
+                top_k=5,
+                filters=filters or None,
+            )
+            current_doc = str(metadata.get("document_id", ""))
+            related = []
+            seen_docs = set()
+            for r in results:
+                doc_id = str(getattr(r, "document_id", ""))
+                if not doc_id or doc_id == current_doc or doc_id in seen_docs:
+                    continue
+                seen_docs.add(doc_id)
+                title = (
+                    (getattr(r, "metadata", None) or {})
+                    .get("document_structure", {})
+                    .get("title")
+                ) or f"document {doc_id[:8]}"
+                excerpt = (getattr(r, "content", "") or "")[:120]
+                related.append(f"{title}: {excerpt}")
+                if len(related) >= 3:
+                    break
+            if not related:
+                return ""
+            return "[Related documents]: " + " | ".join(related)
+        except Exception as e:
+            logger.debug(f"Related-document lookup skipped: {e}")
+            return ""
+
+    @staticmethod
+    def _build_global_context(chunk: ProcessedChunk, related_summary: str) -> str:
+        """Cross-document context: real related docs + this chunk's topics."""
+        parts = []
+        if related_summary:
+            parts.append(related_summary)
+        if chunk.metadata.keywords:
+            parts.append(f"[Related Topics]: {', '.join(chunk.metadata.keywords[:3])}")
+        return (
+            " ".join(parts)
+            if parts
+            else "[Global Context]: first document in this workspace"
+        )
 
     async def _get_local_context(
         self, chunks: List[ProcessedChunk], chunk_index: int, window_size: int = 2
@@ -1003,13 +1117,23 @@ class ContextualEmbeddingGenerator:
         context_parts.append(f"[Level]: {context_level}")
         combined_text = " ".join(context_parts)
 
+        # Query embeddings repeat constantly (nudge re-scans, common questions,
+        # burst dispatches) — serve repeats from Redis instead of OpenAI.
+        from apps.api.core.cache import get_cached_embedding, set_cached_embedding
+
+        cached = await get_cached_embedding(combined_text, settings.embedding_model)
+        if cached is not None:
+            return cached
+
         try:
             response = await self.openai_client.embeddings.create(
                 input=combined_text,
                 model=settings.embedding_model,
                 dimensions=settings.embedding_dimensions,
             )
-            return response.data[0].embedding
+            vector = response.data[0].embedding
+            await set_cached_embedding(combined_text, settings.embedding_model, vector)
+            return vector
         except Exception as e:
             logger.error(f"OpenAI embedding failed for query: {e}")
             raise

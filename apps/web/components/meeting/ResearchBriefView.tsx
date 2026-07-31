@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Globe, Shield, ShieldCheck, ExternalLink, BookOpen } from 'lucide-react';
+import { Globe, Shield, ShieldCheck, ExternalLink, BookOpen, Sparkles } from 'lucide-react';
 
 interface ResearchBriefViewProps {
   research: {
@@ -11,6 +11,8 @@ interface ResearchBriefViewProps {
     topics: {
       topic: string;
       rationale: string;
+      key_findings?: { finding: string; source_url?: string; confidence?: number; urgency?: string }[];
+      data_gaps?: string[];
       sources: {
         url: string;
         title: string;
@@ -20,7 +22,19 @@ interface ResearchBriefViewProps {
       }[];
     }[];
   };
+  /** "Discuss This" — sends a prompt about the topic/finding to the Donna assistant. */
+  onDiscuss?: (prompt: string) => void;
 }
+
+/* Rotating accent borders for key findings — the report-card look */
+const FINDING_ACCENTS = [
+  'border-indigo-400',
+  'border-emerald-400',
+  'border-amber-400',
+  'border-violet-400',
+  'border-sky-400',
+  'border-rose-400',
+];
 
 const TIER_STYLES: Record<number, { bg: string; text: string; label: string; icon: React.ReactNode }> = {
   1: {
@@ -37,7 +51,7 @@ const TIER_STYLES: Record<number, { bg: string; text: string; label: string; ico
   },
 };
 
-export default function ResearchBriefView({ research }: ResearchBriefViewProps) {
+export default function ResearchBriefView({ research, onDiscuss }: ResearchBriefViewProps) {
   return (
     <div className="space-y-6">
       {/* Executive Summary */}
@@ -56,13 +70,125 @@ export default function ResearchBriefView({ research }: ResearchBriefViewProps) 
         </div>
       )}
 
-      {/* Topics */}
-      {research.topics?.map((topic, idx) => (
+      {/* Topics — report-card layout: key findings, then sources */}
+      {research.topics?.map((topic, idx) => {
+        const authoritative = (topic.sources || []).filter((s) => s.tier <= 2).length;
+        return (
         <div key={idx} className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="mb-4">
-            <h4 className="text-lg font-semibold text-gray-900">{topic.topic}</h4>
-            <p className="text-sm text-gray-500 mt-1">{topic.rationale}</p>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900">{topic.topic}</h4>
+              <p className="text-sm text-gray-500 mt-1">{topic.rationale}</p>
+            </div>
+            {onDiscuss && (
+              <button
+                onClick={() =>
+                  onDiscuss(
+                    `Let's discuss this research topic: "${topic.topic}". ` +
+                    `Key findings: ${(topic.key_findings || []).map((f) => f.finding).join(' | ') || 'see sources'}. ` +
+                    'What are the implications for our meeting?',
+                  )
+                }
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg shadow-sm transition-colors flex-shrink-0"
+              >
+                <Sparkles className="w-3 h-3" />
+                Discuss This
+              </button>
+            )}
           </div>
+
+          {/* KEY FINDINGS */}
+          {topic.key_findings && topic.key_findings.length > 0 && (
+            <div className="mb-5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+                Key Findings ({topic.key_findings.length})
+              </p>
+              <div className="space-y-2.5">
+                {topic.key_findings.map((f, fIdx) => (
+                  <div
+                    key={fIdx}
+                    className={`pl-3.5 py-2 border-l-[3px] ${FINDING_ACCENTS[fIdx % FINDING_ACCENTS.length]} bg-gray-50/60 rounded-r-lg`}
+                  >
+                    <p className="text-sm text-gray-800 leading-relaxed">{f.finding}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {f.urgency === 'act_now' ? (
+                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold uppercase tracking-wide">Act Now</span>
+                      ) : f.urgency === 'watch' ? (
+                        <span className="px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold uppercase tracking-wide">Watch</span>
+                      ) : null}
+                      {typeof f.confidence === 'number' && (
+                        <span className="text-[11px] text-gray-400">
+                          confidence {Math.round(f.confidence * 100)}/100
+                        </span>
+                      )}
+                      {f.source_url && (
+                        <a
+                          href={f.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[11px] text-primary-600 hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          source
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Blind spots (H7): adjacent topics the user didn't ask about */}
+          {(topic as any).suggested_topics?.length > 0 && (
+            <div className="mb-5 p-3.5 bg-violet-50/60 border border-violet-100 rounded-lg">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-600/80 mb-2">
+                Blind Spots — Worth Watching
+              </p>
+              <div className="space-y-2">
+                {(topic as any).suggested_topics.map((s: any, sIdx: number) => (
+                  <button
+                    key={sIdx}
+                    onClick={() =>
+                      onDiscuss?.(
+                        `Tell me more about "${s.topic}" and why it matters for this meeting. ${s.why || ''}`,
+                      )
+                    }
+                    className="w-full text-left p-2 rounded-lg hover:bg-white/80 transition-colors group"
+                  >
+                    <p className="text-[13px] font-medium text-violet-800 group-hover:text-violet-900">
+                      {s.topic}
+                    </p>
+                    {s.why && (
+                      <p className="text-[11px] text-violet-600/70 mt-0.5">{s.why}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Data limitations (cross-topic entry) */}
+          {topic.data_gaps && topic.data_gaps.length > 0 && (
+            <div className="mb-5 p-3.5 bg-amber-50/60 border border-amber-100 rounded-lg">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600/80 mb-2">
+                Data Limitations
+              </p>
+              <ul className="space-y-1">
+                {topic.data_gaps.map((g, gIdx) => (
+                  <li key={gIdx} className="text-[13px] text-amber-800/80">— {g}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Verified-sources footer */}
+          {authoritative > 0 && (
+            <p className="flex items-center gap-1.5 text-[12px] text-emerald-600 font-medium mb-4">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Verified by {authoritative} authoritative {authoritative === 1 ? 'source' : 'sources'}
+            </p>
+          )}
 
           {topic.sources?.length > 0 ? (
             <div className="space-y-3">
@@ -107,11 +233,12 @@ export default function ResearchBriefView({ research }: ResearchBriefViewProps) 
                 );
               })}
             </div>
-          ) : (
+          ) : topic.topic !== 'Cross-topic findings' ? (
             <p className="text-sm text-gray-400 italic">No validated sources found for this topic</p>
-          )}
+          ) : null}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

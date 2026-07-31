@@ -10,6 +10,15 @@ import type {
   VoiceToken,
 } from '@/types';
 
+const TOKEN_KEY = 'donna_token';
+const USER_KEY = 'donna_user';
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  full_name?: string;
+};
+
 class ApiClient {
   private client: AxiosInstance;
   private wsUrl: string;
@@ -30,9 +39,14 @@ class ApiClient {
     // polling (meetings, health) floods the console. Set NEXT_PUBLIC_API_DEBUG=true.
     const apiDebug = process.env.NEXT_PUBLIC_API_DEBUG === 'true';
 
-    // Request interceptor
+    // Request interceptor — attach JWT when present
     this.client.interceptors.request.use(
       (config) => {
+        const token = this.getToken();
+        if (token) {
+          config.headers = config.headers || {};
+          (config.headers as any).Authorization = `Bearer ${token}`;
+        }
         if (apiDebug) console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
@@ -48,11 +62,77 @@ class ApiClient {
         return response;
       },
       (error: AxiosError) => {
+        // Expired/invalid session — clear it and send the user to login.
+        if (error.response?.status === 401 && this.getToken()) {
+          this.clearSession();
+          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+            window.location.href = '/login';
+          }
+        }
         // Errors always surface — they matter regardless of debug flag.
         console.error(`[API] Error:`, error.response?.status, error.message);
         return Promise.reject(error);
       }
     );
+  }
+
+  // --- Auth / session -----------------------------------------------------
+
+  getToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(TOKEN_KEY);
+  }
+
+  isAuthenticated(): boolean {
+    return Boolean(this.getToken());
+  }
+
+  getStoredUser(): AuthUser | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? (JSON.parse(raw) as AuthUser) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private storeSession(accessToken: string, user: AuthUser) {
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  }
+
+  clearSession() {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
+
+  async register(email: string, password: string, fullName?: string): Promise<AuthUser> {
+    const response = await this.client.post('/api/v1/auth/register', {
+      email,
+      password,
+      full_name: fullName || '',
+    });
+    const { access_token, user } = response.data;
+    this.storeSession(access_token, user);
+    return user;
+  }
+
+  async login(email: string, password: string): Promise<AuthUser> {
+    const response = await this.client.post('/api/v1/auth/login', { email, password });
+    const { access_token, user } = response.data;
+    this.storeSession(access_token, user);
+    return user;
+  }
+
+  async me(): Promise<AuthUser> {
+    const response = await this.client.get('/api/v1/auth/me');
+    return response.data;
+  }
+
+  logout() {
+    this.clearSession();
   }
 
   // Health Check
@@ -62,12 +142,13 @@ class ApiClient {
   }
 
   // Document Management
-  async uploadDocument(file: File, useEnhanced: boolean = true): Promise<{ document_id: string; filename: string; status: string; message: string }> {
+  async uploadDocument(file: File, useEnhanced: boolean = true, meetingId?: string): Promise<{ document_id: string; filename: string; status: string; message: string }> {
     const formData = new FormData();
     formData.append('file', file);
 
+    const meetingParam = meetingId ? `&meeting_id=${meetingId}` : '';
     const response = await this.client.post(
-      `/api/v1/documents/upload?use_enhanced=${useEnhanced}`,
+      `/api/v1/documents/upload?use_enhanced=${useEnhanced}${meetingParam}`,
       formData,
       {
         headers: {
@@ -139,7 +220,7 @@ class ApiClient {
   }
 
   // Meetings
-  async createMeeting(data: { title: string; description?: string; attendees?: any[]; scheduled_at?: string }): Promise<any> {
+  async createMeeting(data: { title: string; description?: string; attendees?: any[]; scheduled_at?: string; meeting_type?: string; agenda?: string[] }): Promise<any> {
     const response = await this.client.post('/api/v1/meetings/', data);
     return response.data;
   }
@@ -181,6 +262,93 @@ class ApiClient {
     return response.data;
   }
 
+  // Meeting lifecycle
+  async startMeeting(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/start`);
+    return response.data;
+  }
+
+  async endMeeting(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/end`);
+    return response.data;
+  }
+
+  async getMeetingVoiceToken(meetingId: string, participantName: string, conference = false): Promise<any> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}/voice-token`, {
+      params: { participant_name: participantName, conference },
+    });
+    return response.data;
+  }
+
+  // Upload Transcript setup mode
+  async importTranscript(data: {
+    transcript_text: string; title?: string; meeting_type?: string;
+  }): Promise<{ id: string; title: string; utterance_count: number }> {
+    const response = await this.client.post('/api/v1/meetings/import-transcript', data);
+    return response.data;
+  }
+
+  // Structured meeting prep (Smart Fill / conversational setup)
+  async prepMeeting(input: string, current?: Record<string, any>): Promise<{
+    role: string;
+    meeting_type: string;
+    meeting_goal: string;
+    agenda_items: string[];
+    risks_or_tensions: string[];
+    confidence_notes: string;
+  }> {
+    const response = await this.client.post('/api/v1/meetings/prep', {
+      input,
+      ...(current ? { current } : {}),
+    });
+    return response.data;
+  }
+
+  async updateMeetingAttendees(
+    meetingId: string,
+    attendees: Array<{ name?: string; email?: string; voice_registered?: boolean }>,
+  ): Promise<any> {
+    const response = await this.client.patch(`/api/v1/meetings/${meetingId}`, { attendees });
+    return response.data;
+  }
+
+  // Mid-meeting RAG query ("Ask Donna")
+  async queryMeeting(meetingId: string, query: string, record = true): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/query`, {
+      query,
+      record,
+    });
+    return response.data;
+  }
+
+  async getMeetingCost(meetingId: string): Promise<{
+    calls: number; total_tokens: number; estimated_usd: number; by_agent: Record<string, number>;
+  }> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}/cost`);
+    return response.data;
+  }
+
+  async updateCanvas(meetingId: string, positions: Record<string, { x: number; y: number }>): Promise<any> {
+    const response = await this.client.patch(`/api/v1/meetings/${meetingId}/canvas`, { positions });
+    return response.data;
+  }
+
+  async toggleVoiceNudges(meetingId: string, enabled: boolean): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/voice-nudges`, { enabled });
+    return response.data;
+  }
+
+  // Nudge feedback
+  async dismissNudge(meetingId: string, nudgeId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/nudges/${nudgeId}/dismiss`);
+    return response.data;
+  }
+
+  async pinNudge(meetingId: string, nudgeId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/nudges/${nudgeId}/pin`);
+    return response.data;
+  }
+
   // Transcript / Utterances
   async addUtterance(meetingId: string, speaker: string, text: string): Promise<any> {
     const response = await this.client.post(
@@ -211,6 +379,46 @@ class ApiClient {
     return response.data;
   }
 
+  async updateDecisionStatus(meetingId: string, decisionId: string, status: string): Promise<any> {
+    const response = await this.client.patch(`/api/v1/meetings/${meetingId}/decisions/${decisionId}`, { status });
+    return response.data;
+  }
+
+  async updateActionItemStatus(meetingId: string, itemId: string, status: string): Promise<any> {
+    const response = await this.client.patch(`/api/v1/meetings/${meetingId}/action-items/${itemId}`, { status });
+    return response.data;
+  }
+
+  async listOpenItems(): Promise<any> {
+    const response = await this.client.get('/api/v1/meetings/open-items');
+    return response.data;
+  }
+
+  async sendInvites(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/invite`);
+    return response.data;
+  }
+
+  async sendPreread(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/send-preread`);
+    return response.data;
+  }
+
+  async sendFollowups(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/send-followups`);
+    return response.data;
+  }
+
+  async downloadCalendar(meetingId: string): Promise<void> {
+    const response = await this.client.get(`/api/v1/meetings/${meetingId}/calendar.ics`, { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'text/calendar' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'donna-meeting.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async getDocumentElements(documentId: string): Promise<any> {
     const response = await this.client.get(`/api/v1/documents/${documentId}/elements`);
     return response.data;
@@ -236,7 +444,9 @@ class ApiClient {
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(`${this.wsUrl}/api/v1/meetings/${meetingId}/ws`);
+      const token = this.getToken();
+      const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+      ws = new WebSocket(`${this.wsUrl}/api/v1/meetings/${meetingId}/ws${qs}`);
 
       ws.onopen = () => {
         console.log(`[MeetingWS] connected to ${meetingId.slice(0, 8)}`);

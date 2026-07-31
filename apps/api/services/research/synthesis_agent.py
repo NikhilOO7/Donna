@@ -29,6 +29,7 @@ class SynthesisAgent:
         topics: List[Dict[str, Any]],
         validated_sources: Dict[str, List[Dict[str, Any]]],
         meeting_title: str,
+        meeting_id: str | None = None,
     ) -> Dict[str, Any]:
         """Generate executive summary from research results.
 
@@ -60,7 +61,7 @@ class SynthesisAgent:
         context_text = "\n".join(research_context)
 
         response = await self.client.chat.completions.create(
-            model=settings.openai_model,
+            model=settings.model_smart,
             messages=[
                 {
                     "role": "system",
@@ -71,10 +72,17 @@ class SynthesisAgent:
                         "{\n"
                         '  "executive_summary": "2-3 paragraph overview of key findings",\n'
                         '  "key_findings": [\n'
-                        '    {"finding": "...", "source_url": "...", "confidence": 0.0-1.0}\n'
+                        '    {"finding": "...", "source_url": "...", "confidence": 0.0-1.0, "urgency": "act_now|watch"}\n'
                         "  ],\n"
-                        '  "data_gaps": ["topics where information was insufficient"]\n'
-                        "}"
+                        '  "data_gaps": ["topics where information was insufficient"],\n'
+                        '  "suggested_topics": [\n'
+                        '    {"topic": "...", "why": "one sentence on why this '
+                        'adjacent topic matters"}\n'
+                        "  ]\n"
+                        "}\n\n"
+                        "suggested_topics are BLIND SPOTS: 2-3 adjacent topics the "
+                        "requester did NOT ask about but the sources suggest they "
+                        "should be watching. Never repeat a requested topic."
                     ),
                 },
                 {
@@ -86,6 +94,12 @@ class SynthesisAgent:
             ],
             temperature=0.3,
             max_tokens=2000,
+        )
+
+        from apps.api.core.llm_meter import record as record_cost
+
+        await record_cost(
+            meeting_id, "research_synthesis", settings.model_smart, response.usage
         )
 
         content = response.choices[0].message.content.strip()

@@ -37,9 +37,15 @@ class TestRetrievalRelevance:
         """Aggregate relative lift of contextual+hybrid over baseline should be positive."""
         base = eval_results["baseline"]
         hybrid = eval_results["contextual_hybrid"]
-        metrics = ["recall@1", "recall@3", "recall@5", "mrr", "ndcg@1", "ndcg@3", "ndcg@5"]
-        lifts = [
-            (hybrid[m] - base[m]) / base[m] for m in metrics if base[m] > 0
+        metrics = [
+            "recall@1",
+            "recall@3",
+            "recall@5",
+            "mrr",
+            "ndcg@1",
+            "ndcg@3",
+            "ndcg@5",
         ]
+        lifts = [(hybrid[m] - base[m]) / base[m] for m in metrics if base[m] > 0]
         mean_lift = sum(lifts) / len(lifts)
         assert mean_lift > 0, f"expected positive mean lift, got {mean_lift:.1%}"

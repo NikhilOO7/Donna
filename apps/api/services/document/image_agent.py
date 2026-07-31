@@ -175,7 +175,7 @@ class ImageAgent:
 
         try:
             response = await client.chat.completions.create(
-                model="gpt-4o",
+                model=settings.model_vision,
                 messages=[
                     {
                         "role": "system",

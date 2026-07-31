@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Voice Document Intelligence — an AI-powered voice-enabled document intelligence platform. FastAPI backend, Next.js frontend, CrewAI multi-agent system, contextual embeddings, and real-time voice interaction via LiveKit/Deepgram/Cartesia.
+Donna — an AI meeting collaborator with document intelligence. FastAPI backend, Next.js frontend, an 18-agent meeting pipeline (research / live nudges / summary), contextual embeddings, knowledge graph (Neo4j), and real-time voice via LiveKit/Deepgram/Cartesia.
 
 ## Commands
 
@@ -54,7 +54,7 @@ Entry point: `apps/api/main.py` — creates FastAPI app, initializes all service
 
 - **`core/`** — config (`pydantic-settings`), database (async SQLAlchemy 2.0 + asyncpg), Redis/Qdrant/storage connections, auth (JWT + API key), structured logging, caching
 - **`models/`** — SQLAlchemy models (`Document`, `DocumentChunk`, `Entity`, `Analytics`) and Pydantic schemas
-- **`routers/`** — only `voice.py` and `rtc.py` are separate routers; most endpoints are defined directly in `main.py`
+- **`routers/`** — `auth.py`, `voice.py`, and `meetings.py` are separate routers; document/query endpoints are defined directly in `main.py`
 - **`services/`** — core business logic, organized by domain:
 
 #### Document Pipeline (`services/document/`)
@@ -71,19 +71,18 @@ Embeddings combine three context levels with weighted contributions:
 - **Global** (20%): cross-document relationships
 
 #### RAG (`services/rag/`)
-`llamaindex_service.py` — `RAGService` and `ModernRAGService` using LlamaIndex for query routing, contextual retrieval, and source-attributed responses.
+`rag_service.py` — `RAGService` and `ModernRAGService` (raw OpenAI + Qdrant) for query routing, contextual retrieval, hybrid re-ranking, and source-attributed responses with confidence scores.
 
 #### Voice (`services/voice/`)
 - `livekit_service.py` — LiveKit token generation, room management
 - `enhanced_livekit_service.py` — voice agent with Deepgram STT + Cartesia TTS + OpenAI LLM
 
-#### Multi-Agent System (`services/agents/`)
-CrewAI-based with 5 specialized agents orchestrated by `agent_coordinator.py`:
-- **DocumentAgent** — processing, chunking, metadata
-- **ContextAgent** — multi-level contextual search
-- **QueryAgent** — intent recognition, query enhancement
-- **VoiceAgent** — speech interaction management
-- **AnalyticsAgent** — usage patterns, system insights
+#### Meeting Intelligence (`services/meeting/`, `services/research/`)
+The live product surface — 18 specialized agents across 4 pipelines (see `docs/AGENT_REGISTRY.md`):
+- **Research pipeline** (`services/research/`) — topic → Exa search → tier validation → synthesis
+- **Live meeting agents** (`services/meeting/`) — scribe, context, insight, fact-check, KG-query, activation, memory, agenda — streamed per utterance by `agent_dispatcher.py` (`asyncio.as_completed`, per-agent timeouts)
+- **Summary pipeline** — post-meeting aggregation, action-item extraction, Neo4j sync
+- **Realtime** — `realtime.py` MeetingHub (WebSocket + Redis pub/sub fan-out)
 
 ### Frontend (`apps/web/`)
 

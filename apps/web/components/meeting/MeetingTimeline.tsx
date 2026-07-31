@@ -10,6 +10,7 @@ import TimelineStep, { StepStatus } from './TimelineStep';
 import KnowledgeBaseStep from './KnowledgeBaseStep';
 import ResearchBriefView from './ResearchBriefView';
 import MeetingRoom from './MeetingRoom';
+import AssistantPanel from './AssistantPanel';
 
 interface MeetingTimelineProps {
   meetingId: string;
@@ -24,6 +25,11 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  // "Discuss This" on a research finding — seeds the inline Donna assistant
+  const [researchAsk, setResearchAsk] = useState<string | null>(null);
+  const [showResearchChat, setShowResearchChat] = useState(false);
+  const [cost, setCost] = useState<any>(null);
+  // Role-aware UI: participants get a read-only view of leader controls
 
   const fetchMeeting = useCallback(async () => {
     try {
@@ -50,16 +56,40 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
       if (msg.type === 'nudge_created' && msg.nudge) {
         setMeeting((prev: any) => {
           if (!prev) return prev;
+          // Participants only surface shared-board items live: activation
+          // nudges addressed to them (pins arrive via the refetch heartbeat).
+          if (prev.my_role === 'participant') {
+            const person = (msg.nudge.source_data?.person || '').toLowerCase();
+            const mine =
+              msg.nudge.type === 'activation' &&
+              prev.my_name &&
+              person === prev.my_name.toLowerCase();
+            if (!mine) return prev;
+          }
           const existing = prev.nudges || [];
           if (existing.some((n: any) => n.id === msg.nudge.id)) return prev;
           return { ...prev, nudges: [msg.nudge, ...existing] };
         });
+      } else if (msg.type === 'utterance_partial' && msg.text) {
+        // Ghost text: in-progress speech, replaced by the final utterance
+        setMeeting((prev: any) =>
+          prev ? { ...prev, partial_utterance: { speaker: msg.speaker, text: msg.text } } : prev,
+        );
+      } else if (msg.type === 'agenda_progress' && Array.isArray(msg.agenda)) {
+        setMeeting((prev: any) =>
+          prev ? { ...prev, agenda: msg.agenda } : prev,
+        );
+      } else if (msg.type === 'canvas_updated' && msg.positions) {
+        setMeeting((prev: any) =>
+          prev ? { ...prev, canvas_positions: msg.positions } : prev,
+        );
       } else if (msg.type === 'utterance_added' && msg.utterance) {
         setMeeting((prev: any) => {
           if (!prev) return prev;
           const t = prev.transcript || { utterances: [], utterance_count: 0 };
           return {
             ...prev,
+            partial_utterance: null, // the final replaces any ghost text
             transcript: {
               ...t,
               utterances: [...(t.utterances || []), msg.utterance],
@@ -69,6 +99,9 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
         });
       }
     });
+
+    // Leader-only cost meter (best-effort; 404s for participants are fine)
+    apiClient.getMeetingCost(meetingId).then(setCost).catch(() => {});
 
     // 30s heartbeat — catches status changes (research/summary completion) that
     // aren't pushed over the meeting WS.
@@ -118,6 +151,34 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
     }
   };
 
+  const handleActionStatusCycle = async (item: any) => {
+    const next =
+      item.status === 'open' ? 'in_progress'
+      : item.status === 'in_progress' ? 'done'
+      : 'open';
+    try {
+      await apiClient.updateActionItemStatus(meetingId, item.id, next);
+      fetchMeeting();
+    } catch (err) {
+      console.error('Action item status update failed:', err);
+    }
+  };
+
+  const [outreach, setOutreach] = useState<string | null>(null);
+  const handleOutreach = async (kind: 'invite' | 'preread' | 'followups' | 'ics') => {
+    setOutreach(kind);
+    try {
+      if (kind === 'invite') await apiClient.sendInvites(meetingId);
+      else if (kind === 'preread') await apiClient.sendPreread(meetingId);
+      else if (kind === 'followups') await apiClient.sendFollowups(meetingId);
+      else await apiClient.downloadCalendar(meetingId);
+    } catch (err) {
+      console.error(`${kind} failed:`, err);
+    } finally {
+      setTimeout(() => setOutreach(null), 1500);
+    }
+  };
+
   const toggleStep = (step: number) => {
     setExpandedStep(expandedStep === step ? -1 : step);
   };
@@ -142,6 +203,7 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
 
   // Derive step statuses
   const hasResearch = meeting.research?.status === 'completed';
+  const isLeader = meeting?.my_role !== 'participant';
   const isResearching = meeting.research?.status === 'researching';
   const researchFailed = meeting.research?.status === 'failed';
   const hasSummary = !!meeting.summary;
@@ -179,9 +241,26 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
           All Meetings
         </button>
 
-        <h1 className="text-2xl font-bold text-gray-900">{meeting.title}</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-gray-900">{meeting.title}</h1>
+          {meeting.meeting_type && (
+            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-full text-xs font-medium">
+              {meeting.meeting_type}
+            </span>
+          )}
+        </div>
         {meeting.description && (
           <p className="text-gray-500 mt-1 max-w-2xl">{meeting.description}</p>
+        )}
+        {meeting.agenda?.length > 0 && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Agenda</span>
+            {meeting.agenda.map((a: any, i: number) => (
+              <span key={i} className="px-2 py-0.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+                {i + 1}. {a.title}
+              </span>
+            ))}
+          </div>
         )}
         <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
           {meeting.scheduled_at && (
@@ -194,6 +273,14 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
             <span className="flex items-center gap-1">
               <Users className="w-4 h-4" />
               {meeting.attendees.length} attendees
+            </span>
+          )}
+          {isLeader && cost && cost.total_tokens > 0 && (
+            <span
+              className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-500"
+              title={`${cost.calls} LLM calls · ${cost.total_tokens.toLocaleString()} tokens`}
+            >
+              AI cost ≈ ${cost.estimated_usd.toFixed(2)}
             </span>
           )}
         </div>
@@ -212,7 +299,13 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
           isExpanded={expandedStep === 0}
           onClick={() => toggleStep(0)}
         >
-          <KnowledgeBaseStep />
+          {isLeader ? (
+            <KnowledgeBaseStep meetingId={meetingId} />
+          ) : (
+            <p className="text-sm text-gray-400 py-6 text-center">
+              The knowledge base is managed by the meeting leader.
+            </p>
+          )}
         </TimelineStep>
 
         {/* Step 1: Pre-Meeting Research */}
@@ -235,7 +328,51 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
           onClick={() => toggleStep(1)}
         >
           {hasResearch && meeting.research ? (
-            <ResearchBriefView research={meeting.research} />
+            <div className="space-y-4">
+              {isLeader && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => handleOutreach('preread')}
+                    disabled={outreach === 'preread'}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    {outreach === 'preread' ? 'Sent!' : 'Send pre-read to attendees'}
+                  </button>
+                  <button
+                    onClick={() => handleOutreach('invite')}
+                    disabled={outreach === 'invite'}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-indigo-300 text-gray-600 text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    {outreach === 'invite' ? 'Invites sent!' : 'Email invites'}
+                  </button>
+                  <button
+                    onClick={() => handleOutreach('ics')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-indigo-300 text-gray-600 text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    Add to calendar (.ics)
+                  </button>
+                </div>
+              )}
+              <ResearchBriefView
+                research={meeting.research}
+                onDiscuss={(prompt) => {
+                  setShowResearchChat(true);
+                  setResearchAsk(prompt);
+                }}
+              />
+              {showResearchChat && (
+                <div className="h-[380px] animate-fade-up">
+                  <AssistantPanel
+                    meetingId={meetingId}
+                    pendingPrompt={researchAsk}
+                    onPromptConsumed={() => setResearchAsk(null)}
+                  />
+                </div>
+              )}
+            </div>
           ) : isResearching ? (
             <div className="bg-yellow-50 rounded-xl p-6">
               <div className="flex items-center gap-3 mb-3">
@@ -252,18 +389,23 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
           ) : researchFailed ? (
             <div className="bg-red-50 rounded-xl p-6">
               <p className="text-red-700 text-sm mb-3">{meeting.research?.executive_summary || 'Research failed'}</p>
+              {isLeader && (
               <button
                 onClick={handleRunResearch}
                 className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
               >
                 Retry Research
               </button>
+              )}
             </div>
           ) : (
             <div className="text-center py-8">
               <p className="text-gray-500 mb-4">
-                Run the 4-agent research pipeline to gather intelligence for your meeting.
+                {isLeader
+                  ? 'Run the 4-agent research pipeline to gather intelligence for your meeting.'
+                  : 'The meeting leader has not run pre-meeting research yet.'}
               </p>
+              {isLeader && (
               <button
                 onClick={handleRunResearch}
                 disabled={researchLoading}
@@ -272,6 +414,7 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
                 {researchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 Run Research Pipeline
               </button>
+              )}
             </div>
           )}
         </TimelineStep>
@@ -347,6 +490,56 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
                 </div>
               )}
 
+              {/* Action Items */}
+              {meeting.action_items?.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                    Action Items ({meeting.action_items.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {meeting.action_items.map((a: any) => (
+                      <div key={a.id} className="p-3 bg-gradient-to-r from-sky-50 to-blue-50 border border-sky-100 rounded-xl">
+                        <p className={`text-sm font-medium ${a.status === 'done' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                          {a.description}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-500">
+                          <span className="bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                            {a.assignee || 'Unassigned'}
+                          </span>
+                          {a.priority && (
+                            <span className={`px-1.5 py-0.5 rounded font-medium ${
+                              a.priority === 'high'
+                                ? 'bg-red-100 text-red-700'
+                                : a.priority === 'low'
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {a.priority}
+                            </span>
+                          )}
+                          {a.status && (
+                            <button
+                              onClick={isLeader ? () => handleActionStatusCycle(a) : undefined}
+                              disabled={!isLeader}
+                              title={isLeader ? 'Click to advance status' : undefined}
+                              className={`px-1.5 py-0.5 rounded font-medium ${
+                                a.status === 'done'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : a.status === 'in_progress'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-gray-100 text-gray-600'
+                              } ${isLeader ? 'cursor-pointer hover:ring-1 hover:ring-gray-300' : ''}`}
+                            >
+                              {a.status}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* AI Insights */}
               {meeting.summary.key_insights?.length > 0 && (
                 <div>
@@ -374,7 +567,7 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
                       </span>
                     )}
                   </div>
-                ) : (
+                ) : isLeader ? (
                   <button
                     onClick={handleSendEmail}
                     disabled={emailSending}
@@ -387,6 +580,25 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
                     )}
                     Send to Attendees
                   </button>
+                ) : null}
+                {isLeader && (
+                  <>
+                    <button
+                      onClick={() => handleOutreach('followups')}
+                      disabled={outreach === 'followups'}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:border-indigo-300 text-gray-600 rounded-xl text-sm transition-colors"
+                    >
+                      <Send className="w-4 h-4" />
+                      {outreach === 'followups' ? 'Sent!' : 'Email assignees their items'}
+                    </button>
+                    <button
+                      onClick={() => handleOutreach('ics')}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:border-indigo-300 text-gray-600 rounded-xl text-sm transition-colors"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      Deadlines → calendar (.ics)
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -399,6 +611,7 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
               <p className="text-gray-500 mb-6 max-w-sm mx-auto text-sm">
                 AI will synthesize the transcript, decisions, nudge cards, and pre-meeting research into a comprehensive summary.
               </p>
+              {isLeader && (
               <button
                 onClick={handleGenerateSummary}
                 disabled={summaryLoading}
@@ -416,6 +629,7 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
                   </>
                 )}
               </button>
+              )}
             </div>
           ) : (
             <div className="text-center py-10">
@@ -439,6 +653,18 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
                       {d.owner && <span>Owner: {d.owner}</span>}
                       {d.deadline && <span>Due: {new Date(d.deadline).toLocaleDateString()}</span>}
                     </div>
+                    {d.context && (
+                      <div className="mt-2 pl-2.5 border-l-2 border-emerald-300/60">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600/70 mb-1">
+                          Conversation trigger
+                        </p>
+                        {d.context.split('\n').map((line: string, i: number) => (
+                          <p key={i} className="text-[11px] text-gray-500 italic leading-relaxed">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
