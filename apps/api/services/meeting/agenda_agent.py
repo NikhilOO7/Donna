@@ -18,8 +18,10 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 # Fraction of an item title's content words that must appear in the recent
-# conversation window before the item counts as covered.
-_COVERAGE_THRESHOLD = 0.6
+# conversation window before the item counts as covered. 0.5 (not higher)
+# because titles carry filler the room never says verbatim — "Vendor
+# selection" is covered by discussing vendors (tuned via evals.run).
+_COVERAGE_THRESHOLD = 0.5
 
 # Don't suggest "you still have uncovered items" before the meeting has
 # actually gotten going, and never more than once per cooldown window.
@@ -29,7 +31,8 @@ _NUDGE_COOLDOWN_SECONDS = 600
 _STOPWORDS = frozenset(
     "a an and are as at be but by for from has have i in is it of on or "
     "our that the their this to was we what when which who will with you "
-    "your review discuss align confirm update plan next new item".split()
+    "your review discuss align confirm update plan next new item "
+    "deep dive discussion check sync overview recap".split()
 )
 
 _TOKEN_RE = re.compile(r"[a-z0-9']+")

@@ -71,6 +71,11 @@ jobs:
         run: uv run alembic check
       - run: uv run python -m pytest tests/ -v --timeout=60
         timeout-minutes: 5
+      # Agent-quality gates: golden datasets + committed metric floors.
+      # A change that degrades decision/claim detection, agenda coverage,
+      # activation matching, or flow judgment fails CI here.
+      - name: Eval harness (deterministic gates)
+        run: uv run python -m evals.run --suites deterministic --gate
 
   security:
     name: Security Audit

@@ -223,6 +223,17 @@ class Settings(BaseSettings):
         default="ws://localhost:7880",
         validation_alias=AliasChoices("LIVEKIT_URL", "livekit_url"),
     )
+    # URL BROWSERS use to reach LiveKit. Inside compose, livekit_url is the
+    # docker-network hostname (ws://livekit:7880) which a browser can't
+    # resolve — token endpoints must hand out this one instead.
+    livekit_public_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("LIVEKIT_PUBLIC_URL", "livekit_public_url"),
+    )
+
+    @property
+    def livekit_client_url(self) -> str:
+        return self.livekit_public_url or self.livekit_url
     livekit_api_key: str = Field(
         default="", validation_alias=AliasChoices("LIVEKIT_API_KEY", "livekit_api_key")
     )
@@ -339,6 +350,29 @@ class Settings(BaseSettings):
     postmark_from_email: str = Field(
         default="meetings@example.com",
         validation_alias=AliasChoices("POSTMARK_FROM_EMAIL", "postmark_from_email"),
+    )
+    # Shared secret for the inbound-email webhook (H4): Postmark is configured
+    # to POST to /api/v1/integrations/email/inbound?token=<this>.
+    postmark_inbound_token: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "POSTMARK_INBOUND_TOKEN", "postmark_inbound_token"
+        ),
+    )
+
+    # Google Calendar ingestion (H5) — optional OAuth app credentials.
+    # Feature endpoints return 503 until these are set.
+    google_client_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_CLIENT_ID", "google_client_id"),
+    )
+    google_client_secret: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_CLIENT_SECRET", "google_client_secret"),
+    )
+    google_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/integrations/google/callback",
+        validation_alias=AliasChoices("GOOGLE_REDIRECT_URI", "google_redirect_uri"),
     )
 
     # Neo4j (Knowledge Graph)

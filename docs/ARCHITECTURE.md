@@ -8,9 +8,9 @@ paths plus a shared knowledge substrate.
                         ┌─────────────────────────────────────────────┐
  utterance (Deepgram)   │                 HOT PATH                    │  < 2s to first nudge
  ──────────────────────▶│  agent_dispatcher — streaming as_completed  │
-                        │  activation(2s) kg_query(8s) memory(6s)     │
-                        │  context(10s) scribe(12s) insight(12s)      │
-                        │  fact_check(25s)                            │
+                        │  activation(2s) agenda(3s) flow(5s)         │
+                        │  memory(6s) kg_query(8s) context(10s)       │
+                        │  scribe(12s) insight(12s) fact_check(25s)   │
                         └───────────────┬─────────────────────────────┘
                                         │ each agent emits the moment it finishes
                         ┌───────────────▼─────────────────────────────┐
@@ -32,7 +32,7 @@ paths plus a shared knowledge substrate.
 
 `apps/api/services/meeting/agent_dispatcher.py`
 
-Design pattern: **streaming supervisor** (not scatter-gather). Seven agents
+Design pattern: **streaming supervisor** (not scatter-gather). Nine agents
 run concurrently under `asyncio.as_completed`; each result is persisted and
 broadcast the moment it lands. A slow fact-check never delays a fast
 activation nudge.
@@ -126,3 +126,12 @@ apps.mcp_server.server`; Claude Desktop config is in the module docstring.
 | Upload → 202 response | < 1s | processing enqueued, not inline |
 | Silent utterance | $0 | regex/token pre-checks gate every LLM call |
 | Repeated query embedding | $0 | Redis embedding cache |
+
+## Eval harness — quality gates for the AI layer
+
+`evals/` — golden datasets + metric floors, gated in CI (see `evals/README.md`).
+Seven suites: five deterministic (scribe/fact-check gates, activation, agenda,
+flow — zero dependencies, block CI), one offline IR benchmark (the
+contextual+BM25 hybrid must keep beating naive dense RAG), one LLM-stage suite
+(skips without an API key, errors loudly on quota — never silent passes).
+`--update-baselines` ratchets floors; a floor drop is a reviewed diff.

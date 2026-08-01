@@ -1,0 +1,11 @@
+# Ground truth for meeting-flow judgment. expect: "balance" | "no_decision" | null
+{"id": "fl-01", "stats": [["Alice", 80], ["Bob", 10], ["Cara", 10]], "utterance_count": 25, "elapsed_minutes": 10, "decision_count": 1, "expect": "balance"}
+{"id": "fl-02", "stats": [["Alice", 50], ["Bob", 50]], "utterance_count": 25, "elapsed_minutes": 10, "decision_count": 0, "expect": null}
+{"id": "fl-03", "stats": [["Alice", 100]], "utterance_count": 30, "elapsed_minutes": 10, "decision_count": 0, "expect": null}
+{"id": "fl-04", "stats": [["Alice", 40], ["Bob", 35], ["Cara", 25]], "utterance_count": 40, "elapsed_minutes": 45, "decision_count": 0, "expect": "no_decision"}
+{"id": "fl-05", "stats": [["Alice", 40], ["Bob", 35], ["Cara", 25]], "utterance_count": 40, "elapsed_minutes": 45, "decision_count": 3, "expect": null}
+{"id": "fl-06", "stats": [["Alice", 70], ["Bob", 30]], "utterance_count": 10, "elapsed_minutes": 5, "decision_count": 0, "expect": null}
+{"id": "fl-07", "stats": [["Alice", 68], ["Bob", 20], ["Cara", 12]], "utterance_count": 50, "elapsed_minutes": 20, "decision_count": 2, "expect": "balance"}
+{"id": "fl-08", "stats": [["Alice", 55], ["Bob", 45]], "utterance_count": 100, "elapsed_minutes": 25, "decision_count": 0, "expect": null}
+{"id": "fl-09", "stats": [["Alice", 34], ["Bob", 33], ["Cara", 33]], "utterance_count": 60, "elapsed_minutes": 90, "decision_count": 0, "expect": "no_decision"}
+{"id": "fl-10", "stats": [["Alice", 90], ["Bob", 10]], "utterance_count": 20, "elapsed_minutes": 8, "decision_count": 1, "expect": "balance"}

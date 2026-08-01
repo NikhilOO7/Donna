@@ -543,10 +543,27 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"Meeting voice worker exiting room: {room_name}")
 
 
+async def request_fnc(req) -> None:
+    """Job routing: this worker transcribes MEETING rooms only.
+
+    Rejecting (not accept-and-ignore) matters — a rejected job is
+    re-dispatched by LiveKit to another worker, so the assistant worker
+    still gets document-chat rooms. Accept-then-return consumed the job
+    and left that room with no agent at all.
+    """
+    room_name = getattr(req.room, "name", "") or ""
+    if room_name.startswith("meeting-"):
+        await req.accept(name="donna-scribe", identity="donna-meeting-worker")
+    else:
+        logger.info(f"[dispatch] rejecting non-meeting room: {room_name}")
+        await req.reject()
+
+
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            request_fnc=request_fnc,
             api_key=settings.livekit_api_key,
             api_secret=settings.livekit_api_secret,
             ws_url=settings.livekit_url,

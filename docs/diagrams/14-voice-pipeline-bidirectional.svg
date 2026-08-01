@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 500" width="1140" height="500" preserveAspectRatio="xMidYMid meet">
+<rect width="100%" height="100%" fill="#0a0f1c"/>
+<style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-bg.cyan{stroke:#06b6d4;fill:#132a30}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge.rose{stroke:#f43f5e}
+.edge.cyan{stroke:#06b6d4}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+text[text-anchor="start"]{text-anchor:start}
+text[text-anchor="end"]{text-anchor:end}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+<defs>
+<marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+<marker id="fa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+<marker id="fa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+<marker id="fa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+<marker id="fa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+<marker id="fa-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+<marker id="fa-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f43f5e"/></marker>
+</defs>
+
+        <text x="570" y="26" class="lane-label">AUDIO IN → TEXT · voice-worker (apps/workers/meeting_voice_worker.py)</text>
+
+        <g transform="translate(20,55)">
+          <rect class="node-bg indigo" width="190" height="64" rx="12"/>
+          <text class="node-label" x="95" y="18">🎤 Browser mics</text>
+          <text class="node-sub" x="95" y="36">LiveKit React SDK</text>
+          <text class="node-tag" x="95" y="52">token from /voice-token</text>
+        </g>
+        <g transform="translate(250,55)">
+          <rect class="node-bg" width="180" height="64" rx="12"/>
+          <text class="node-label" x="90" y="18">📡 LiveKit SFU</text>
+          <text class="node-sub" x="90" y="36">room meeting-&lt;uuid&gt;</text>
+          <text class="node-tag" x="90" y="52">one track / person</text>
+        </g>
+        <g transform="translate(470,55)" class="node-pulse">
+          <rect class="node-bg sky" width="230" height="64" rx="12"/>
+          <text class="node-label" x="115" y="18">🤖 voice-worker joins</text>
+          <text class="node-sub" x="115" y="36">subscribes to every audio track</text>
+          <text class="node-tag" x="115" y="52">1 Deepgram stream / track</text>
+        </g>
+        <g transform="translate(740,55)">
+          <rect class="node-bg amber" width="190" height="64" rx="12"/>
+          <text class="node-label" x="95" y="18">🗣 Deepgram STT</text>
+          <text class="node-sub" x="95" y="36">nova-2-meeting · streaming</text>
+          <text class="node-tag" x="95" y="52">interim + finals</text>
+        </g>
+        <g transform="translate(970,55)">
+          <rect class="node-bg emerald" width="150" height="64" rx="12"/>
+          <text class="node-label" x="75" y="18">📮 Backend</text>
+          <text class="node-sub" x="75" y="36">POST /utterances</text>
+          <text class="node-tag" x="75" y="52">X-API-Key · retries</text>
+        </g>
+        <path class="edge flow" d="M210,87 H248" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M430,87 H468" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M700,87 H738" marker-end="url(#fa)"/>
+        <path class="edge emerald" d="M930,87 H968" marker-end="url(#fa-e)"/>
+
+        <g transform="translate(200,170)">
+          <rect class="node-bg cyan" width="330" height="66" rx="12"/>
+          <text class="node-label" x="165" y="18">👻 Interim results (word-by-word)</text>
+          <text class="node-sub" x="165" y="36">published straight to Redis meeting:events</text>
+          <text class="node-tag" x="165" y="52">ghost text in UI · never stored · 300ms throttle</text>
+        </g>
+        <g transform="translate(590,170)">
+          <rect class="node-bg" width="330" height="66" rx="12"/>
+          <text class="node-label" x="165" y="18">🏁 Finals only → transcript + dispatch</text>
+          <text class="node-sub" x="165" y="36">cost control: agents run on finished sentences</text>
+          <text class="node-tag" x="165" y="52">conference mode: "Name — Speaker N" via diarization</text>
+        </g>
+        <path class="edge cyan dashed" d="M835,119 V150 H365 V168" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M835,119 V168" marker-end="url(#fa)"/>
+
+        <text x="570" y="288" class="lane-label">AUDIO OUT · DONNA SPEAKS (TTS) — WITH BARGE-IN</text>
+        <g transform="translate(30,315)">
+          <rect class="node-bg violet" width="240" height="66" rx="12"/>
+          <text class="node-label" x="120" y="18">💡 High-signal nudge</text>
+          <text class="node-sub" x="120" y="36">fact_check / decision · relevance ≥ 0.8</text>
+          <text class="node-tag" x="120" y="52">leader toggle · 1 per 2 min</text>
+        </g>
+        <g transform="translate(320,315)">
+          <rect class="node-bg pink" width="230" height="66" rx="12"/>
+          <text class="node-label" x="115" y="18">📻 Redis channel</text>
+          <text class="node-sub" x="115" y="36">meeting:&lt;id&gt;:speak</text>
+          <text class="node-tag" x="115" y="52">worker subscribes per room</text>
+        </g>
+        <g transform="translate(600,315)">
+          <rect class="node-bg amber" width="230" height="66" rx="12"/>
+          <text class="node-label" x="115" y="18">🎵 Cartesia TTS</text>
+          <text class="node-sub" x="115" y="36">raw PCM 24kHz → 20ms frames</text>
+          <text class="node-tag" x="115" y="52">published as room audio track</text>
+        </g>
+        <g transform="translate(880,315)" class="node-pulse emerald">
+          <rect class="node-bg emerald" width="240" height="66" rx="12"/>
+          <text class="node-label" x="120" y="18">✋ Barge-in check</text>
+          <text class="node-sub" x="120" y="36">human speech during playback?</text>
+          <text class="node-tag" x="120" y="52">→ stop mid-frame, never talk over</text>
+        </g>
+        <path class="edge pink" d="M270,348 H318" marker-end="url(#fa-p)"/>
+        <path class="edge flow" d="M550,348 H598" marker-end="url(#fa)"/>
+        <path class="edge emerald" d="M830,348 H878" marker-end="url(#fa-e)"/>
+        <path class="edge dashed rose" d="M1000,381 V420 H835 V240 " marker-end="url(#fa-r)"/>
+        <text x="920" y="440" class="edge-label">any transcript event stamps _last_voice_at → playback loop yields</text>
+      </svg>

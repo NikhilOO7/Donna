@@ -73,6 +73,11 @@ class Meeting(Base):
     )
     attendees: Mapped[list] = mapped_column(JSON, default=list)
     meeting_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # Calendar ingestion: the source event id (e.g. Google event id) so a
+    # re-sync never imports the same event twice.
+    external_event_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )
     # Shared canvas layout: {nudge_id: {"x": float, "y": float}}
     canvas_positions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     # Structured agenda: [{"title": str, "status": "pending|covered"}]

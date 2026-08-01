@@ -109,6 +109,7 @@ async def client(mock_lifespan_services):
 
     app.state.services = ServiceContainer(
         rag_service=mock_rag,
+        modern_rag_service=mock_rag,
         voice_service=MagicMock(),
         enhanced_voice_service=MagicMock(sessions=[]),
         embedding_service=MagicMock(),

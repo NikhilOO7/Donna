@@ -40,6 +40,7 @@ from apps.api.services.meeting.activation_agent import activation_agent
 from apps.api.services.meeting.agenda_agent import agenda_agent
 from apps.api.services.meeting.context_agent import context_agent
 from apps.api.services.meeting.fact_check_agent import fact_check_agent
+from apps.api.services.meeting.flow_agent import flow_agent
 from apps.api.services.meeting.insight_agent import insight_agent
 from apps.api.services.meeting.kg_query_agent import kg_query_agent
 from apps.api.services.meeting.meeting_service import meeting_service
@@ -67,6 +68,7 @@ _AGENT_TIMEOUTS = {
     "activation": 2.0,  # pure token matcher
     "memory": 6.0,  # Neo4j decision recall
     "agenda": 3.0,  # pure lexical matcher + one UPDATE on transitions
+    "flow": 5.0,  # one SQL aggregate every Nth utterance
 }
 
 # Bursts of utterances coalesce: if a cycle is already running, we mark a
@@ -234,6 +236,15 @@ class AgentDispatcher:
                             utterances,
                             agenda=state.get("agenda") or [],
                             utterance_count=state.get("utterance_count", 0),
+                        ),
+                    ),
+                    (
+                        "flow",
+                        flow_agent.analyze(
+                            meeting_id,
+                            utterance_count=state.get("utterance_count", 0),
+                            started_at=state.get("started_at"),
+                            decision_count=state.get("decision_count", 0),
                         ),
                     ),
                 )

@@ -39,12 +39,19 @@ _PER_MEETING_MIN_GAP_S = 45.0
 # - percentage / numeric increase: "8%", "15 percent", "$3.2B"
 # - comparative: "more than", "less than", "doubled", "raised"
 # - attribution: "according to", "reports say", "research shows"
+# Tuned against evals/datasets/factcheck_claims.jsonl (run: evals.run):
+# "$99" never matched because \b can't sit between a space and "$" (both
+# non-word) — the currency alternative now lives outside the \b group.
+# Superlatives ("fastest on the market"), sweeping claims ("everyone is
+# switching") and hearsay ("reportedly") are checkable claims too.
 CLAIM_PATTERNS = re.compile(
-    r"\b(\d+(\.\d+)?\s*%|\$\s*\d|"
-    r"grew|increased|decreased|dropped|raised|rose|fell|"
+    r"(\$\s*\d|\d+(\.\d+)?\s*%|"
+    r"\b(grew|increased|decreased|dropped|raised|rose|fell|"
     r"more than|less than|doubled|tripled|"
-    r"according to|reports? (say|show)|research (shows|found)|"
-    r"market (size|share|cap))\b",
+    r"according to|reports? (say|show)|research (shows|found)|reportedly|"
+    r"fastest|slowest|biggest|largest|cheapest|most popular|market leader|"
+    r"everyone is (switching|using|moving)|"
+    r"market (size|share|cap))\b)",
     re.IGNORECASE,
 )
 

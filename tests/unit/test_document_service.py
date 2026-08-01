@@ -145,8 +145,9 @@ class TestDocumentServiceDuplication:
                 file_type="application/pdf",
             )
 
-        # Old row (entities + chunks + document) deleted, new document created
-        assert mock_session.execute.call_count == 3
+        # Old row cleanup: entities + chunks deleted, analytics detached,
+        # document deleted — then the new document is created
+        assert mock_session.execute.call_count == 4
         mock_session.add.assert_called_once()
         assert document.filename == "test.pdf"
         assert document.processing_status == "pending"

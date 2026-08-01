@@ -149,6 +149,8 @@ services:
 
       # LiveKit
       - LIVEKIT_URL=http://livekit:7880
+      # Browser-facing LiveKit URL — token endpoints hand this out
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
 
@@ -157,6 +159,15 @@ services:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
       - VOYAGEAI_API_KEY=${VOYAGEAI_API_KEY}
+      - EXA_API_KEY=${EXA_API_KEY:-}
+      - POSTMARK_API_KEY=${POSTMARK_API_KEY:-}
+      - POSTMARK_FROM_EMAIL=${POSTMARK_FROM_EMAIL:-meetings@example.com}
+      # Inbound email research (H4) + Google Calendar ingestion (H5)
+      - POSTMARK_INBOUND_TOKEN=${POSTMARK_INBOUND_TOKEN:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/integrations/google/callback}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
 
       # Server-side auth enforcement (P0 hardening). The service API key
       # lets the voice worker POST transcripts without a user JWT.
@@ -212,8 +223,18 @@ services:
       dockerfile: apps/worker/Dockerfile
     container_name: voice-doc-job-worker
     command: ["uv", "run", "arq", "apps.workers.job_worker.WorkerSettings"]
+    volumes:
+      # Same uploads volume as the backend — document jobs read the files
+      # the API saved. Without this, every doc job fails with ENOENT.
+      - ./data:/app/data
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
+      # The engine builds from POSTGRES_* parts, not DATABASE_URL — set both.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-voicedoc}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-voicedoc123}
+      - POSTGRES_DB=${POSTGRES_DB:-voice_doc_intel}
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PASSWORD=

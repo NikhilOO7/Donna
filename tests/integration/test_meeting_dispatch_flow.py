@@ -48,6 +48,8 @@ def _make_state(
     return {
         "utterances": utterances,
         "utterance_count": len(utterances),
+        "started_at": None,
+        "decision_count": 0,
         "owner_id": str(uuid.uuid4()),
         "attendees": [],
         "agenda": [],
@@ -107,6 +109,7 @@ def _patch_dispatcher(mock_ms_state):
         ),
         "memory": patch("apps.api.services.meeting.agent_dispatcher.memory_agent"),
         "agenda": patch("apps.api.services.meeting.agent_dispatcher.agenda_agent"),
+        "flow": patch("apps.api.services.meeting.agent_dispatcher.flow_agent"),
         "suppress": patch(
             "apps.api.services.meeting.agent_dispatcher.should_suppress",
             new=AsyncMock(return_value=False),
@@ -183,6 +186,7 @@ class TestMeetingDispatchFlow:
             p["activation"] as mock_activation,
             p["memory"] as mock_memory,
             p["agenda"] as mock_agenda,
+            p["flow"] as mock_flow,
             p["suppress"],
         ):
             mock_ms.get_dispatch_state = AsyncMock(return_value=state)
@@ -208,6 +212,7 @@ class TestMeetingDispatchFlow:
             mock_activation.analyze = AsyncMock(return_value=None)
             mock_memory.analyze = AsyncMock(return_value=None)
             mock_agenda.analyze = AsyncMock(return_value=None)
+            mock_flow.analyze = AsyncMock(return_value=None)
             mock_kg.analyze = AsyncMock(
                 return_value=_make_canned_nudge(
                     "knowledge_graph", "Connection found", "kg_query_agent"
@@ -282,6 +287,7 @@ class TestMeetingDispatchFlow:
             p["activation"] as mock_activation,
             p["memory"] as mock_memory,
             p["agenda"] as mock_agenda,
+            p["flow"] as mock_flow,
             p["suppress"],
         ):
             mock_ms.get_dispatch_state = AsyncMock(return_value=state)
@@ -299,6 +305,7 @@ class TestMeetingDispatchFlow:
             mock_activation.analyze = AsyncMock(return_value=None)
             mock_memory.analyze = AsyncMock(return_value=None)
             mock_agenda.analyze = AsyncMock(return_value=None)
+            mock_flow.analyze = AsyncMock(return_value=None)
             mock_kg.analyze = AsyncMock(
                 return_value=_make_canned_nudge(
                     "knowledge_graph", "K", "kg_query_agent"

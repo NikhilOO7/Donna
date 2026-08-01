@@ -194,13 +194,24 @@ class MeetingService:
 
             row = (
                 await session.execute(
-                    select(Meeting.owner_id, Meeting.attendees, Meeting.agenda).where(
-                        Meeting.id == meeting_id, Meeting.deleted_at.is_(None)
-                    )
+                    select(
+                        Meeting.owner_id,
+                        Meeting.attendees,
+                        Meeting.agenda,
+                        Meeting.started_at,
+                    ).where(Meeting.id == meeting_id, Meeting.deleted_at.is_(None))
                 )
             ).first()
             if row is None:
                 return None
+
+            decision_count = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Decision)
+                    .where(Decision.meeting_id == meeting_id)
+                )
+            ).scalar_one()
 
             # Only the recent window leaves Postgres — agents look at the
             # last few utterances, and shipping a 2-hour meeting's full
@@ -242,6 +253,8 @@ class MeetingService:
                 "owner_id": str(row.owner_id) if row.owner_id else None,
                 "attendees": attendees,
                 "agenda": row.agenda if isinstance(row.agenda, list) else [],
+                "started_at": row.started_at,
+                "decision_count": int(decision_count or 0),
                 "utterances": list(transcript or []),
                 "utterance_count": utterance_count,
                 "research_topics": list(topics or []),

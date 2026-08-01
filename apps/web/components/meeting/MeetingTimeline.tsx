@@ -75,6 +75,10 @@ export default function MeetingTimeline({ meetingId, onBack }: MeetingTimelinePr
         setMeeting((prev: any) =>
           prev ? { ...prev, partial_utterance: { speaker: msg.speaker, text: msg.text } } : prev,
         );
+      } else if (msg.type === 'flow_update' && Array.isArray(msg.talk_time)) {
+        setMeeting((prev: any) =>
+          prev ? { ...prev, talk_time: msg.talk_time } : prev,
+        );
       } else if (msg.type === 'agenda_progress' && Array.isArray(msg.agenda)) {
         setMeeting((prev: any) =>
           prev ? { ...prev, agenda: msg.agenda } : prev,

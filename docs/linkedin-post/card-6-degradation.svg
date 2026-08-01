@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350">
+<rect width="100%" height="100%" class="bg" fill="#0a0f1c"/><style>
+.bg{fill:#0a0f1c}
+.tag{fill:#8b5cf6;font:700 26px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.25em}
+.tag.amber{fill:#f59e0b}.tag.emerald{fill:#10b981}.tag.sky{fill:#0ea5e9}.tag.rose{fill:#f43f5e}.tag.pink{fill:#ec4899}
+.h1{fill:#f1f5f9;font:800 56px 'Inter',-apple-system,'Helvetica Neue',sans-serif;letter-spacing:-.02em}
+.hsub{fill:#94a3b8;font:400 27px 'Inter',-apple-system,sans-serif}
+.nlabel{fill:#eaeef4;font:600 27px 'Inter',-apple-system,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.nsub{fill:#8a93ab;font:400 20.5px 'Inter',-apple-system,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.ntag{fill:#cbd5e1;font:700 16px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;dominant-baseline:middle}
+.lane{fill:#5b647e;font:700 19px 'Inter',-apple-system,sans-serif;letter-spacing:.22em;text-transform:uppercase;text-anchor:middle}
+.box{fill:#131b2e;stroke:#2b3654;stroke-width:2.5}
+.box.rose{stroke:#f43f5e;fill:#1c1219}.box.emerald{stroke:#10b981;fill:#0f2019}.box.violet{stroke:#8b5cf6;fill:#181231}
+.box.amber{stroke:#f59e0b;fill:#211a0e}.box.sky{stroke:#0ea5e9;fill:#0e1d2b}.box.pink{stroke:#ec4899;fill:#1f1119}
+.box.indigo{stroke:#6366f1;fill:#161a38}.box.cyan{stroke:#06b6d4;fill:#0d2126}
+.edge{fill:none;stroke:#5c6788;stroke-width:3}
+.edge.dashed{stroke-dasharray:9 8}
+.edge.rose{stroke:#f43f5e}.edge.emerald{stroke:#10b981}.edge.amber{stroke:#f59e0b}
+.edge.violet{stroke:#8b5cf6}.edge.sky{stroke:#0ea5e9}.edge.pink{stroke:#ec4899}
+.elabel{fill:#9ca3b8;font:500 19px 'JetBrains Mono',ui-monospace,monospace;text-anchor:middle}
+.mono{fill:#a5b4fc;font:500 24px 'JetBrains Mono',ui-monospace,monospace}
+.mono.red{fill:#f87171}.mono.green{fill:#6ee7b7}
+.tolabel{fill:#f59e0b;font:700 21px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.2em}
+.tobody{fill:#cbd5e1;font:500 27px 'Inter',-apple-system,sans-serif}
+.footer{fill:#475569;font:500 22px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.12em}
+text[text-anchor="start"]{text-anchor:start}text[text-anchor="end"]{text-anchor:end}
+</style><defs>
+<marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+<marker id="ar-e" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+<marker id="ar-r" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f43f5e"/></marker>
+<marker id="ar-v" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+<marker id="ar-a" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+<marker id="ar-s" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+<marker id="ar-p" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+</defs>
+<radialGradient id="glow" cx="85%" cy="6%" r="50%"><stop offset="0%" stop-color="#8b5cf6" stop-opacity=".14"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
+<rect width="100%" height="100%" fill="url(#glow)"/>
+
+<text x="70" y="140" class="tag rose" text-anchor="start">LESSON 05 · DESIGN FOR PARTIAL FAILURE</text>
+<text x="70" y="240" class="h1" text-anchor="start">Degrade, do not die</text>
+<g transform="translate(70,320)"><rect class="box rose" width="330" height="100" rx="16"/><text class="nlabel" x="165" y="50"><tspan style="font-size:24px">OpenAI down</tspan></text></g><path class="edge" d="M400,370 H448" marker-end="url(#ar)"/><g transform="translate(450,320)"><rect class="box emerald" width="560" height="100" rx="16"/><foreignObject x="24" y="14" width="512" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:400 21px Inter,-apple-system,sans-serif;color:#a7f3d0;line-height:1.35">breaker trips → UI banner · meetings, transcripts, decisions keep working</div></foreignObject></g><g transform="translate(70,438)"><rect class="box pink" width="330" height="100" rx="16"/><text class="nlabel" x="165" y="50"><tspan style="font-size:24px">Redis down</tspan></text></g><path class="edge" d="M400,488 H448" marker-end="url(#ar)"/><g transform="translate(450,438)"><rect class="box emerald" width="560" height="100" rx="16"/><foreignObject x="24" y="14" width="512" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:400 21px Inter,-apple-system,sans-serif;color:#a7f3d0;line-height:1.35">locks no-op · in-process fan-out · jobs fall back to BackgroundTasks</div></foreignObject></g><g transform="translate(70,556)"><rect class="box violet" width="330" height="100" rx="16"/><text class="nlabel" x="165" y="50"><tspan style="font-size:24px">Neo4j down</tspan></text></g><path class="edge" d="M400,606 H448" marker-end="url(#ar)"/><g transform="translate(450,556)"><rect class="box emerald" width="560" height="100" rx="16"/><foreignObject x="24" y="14" width="512" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:400 21px Inter,-apple-system,sans-serif;color:#a7f3d0;line-height:1.35">graph features switch off · Postgres-only mode — enhancer, not dependency</div></foreignObject></g><g transform="translate(70,674)"><rect class="box amber" width="330" height="100" rx="16"/><text class="nlabel" x="165" y="50"><tspan style="font-size:24px">one agent hangs</tspan></text></g><path class="edge" d="M400,724 H448" marker-end="url(#ar)"/><g transform="translate(450,674)"><rect class="box emerald" width="560" height="100" rx="16"/><foreignObject x="24" y="14" width="512" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:400 21px Inter,-apple-system,sans-serif;color:#a7f3d0;line-height:1.35">its timeout expires · the cycle completes with 8 of 9 results</div></foreignObject></g>
+<text x="70" y="850" class="hsub" text-anchor="start" style="fill:#cbd5e1">…and the failures that never throw? Outcome-asserting tests catch what logs hide:</text>
+<g transform="translate(70,890)"><rect class="box " width="300" height="110" rx="16"/><text class="nlabel" x="150" y="34"><tspan style="font-size:23px">config that no-op’d</tspan></text><text class="nsub" x="150" y="66">pydantic ignored env=</text><text class="ntag" x="150" y="88">prod mode never applied</text></g>
+<g transform="translate(390,890)"><rect class="box " width="300" height="110" rx="16"/><text class="nlabel" x="150" y="34"><tspan style="font-size:23px">tenant-blind cache key</tspan></text><text class="nsub" x="150" y="66">query-only answer cache</text><text class="ntag" x="150" y="88">owner joined the key</text></g>
+<g transform="translate(710,890)"><rect class="box " width="300" height="110" rx="16"/><text class="nlabel" x="150" y="34"><tspan style="font-size:23px">job that “completed”</tspan></text><text class="nsub" x="150" y="66">worker hit localhost DB</text><text class="ntag" x="150" y="88">assert outcomes, not logs</text></g>
+<rect x="70" y="1050" width="940" height="126" rx="16" fill="#151109" stroke="#f59e0b" stroke-width="2"/><text x="100" y="1088" class="tolabel" text-anchor="start">⚖ THE TRADE-OFF</text><text x="100" y="1126" class="tobody" text-anchor="start">Every fallback is more code and more tests — bought: no single</text><text x="100" y="1162" class="tobody" text-anchor="start">vendor, store, or hung agent can take the meeting down.</text>
+<text x="70" y="1310" class="footer" text-anchor="start">BUILDING DONNA — AI MEETING COLLABORATOR</text><text x="1010" y="1310" class="footer" text-anchor="end">6/6</text>
+</svg>

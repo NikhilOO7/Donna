@@ -1,0 +1,30 @@
+# Ground truth: does this utterance contain (or strongly signal) a decision/commitment
+# the scribe should catch? Labeled by judgment, NOT by what the regex currently does.
+{"id": "sd-01", "text": "Let's go with the Postgres option then.", "label": true}
+{"id": "sd-02", "text": "We decided to push the launch to March.", "label": true}
+{"id": "sd-03", "text": "Agreed — Sarah will own the vendor contract.", "label": true}
+{"id": "sd-04", "text": "The decision is to sunset the legacy API by Q4.", "label": true}
+{"id": "sd-05", "text": "I'll take the follow-up with legal this week.", "label": true}
+{"id": "sd-06", "text": "Let's commit to shipping on Friday.", "label": true}
+{"id": "sd-07", "text": "Approved. Go ahead with the redesign.", "label": true}
+{"id": "sd-08", "text": "Going forward we standardize on Kubernetes.", "label": true}
+{"id": "sd-09", "text": "The plan is to hire two contractors for the migration.", "label": true}
+{"id": "sd-10", "text": "Action item: update the pricing page before Monday.", "label": true}
+{"id": "sd-11", "text": "Next step is to draft the RFC and circulate it.", "label": true}
+{"id": "sd-12", "text": "OK, we'll go with vendor B for the pilot.", "label": true}
+{"id": "sd-13", "text": "Finalize the budget at 40k and move on.", "label": true}
+{"id": "sd-14", "text": "Consider it done — March 3rd is the date.", "label": true}
+{"id": "sd-15", "text": "So it's settled, Priya takes onboarding and I take billing.", "label": true}
+{"id": "sd-16", "text": "What time is the demo tomorrow?", "label": false}
+{"id": "sd-17", "text": "The weather has been terrible this week.", "label": false}
+{"id": "sd-18", "text": "Can you share your screen real quick?", "label": false}
+{"id": "sd-19", "text": "I think the numbers look interesting.", "label": false}
+{"id": "sd-20", "text": "Let me pull up the report.", "label": false}
+{"id": "sd-21", "text": "How was the offsite last week?", "label": false}
+{"id": "sd-22", "text": "The customer seemed happy with the trial overall.", "label": false}
+{"id": "sd-23", "text": "We're still waiting on the analytics data.", "label": false}
+{"id": "sd-24", "text": "That chart is a bit hard to read on my screen.", "label": false}
+{"id": "sd-25", "text": "Sorry, I was on mute again.", "label": false}
+{"id": "sd-26", "text": "We should probably think about this some more.", "label": false}
+{"id": "sd-27", "text": "Maybe we should ask marketing what they think first.", "label": false}
+{"id": "sd-28", "text": "I will take a look when I get a chance.", "label": false}

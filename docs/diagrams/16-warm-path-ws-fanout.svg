@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 430" width="1140" height="430" preserveAspectRatio="xMidYMid meet">
+<rect width="100%" height="100%" fill="#0a0f1c"/>
+<style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-bg.cyan{stroke:#06b6d4;fill:#132a30}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge.rose{stroke:#f43f5e}
+.edge.cyan{stroke:#06b6d4}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+text[text-anchor="start"]{text-anchor:start}
+text[text-anchor="end"]{text-anchor:end}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+<defs>
+<marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+<marker id="fa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+<marker id="fa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+<marker id="fa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+<marker id="fa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+<marker id="fa-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+<marker id="fa-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f43f5e"/></marker>
+</defs>
+
+        <text x="570" y="26" class="lane-label">WARM PATH · CROSS-REPLICA WS FAN-OUT WITH SERVER-SIDE PRIVACY</text>
+
+        <g transform="translate(20,70)">
+          <rect class="node-bg violet" width="200" height="60" rx="12"/>
+          <text class="node-label" x="100" y="20">🎯 dispatcher emits</text>
+          <text class="node-sub" x="100" y="40">nudge_created · agenda_progress…</text>
+        </g>
+        <g transform="translate(20,150)">
+          <rect class="node-bg sky" width="200" height="60" rx="12"/>
+          <text class="node-label" x="100" y="20">🎤 voice-worker emits</text>
+          <text class="node-sub" x="100" y="40">utterance_partial (ghost text)</text>
+        </g>
+        <g transform="translate(300,105)" class="node-pulse">
+          <rect class="node-bg pink" width="230" height="70" rx="12"/>
+          <text class="node-label" x="115" y="20">📻 Redis pub/sub</text>
+          <text class="node-sub" x="115" y="40">channel: meeting:events</text>
+          <text class="node-tag" x="115" y="56">{meeting_id, payload}</text>
+        </g>
+        <path class="edge pink" d="M220,100 C260,105 270,115 298,125" marker-end="url(#fa-p)"/>
+        <path class="edge pink" d="M220,180 C260,175 270,160 298,150" marker-end="url(#fa-p)"/>
+
+        <g transform="translate(610,60)">
+          <rect class="node-bg emerald" width="220" height="70" rx="12"/>
+          <text class="node-label" x="110" y="18">🛰 Hub replica A</text>
+          <text class="node-sub" x="110" y="36">subscribed listener</text>
+          <text class="node-tag" x="110" y="54">_deliver_local per socket</text>
+        </g>
+        <g transform="translate(610,150)">
+          <rect class="node-bg emerald" width="220" height="70" rx="12"/>
+          <text class="node-label" x="110" y="18">🛰 Hub replica B</text>
+          <text class="node-sub" x="110" y="36">same subscription</text>
+          <text class="node-tag" x="110" y="54">horizontal scale for free</text>
+        </g>
+        <path class="edge emerald" d="M530,130 C560,120 570,105 608,95" marker-end="url(#fa-e)"/>
+        <path class="edge emerald" d="M530,150 C560,160 570,175 608,185" marker-end="url(#fa-e)"/>
+
+        <g transform="translate(900,45)">
+          <rect class="node-bg indigo" width="220" height="56" rx="12"/>
+          <text class="node-label" x="110" y="18">👑 Leader sockets</text>
+          <text class="node-sub" x="110" y="38">see every event</text>
+        </g>
+        <g transform="translate(900,115)">
+          <rect class="node-bg amber" width="220" height="64" rx="12"/>
+          <text class="node-label" x="110" y="16">🙋 Participant sockets</text>
+          <text class="node-sub" x="110" y="34">pinned nudges + own activation</text>
+          <text class="node-tag" x="110" y="50">everything else filtered HERE</text>
+        </g>
+        <path class="edge flow" d="M830,90 H898 V80" marker-end="url(#fa)"/>
+        <path class="edge amber" d="M830,105 C860,110 870,130 898,140" marker-end="url(#fa-a)"/>
+
+        <text x="570" y="250" class="lane-label">DESIGN RULES</text>
+        <g transform="translate(60,275)"><rect class="node-bg" width="320" height="64" rx="12"/>
+          <text class="node-label" x="160" y="18">Privacy at the socket, not the client</text>
+          <text class="node-sub" x="160" y="38">_visible_to(payload, conn_meta) runs server-side —</text>
+          <text class="node-sub" x="160" y="52">a curious participant's DevTools sees nothing</text></g>
+        <g transform="translate(420,275)"><rect class="node-bg" width="320" height="64" rx="12"/>
+          <text class="node-label" x="160" y="18">Degrade, don't die</text>
+          <text class="node-sub" x="160" y="38">Redis down → in-process delivery (single replica)</text>
+          <text class="node-sub" x="160" y="52">dead sockets pruned on send failure</text></g>
+        <g transform="translate(780,275)"><rect class="node-bg" width="320" height="64" rx="12"/>
+          <text class="node-label" x="160" y="18">Benchmarked, not assumed</text>
+          <text class="node-sub" x="160" y="38">50 sockets × 100 broadcasts &lt; 50ms each</text>
+          <text class="node-sub" x="160" y="52">privacy holds under load (tests/benchmarks)</text></g>
+      </svg>

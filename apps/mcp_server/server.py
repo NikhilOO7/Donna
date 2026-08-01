@@ -72,9 +72,11 @@ def _get_store():
 
 def _get_rag():
     if "rag" not in _services:
-        from apps.api.services.rag.rag_service import RAGService
+        # Modern service — the legacy RAGService reads a collection the
+        # ingestion pipeline never writes.
+        from apps.api.services.rag.rag_service import ModernRAGService
 
-        _services["rag"] = RAGService()
+        _services["rag"] = ModernRAGService()
     return _services["rag"]
 
 

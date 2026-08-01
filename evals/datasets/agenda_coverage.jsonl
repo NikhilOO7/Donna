@@ -1,0 +1,21 @@
+# Ground truth: given the recent conversation window, has this agenda item been discussed?
+{"id": "ag-01", "window": ["let's dig into the pricing strategy numbers for Q3"], "item": "Pricing strategy", "covered": true}
+{"id": "ag-02", "window": ["the hiring plan looks solid for engineering"], "item": "Hiring plan", "covered": true}
+{"id": "ag-03", "window": ["the weather is nice", "anyone watch the game"], "item": "Pricing strategy", "covered": false}
+{"id": "ag-04", "window": ["we compared vendor A and vendor B on cost", "vendor B has better support terms"], "item": "Vendor selection", "covered": true}
+{"id": "ag-05", "window": ["marketing wants the launch pushed", "engineering says the build is ready"], "item": "Launch timeline", "covered": true}
+{"id": "ag-06", "window": ["the roadmap for next quarter is packed"], "item": "Q3 roadmap review", "covered": true}
+{"id": "ag-07", "window": ["let's talk about the budget overruns in cloud spend"], "item": "Budget review", "covered": true}
+{"id": "ag-08", "window": ["customer feedback has been mixed on the beta"], "item": "Security audit", "covered": false}
+{"id": "ag-09", "window": ["the security audit found two critical issues"], "item": "Security audit", "covered": true}
+{"id": "ag-10", "window": ["we should hire more designers"], "item": "Design system migration", "covered": false}
+{"id": "ag-11", "window": ["the design system migration to tokens is halfway done"], "item": "Design system migration", "covered": true}
+{"id": "ag-12", "window": ["retention numbers dipped in March", "cohort analysis shows onboarding drop-off"], "item": "Retention deep dive", "covered": true}
+{"id": "ag-13", "window": ["quick round of intros for the new folks"], "item": "Retention deep dive", "covered": false}
+{"id": "ag-14", "window": ["API rate limits are hurting the biggest customer"], "item": "API rate limits", "covered": true}
+{"id": "ag-15", "window": ["someone mentioned pricing in passing but we moved on"], "item": "Competitor teardown", "covered": false}
+{"id": "ag-16", "window": ["the competitor teardown showed they bundle support"], "item": "Competitor teardown", "covered": true}
+{"id": "ag-17", "window": ["sales pipeline looks healthy this month"], "item": "Sales pipeline", "covered": true}
+{"id": "ag-18", "window": ["let's schedule the next sync for Thursday"], "item": "Incident postmortem", "covered": false}
+{"id": "ag-19", "window": ["the incident postmortem action items are all closed"], "item": "Incident postmortem", "covered": true}
+{"id": "ag-20", "window": ["open floor for anything else"], "item": "Open discussion", "covered": true}

@@ -1109,7 +1109,7 @@ async def get_meeting_voice_token(
 
     return {
         "token": token,
-        "url": _s.livekit_url,
+        "url": _s.livekit_client_url,
         "room_name": room_name,
     }
 
@@ -1866,7 +1866,10 @@ async def query_meeting_context(
         raise HTTPException(404, "Meeting not found")
 
     services = getattr(request.app.state, "services", None)
-    rag = getattr(services, "rag_service", None) if services else None
+    # Modern service only: it searches the 4 collections the ingestion
+    # pipeline actually writes. The legacy RAGService reads the base
+    # collection, which nothing populates — every query 404'd on Qdrant.
+    rag = getattr(services, "modern_rag_service", None) if services else None
     if rag is None:
         raise HTTPException(503, "RAG service not initialized")
 

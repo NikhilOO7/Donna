@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1350" width="1080" height="1350">
+<rect width="100%" height="100%" class="bg" fill="#0a0f1c"/><style>
+.bg{fill:#0a0f1c}
+.tag{fill:#8b5cf6;font:700 26px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.25em}
+.tag.amber{fill:#f59e0b}.tag.emerald{fill:#10b981}.tag.sky{fill:#0ea5e9}.tag.rose{fill:#f43f5e}.tag.pink{fill:#ec4899}
+.h1{fill:#f1f5f9;font:800 56px 'Inter',-apple-system,'Helvetica Neue',sans-serif;letter-spacing:-.02em}
+.hsub{fill:#94a3b8;font:400 27px 'Inter',-apple-system,sans-serif}
+.nlabel{fill:#eaeef4;font:600 27px 'Inter',-apple-system,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.nsub{fill:#8a93ab;font:400 20.5px 'Inter',-apple-system,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.ntag{fill:#cbd5e1;font:700 16px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;text-anchor:middle;dominant-baseline:middle}
+.lane{fill:#5b647e;font:700 19px 'Inter',-apple-system,sans-serif;letter-spacing:.22em;text-transform:uppercase;text-anchor:middle}
+.box{fill:#131b2e;stroke:#2b3654;stroke-width:2.5}
+.box.rose{stroke:#f43f5e;fill:#1c1219}.box.emerald{stroke:#10b981;fill:#0f2019}.box.violet{stroke:#8b5cf6;fill:#181231}
+.box.amber{stroke:#f59e0b;fill:#211a0e}.box.sky{stroke:#0ea5e9;fill:#0e1d2b}.box.pink{stroke:#ec4899;fill:#1f1119}
+.box.indigo{stroke:#6366f1;fill:#161a38}.box.cyan{stroke:#06b6d4;fill:#0d2126}
+.edge{fill:none;stroke:#5c6788;stroke-width:3}
+.edge.dashed{stroke-dasharray:9 8}
+.edge.rose{stroke:#f43f5e}.edge.emerald{stroke:#10b981}.edge.amber{stroke:#f59e0b}
+.edge.violet{stroke:#8b5cf6}.edge.sky{stroke:#0ea5e9}.edge.pink{stroke:#ec4899}
+.elabel{fill:#9ca3b8;font:500 19px 'JetBrains Mono',ui-monospace,monospace;text-anchor:middle}
+.mono{fill:#a5b4fc;font:500 24px 'JetBrains Mono',ui-monospace,monospace}
+.mono.red{fill:#f87171}.mono.green{fill:#6ee7b7}
+.tolabel{fill:#f59e0b;font:700 21px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.2em}
+.tobody{fill:#cbd5e1;font:500 27px 'Inter',-apple-system,sans-serif}
+.footer{fill:#475569;font:500 22px 'JetBrains Mono',ui-monospace,monospace;letter-spacing:.12em}
+text[text-anchor="start"]{text-anchor:start}text[text-anchor="end"]{text-anchor:end}
+</style><defs>
+<marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+<marker id="ar-e" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+<marker id="ar-r" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f43f5e"/></marker>
+<marker id="ar-v" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+<marker id="ar-a" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+<marker id="ar-s" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+<marker id="ar-p" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+</defs>
+<radialGradient id="glow" cx="85%" cy="6%" r="50%"><stop offset="0%" stop-color="#8b5cf6" stop-opacity=".14"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
+<rect width="100%" height="100%" fill="url(#glow)"/>
+
+<text x="70" y="140" class="tag amber" text-anchor="start">LESSON 03 · STREAMING ORCHESTRATION</text>
+<text x="70" y="240" class="h1" text-anchor="start">The hot path</text>
+
+<g transform="translate(70,300)"><rect class="box indigo" width="300" height="90" rx="16"/><text class="nlabel" x="150" y="34"><tspan style="font-size:25px">utterance</tspan></text><text class="nsub" x="150" y="66">final STT only — not interims</text></g>
+<path class="edge" d="M220,390 V428" marker-end="url(#ar)"/>
+<g transform="translate(70,430)"><rect class="box " width="300" height="100" rx="16"/><text class="nlabel" x="150" y="26"><tspan style="font-size:24px">redis lock · wait=False</tspan></text><text class="nsub" x="150" y="56">busy → pending flag</text><text class="ntag" x="150" y="80">bursts coalesce, max 3</text></g>
+<path class="edge" d="M220,530 V568" marker-end="url(#ar)"/>
+<g transform="translate(70,570)"><rect class="box " width="300" height="100" rx="16"/><text class="nlabel" x="150" y="26"><tspan style="font-size:24px">slim state · jsonpath</tspan></text><text class="nsub" x="150" y="56">last 12 utterances only</text><text class="ntag" x="150" y="80">session freed pre-fan-out</text></g>
+<path class="edge violet" d="M370,620 H428" marker-end="url(#ar-v)"/>
+<g transform="translate(430,515)"><rect class="box violet" width="220" height="110" rx="16"/><text class="nlabel" x="110" y="34"><tspan style="font-size:25px">fan out</tspan></text><text class="nsub" x="110" y="66">as_completed</text><text class="ntag" x="110" y="88">no barrier</text></g>
+<path class="edge violet" d="M652,560 C676,560 676,357 698,357" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,423 698,423" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,489 698,489" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,555 698,555" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,621 698,621" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,687 698,687" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,753 698,753" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,819 698,819" marker-end="url(#ar-v)"/><path class="edge violet" d="M652,560 C676,560 676,885 698,885" marker-end="url(#ar-v)"/>
+<g transform="translate(700,330)"><rect class="box emerald" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">activation</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 2s</text></g><g transform="translate(700,396)"><rect class="box emerald" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">agenda</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 3s</text></g><g transform="translate(700,462)"><rect class="box emerald" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">flow</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 5s</text></g><g transform="translate(700,528)"><rect class="box pink" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">memory</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 6s</text></g><g transform="translate(700,594)"><rect class="box pink" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">kg-query</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 8s</text></g><g transform="translate(700,660)"><rect class="box sky" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">context RAG</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 10s</text></g><g transform="translate(700,726)"><rect class="box amber" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">scribe</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 12s</text></g><g transform="translate(700,792)"><rect class="box amber" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">insight</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 12s</text></g><g transform="translate(700,858)"><rect class="box amber" width="310" height="54" rx="12"/><text class="nlabel" x="20" y="27" text-anchor="start" style="font-size:23px">fact-check</text><text class="ntag" x="290" y="27" text-anchor="end" style="font-size:17px">≤ 25s</text></g>
+<path class="edge emerald" d="M540,625 V718" marker-end="url(#ar-e)"/>
+<g transform="translate(430,720)"><rect class="box emerald" width="220" height="130" rx="16"/><text class="nlabel" x="110" y="34"><tspan style="font-size:24px">emit per result</tspan></text><text class="nsub" x="110" y="66">persist → WS push</text><text class="ntag" x="110" y="108">own short DB session</text></g>
+<g transform="translate(70,720)"><rect class="box rose" width="300" height="130" rx="16"/><text class="nlabel" x="150" y="34"><tspan style="font-size:24px">timeout / crash</tspan></text><text class="nsub" x="150" y="66">kills ONE agent only</text><text class="ntag" x="150" y="108">cycle completes 8/9</text></g>
+<path class="edge dashed rose" d="M370,785 H428" marker-end="url(#ar-r)"/>
+
+<rect x="70" y="945" width="580" height="120" rx="16" class="box"/>
+<text x="100" y="990" class="mono red" text-anchor="start">gather():        first insight 20s</text>
+<text x="100" y="1034" class="mono green" text-anchor="start">as_completed():  first insight 0.2s</text>
+<rect x="70" y="1110" width="940" height="126" rx="16" fill="#151109" stroke="#f59e0b" stroke-width="2"/><text x="100" y="1148" class="tolabel" text-anchor="start">⚖ THE TRADE-OFF</text><text x="100" y="1186" class="tobody" text-anchor="start">Atomic-batch simplicity traded for per-result emission + 9 timeout</text><text x="100" y="1222" class="tobody" text-anchor="start">budgets — latency you can feel won over code you can shorten.</text>
+<text x="70" y="1310" class="footer" text-anchor="start">BUILDING DONNA — AI MEETING COLLABORATOR</text><text x="1010" y="1310" class="footer" text-anchor="end">4/6</text>
+</svg>

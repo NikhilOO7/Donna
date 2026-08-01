@@ -680,12 +680,35 @@ listed at the end.
 - Pydantic env aliases modernized; Qdrant `query_points` API; Python 3.13
   toolchain targets.
 
-## Still open (needs external services or dedicated sprints)
+## Closed in the follow-up sprint (2026-07-31, later)
+
+- **E8 meeting-flow awareness** — FlowAgent (9th live agent, LLM-free):
+  Postgres-aggregated talk-time shares streamed as a live meter,
+  dominance nudges, "30 minutes and no decision logged" pace nudges.
+- **H4 inbound email research** — `POST /api/v1/integrations/email/inbound`
+  (Postmark webhook, token-gated): registered sender → research-request
+  meeting → pipeline enqueued → confirmation email with the meeting link.
+  Ship step: point Postmark's inbound stream at the URL + set
+  `POSTMARK_INBOUND_TOKEN`.
+- **H5 Google Calendar ingestion** — OAuth consent → refresh token on the
+  user → `POST /integrations/google/sync` imports the next 7 days of events
+  as meetings (deduped by `external_event_id`); sidebar Connect/Sync button.
+  Ship step: create the OAuth client and set `GOOGLE_CLIENT_ID/SECRET`.
+- **J4 WS load benchmark** — `tests/benchmarks/test_ws_fanout.py`: 50-socket
+  fan-out asserts the <50ms budget + privacy filtering under load.
+
+## Still open
 
 | Item | Blocker |
 |---|---|
-| H4 inbound email research (`research@donna.app`) | Postmark inbound webhook + domain setup |
-| H5 Google Calendar ingestion | OAuth app registration |
-| E8 meeting-flow awareness (talk-time, phases) | dedicated sprint |
-| J4 WS load benchmark | dedicated sprint |
 | Full canvas multiplayer cursors / visual insight generation | deferred by design |
+| LLM features live | OpenAI credits exhausted — add billing |
+
+## Eval harness (2026-07-31, follow-up)
+
+Production-style evaluation shipped in `evals/`: versioned golden datasets,
+suite registry with requirement-based skipping, committed metric floors
+gated in CI + pytest, per-run JSON artifacts (git SHA + timestamp).
+First run immediately caught three real gate bugs (currency claims never
+matched, "consider it done" missed, "we should…" over-firing) — fixed and
+locked in by the baselines.

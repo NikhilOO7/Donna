@@ -459,13 +459,42 @@ export default function MeetingRoom({ meeting, onRefresh }: MeetingRoomProps) {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr_1fr] gap-4">
           {/* Transcript Panel */}
           <div className="bg-white rounded-xl border border-gray-200/60 shadow-card overflow-hidden flex flex-col min-h-[420px]">
-            <div className="px-4 py-3.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Live Transcript
-              </h3>
-              <span className="text-[11px] text-gray-400">
-                {transcriptUtterances.length} {transcriptUtterances.length === 1 ? 'utterance' : 'utterances'}
-              </span>
+            <div className="px-4 py-3.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  Live Transcript
+                </h3>
+                <span className="text-[11px] text-gray-400">
+                  {transcriptUtterances.length} {transcriptUtterances.length === 1 ? 'utterance' : 'utterances'}
+                </span>
+              </div>
+              {/* Talk-time meter (meeting-flow awareness) */}
+              {Array.isArray(meeting.talk_time) && meeting.talk_time.length > 1 && (
+                <div className="mt-2">
+                  <div className="flex h-1.5 rounded-full overflow-hidden bg-gray-100">
+                    {meeting.talk_time.map((s: any, i: number) => (
+                      <div
+                        key={s.speaker}
+                        title={`${s.speaker}: ${Math.round(s.share * 100)}%`}
+                        style={{ width: `${Math.max(2, s.share * 100)}%` }}
+                        className={
+                          ['bg-indigo-400', 'bg-emerald-400', 'bg-amber-400', 'bg-rose-400', 'bg-cyan-400'][i % 5]
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {meeting.talk_time.slice(0, 4).map((s: any, i: number) => (
+                      <span key={s.speaker} className="flex items-center gap-1 text-[10px] text-gray-400">
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          ['bg-indigo-400', 'bg-emerald-400', 'bg-amber-400', 'bg-rose-400', 'bg-cyan-400'][i % 5]
+                        }`} />
+                        {s.speaker} {Math.round(s.share * 100)}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div
@@ -560,6 +589,7 @@ export default function MeetingRoom({ meeting, onRefresh }: MeetingRoomProps) {
                   { key: 'knowledge_graph', label: 'Connection', dot: 'bg-indigo-400' },
                   { key: 'activation', label: 'Expertise', dot: 'bg-teal-400' },
                   { key: 'agenda', label: 'Agenda', dot: 'bg-rose-400' },
+                  { key: 'flow', label: 'Flow', dot: 'bg-cyan-400' },
                 ].map((f) => (
                   <button
                     key={f.label}

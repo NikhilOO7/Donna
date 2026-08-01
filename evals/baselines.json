@@ -1,0 +1,74 @@
+{
+  "activation": {
+    "accuracy": {
+      "min": 0.95
+    }
+  },
+  "agenda_coverage": {
+    "accuracy": {
+      "min": 0.95
+    },
+    "f1": {
+      "min": 0.95
+    },
+    "precision": {
+      "min": 0.95
+    },
+    "recall": {
+      "min": 0.95
+    }
+  },
+  "factcheck_precheck": {
+    "accuracy": {
+      "min": 0.95
+    },
+    "f1": {
+      "min": 0.95
+    },
+    "precision": {
+      "min": 0.95
+    },
+    "recall": {
+      "min": 0.95
+    }
+  },
+  "flow": {
+    "accuracy": {
+      "min": 0.95
+    }
+  },
+  "retrieval": {
+    "hybrid_mrr": {
+      "min": 0.8786
+    },
+    "hybrid_ndcg@5": {
+      "min": 0.8696
+    },
+    "hybrid_recall@1": {
+      "min": 0.7357
+    },
+    "hybrid_recall@5": {
+      "min": 0.9143
+    },
+    "mrr_lift_vs_naive": {
+      "min": 0.0333
+    },
+    "recall1_lift_vs_naive": {
+      "min": 0.0571
+    }
+  },
+  "scribe_precheck": {
+    "accuracy": {
+      "min": 0.95
+    },
+    "f1": {
+      "min": 0.95
+    },
+    "precision": {
+      "min": 0.95
+    },
+    "recall": {
+      "min": 0.95
+    }
+  }
+}

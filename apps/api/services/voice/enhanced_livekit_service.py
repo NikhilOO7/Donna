@@ -663,10 +663,24 @@ async def entrypoint(ctx: JobContext):
         raise
 
 
+async def _assistant_request_fnc(req) -> None:
+    """Job routing: the conversational assistant serves every room EXCEPT
+    meetings — those belong to the meeting voice worker (transcription +
+    TTS). Rejecting lets LiveKit re-dispatch to the right worker instead
+    of this agent hijacking a live meeting."""
+    room_name = getattr(req.room, "name", "") or ""
+    if room_name.startswith("meeting-"):
+        logger.info(f"[dispatch] rejecting meeting room: {room_name}")
+        await req.reject()
+    else:
+        await req.accept(name="donna-assistant", identity="donna-assistant")
+
+
 def create_worker_options() -> WorkerOptions:
     """Create worker options for voice agent"""
     return WorkerOptions(
         entrypoint_fnc=entrypoint,
+        request_fnc=_assistant_request_fnc,
         api_key=settings.livekit_api_key,
         api_secret=settings.livekit_api_secret,
         ws_url=settings.livekit_url,

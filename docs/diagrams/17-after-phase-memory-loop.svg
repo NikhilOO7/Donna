@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 400" width="1140" height="400" preserveAspectRatio="xMidYMid meet">
+<rect width="100%" height="100%" fill="#0a0f1c"/>
+<style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-bg.cyan{stroke:#06b6d4;fill:#132a30}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge.rose{stroke:#f43f5e}
+.edge.cyan{stroke:#06b6d4}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+text[text-anchor="start"]{text-anchor:start}
+text[text-anchor="end"]{text-anchor:end}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+<defs>
+<marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+<marker id="fa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+<marker id="fa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+<marker id="fa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+<marker id="fa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+<marker id="fa-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+<marker id="fa-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f43f5e"/></marker>
+</defs>
+
+        <text x="570" y="26" class="lane-label">POST-MEETING · Arq summary_job → memory indexing → retention loop</text>
+        <g transform="translate(20,60)">
+          <rect class="node-bg indigo" width="170" height="60" rx="12"/>
+          <text class="node-label" x="85" y="20">🏁 Meeting ends</text>
+          <text class="node-sub" x="85" y="40">POST /{id}/end</text>
+        </g>
+        <g transform="translate(230,60)" class="node-pulse violet">
+          <rect class="node-bg violet" width="230" height="60" rx="12"/>
+          <text class="node-label" x="115" y="16">📋 SummaryAgent (gpt-4o)</text>
+          <text class="node-sub" x="115" y="34">transcript + decisions + pinned</text>
+          <text class="node-tag" x="115" y="50">nudges + research → report</text>
+        </g>
+        <g transform="translate(500,60)">
+          <rect class="node-bg emerald" width="200" height="60" rx="12"/>
+          <text class="node-label" x="100" y="16">✅ Action items</text>
+          <text class="node-sub" x="100" y="34">persisted as rows</text>
+          <text class="node-tag" x="100" y="50">assignee · deadline · status</text>
+        </g>
+        <g transform="translate(740,60)">
+          <rect class="node-bg pink" width="180" height="60" rx="12"/>
+          <text class="node-label" x="90" y="16">🕸 Neo4j sync</text>
+          <text class="node-sub" x="90" y="34">Meeting→Decision→Topic</text>
+          <text class="node-tag" x="90" y="50">memory agent reads this</text>
+        </g>
+        <g transform="translate(960,60)">
+          <rect class="node-bg amber" width="160" height="60" rx="12"/>
+          <text class="node-label" x="80" y="16">✉️ Emails</text>
+          <text class="node-sub" x="80" y="34">summary + .ics</text>
+          <text class="node-tag" x="80" y="50">per-assignee lists</text>
+        </g>
+        <path class="edge flow" d="M190,90 H228" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M460,90 H498" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M700,90 H738" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M920,90 H958" marker-end="url(#fa)"/>
+
+        <text x="570" y="180" class="lane-label">MEMORY INDEXING — apps/api/services/meeting/memory_indexer.py</text>
+        <g transform="translate(80,205)">
+          <rect class="node-bg cyan" width="460" height="80" rx="12"/>
+          <text class="node-label" x="230" y="18">🧠 build_memory_records()</text>
+          <text class="node-sub" x="230" y="38">summary record · one per decision (with quotes) ·</text>
+          <text class="node-sub" x="230" y="54">transcript windows · LLM-extracted facts (gpt-4o-mini)</text>
+          <text class="node-tag" x="230" y="70">deterministic point IDs → re-index is idempotent</text>
+        </g>
+        <g transform="translate(600,205)">
+          <rect class="node-bg emerald" width="230" height="80" rx="12"/>
+          <text class="node-label" x="115" y="22">🎯 Qdrant</text>
+          <text class="node-sub" x="115" y="42">same collections as documents</text>
+          <text class="node-tag" x="115" y="60">source_type: meeting_memory</text>
+        </g>
+        <g transform="translate(880,205)">
+          <rect class="node-bg" width="240" height="80" rx="12"/>
+          <text class="node-label" x="120" y="18">🧾 Citations forever</text>
+          <text class="node-sub" x="120" y="38">"Meeting: Q2 Vendor Selection</text>
+          <text class="node-sub" x="120" y="54">(May 12)" + verbatim quote</text>
+        </g>
+        <path class="edge emerald" d="M540,245 H598" marker-end="url(#fa-e)"/>
+        <path class="edge flow" d="M830,245 H878" marker-end="url(#fa)"/>
+
+        <text x="570" y="330" class="lane-label">THE LOOP CLOSES</text>
+        <g transform="translate(180,350)"><rect class="node-bg rose" width="360" height="44" rx="10"/>
+          <text class="node-label" x="180" y="16" style="font-size:11.5px">pin/dismiss feedback → learned-mute thresholds</text>
+          <text class="node-sub" x="180" y="32">8 dismissals + 0 pins → that nudge type stops firing for you</text></g>
+        <g transform="translate(580,350)"><rect class="node-bg rose" width="380" height="44" rx="10"/>
+          <text class="node-label" x="190" y="16" style="font-size:11.5px">next meeting: memory agent + context agent recall all of it</text>
+          <text class="node-sub" x="190" y="32">week-4 usage beats week-1 — that's the retention thesis</text></g>
+      </svg>

@@ -128,13 +128,26 @@ async def process_document_job(
 
     Runs in the worker so multi-minute Docling/EasyOCR work never
     competes with the API's hot path for CPU.
-    """
-    from apps.api.main import process_document_task
 
-    services = await _get_doc_services()
-    await process_document_task(
-        document_id, file_path, content_type, use_enhanced, services
+    Imported from the service layer — NEVER from apps.api.main, whose
+    module-level app setup once crashed this job at the import line.
+    The safety net matters: a failure OUTSIDE process_document_task's
+    own try/except (imports, service construction, timeout) must still
+    move the document out of 'processing', or the UI polls forever.
+    """
+    from apps.api.services.document.processing_task import (
+        mark_document_failed,
+        process_document_task,
     )
+
+    try:
+        services = await _get_doc_services()
+        await process_document_task(
+            document_id, file_path, content_type, use_enhanced, services
+        )
+    except Exception as e:
+        await mark_document_failed(document_id, f"{type(e).__name__}: {e}")
+        raise  # let arq record the job as failed too
 
 
 async def scheduled_research(ctx: Dict[str, Any]) -> None:

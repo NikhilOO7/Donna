@@ -54,7 +54,7 @@ from apps.api.core.connections import (
     init_redis,
     init_storage,
 )
-from apps.api.core.database import AsyncSessionLocal, check_db_health, get_db, init_db
+from apps.api.core.database import check_db_health, get_db, init_db
 from apps.api.core.dependencies import ServiceContainer
 from apps.api.core.logging import configure_logging, get_logger
 from apps.api.core.metrics import (
@@ -70,7 +70,7 @@ from apps.api.core.tracing import configure_tracing
 from apps.api.models.requests import QueryRequest
 from apps.api.models.responses import QueryResponse
 from apps.api.routers import auth as auth_router
-from apps.api.routers import meetings, voice
+from apps.api.routers import integrations, meetings, voice
 from apps.api.services.analytics_service import (
     append_message,
     get_conversation_history,
@@ -80,9 +80,9 @@ from apps.api.services.analytics_service import (
 from apps.api.services.document.contextual_processor import (
     ContextualEmbeddingGenerator,
     ModernDocumentProcessor,
-    chunk_to_row,
 )
 from apps.api.services.document.embeddings import EmbeddingService
+from apps.api.services.document.processing_task import process_document_task
 from apps.api.services.document.processor import DocumentProcessor
 from apps.api.services.document.vector_store import (
     ModernVectorStore,
@@ -293,9 +293,11 @@ app.add_middleware(ObservabilityMiddleware)
 app.include_router(auth_router.router)
 app.include_router(voice.router)
 app.include_router(meetings.router)
+app.include_router(integrations.router)
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+if Path("static").is_dir():
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # Prometheus metrics endpoint
@@ -491,6 +493,7 @@ async def upload_document(
                 storage_result["content_type"],
                 use_enhanced,
                 request.app.state.services,
+                notify_clients,
             )
 
         # Notify WebSocket clients
@@ -528,213 +531,8 @@ async def upload_document(
 
 
 # Document processing task
-async def process_document_task(
-    document_id: str,
-    file_path: str,
-    content_type: str,
-    use_enhanced: bool = True,
-    services: ServiceContainer | None = None,
-):
-    """Background task to process document with contextual embeddings"""
-    from uuid import UUID
-
-    from apps.api.services.document.document_service import document_service
-
-    # Convert document_id to UUID
-    doc_uuid = UUID(document_id)
-
-    # Create a new database session for background task
-    async with AsyncSessionLocal() as session:
-        try:
-            logger.info(
-                f"Processing document {document_id} with enhanced={use_enhanced}"
-            )
-
-            # Get document from database
-            document = await document_service.get_document(session, doc_uuid)
-            if not document:
-                logger.error(f"Document {document_id} not found in database")
-                return
-
-            # Tenant scope for Qdrant payloads + Neo4j nodes
-            owner_id = str(document.owner_id) if document.owner_id else None
-
-            await notify_clients(
-                {"type": "processing_started", "document_id": document_id}
-            )
-
-            if use_enhanced:
-                # Enhanced processing with contextual embeddings
-
-                # 1. Process document with intelligent chunking
-                processing_result = (
-                    await services.modern_doc_processor.process_document(
-                        file_path, content_type, metadata={"document_id": document_id}
-                    )
-                )
-
-                # 1.5. Enrich with layout/table/image agents (PDF only — additive)
-                from apps.api.services.document.enhanced_pipeline import (
-                    enhanced_document_pipeline,
-                )
-
-                enrichment = await enhanced_document_pipeline.enrich_chunks(
-                    processing_result["chunks"], file_path, content_type
-                )
-                processing_result["chunks"] = enrichment["chunks"]
-
-                # 2. Generate contextual embeddings (3 levels)
-                embeddings_data = (
-                    await services.contextual_embedding_generator.generate_embeddings(
-                        chunks=processing_result["chunks"],
-                        document_metadata={
-                            "document_id": document_id,
-                            "title": document.filename,
-                            "owner_id": str(owner_id) if owner_id else None,
-                            **processing_result["metadata"],
-                        },
-                        use_voyage=bool(settings.voyage_api_key),
-                    )
-                )
-
-                # 3. Store in vector database with context (tenant-tagged)
-                await services.modern_vector_store.store_contextual_embeddings(
-                    document_id,
-                    embeddings_data,
-                    processing_result["structure"],
-                    owner_id=owner_id,
-                )
-
-                # 4. Add chunks to database (capture IDs for KG linkage).
-                # chunk_to_row normalizes ProcessedChunk objects (and any legacy
-                # dicts) into the persistence shape add_chunks expects — the
-                # chunks here are ProcessedChunk dataclasses, not dicts.
-                chunk_dicts = [
-                    chunk_to_row(chunk) for chunk in processing_result["chunks"]
-                ]
-
-                persisted_chunks = await document_service.add_chunks(
-                    session, doc_uuid, chunk_dicts
-                )
-
-                # 4.5. Knowledge graph extraction: per-chunk entities,
-                #      relationships, and table/image DocumentElements
-                kg_stats = await enhanced_document_pipeline.extract_knowledge_graph(
-                    session=session,
-                    document_id=doc_uuid,
-                    persisted_chunks=persisted_chunks,
-                    original_chunks=processing_result["chunks"],
-                    tables=enrichment["tables"],
-                    images=enrichment["images"],
-                    owner_id=owner_id,
-                )
-
-                # 5. Update document metadata and status
-                await document_service.update_document_metadata(
-                    session=session,
-                    document_id=doc_uuid,
-                    doc_metadata={
-                        "structure": processing_result["structure"].__dict__
-                        if hasattr(processing_result["structure"], "__dict__")
-                        else {},
-                        "processing_method": "enhanced_contextual",
-                        "chunk_count": len(processing_result["chunks"]),
-                        "knowledge_graph": kg_stats,
-                    },
-                )
-
-                await document_service.update_document_status(
-                    session=session, document_id=doc_uuid, status="completed"
-                )
-            else:
-                # Basic processing (backward compatibility)
-                chunks = await services.doc_processor.process_document(file_path)
-
-                embeddings_data = []
-                chunk_dicts = []
-
-                for i, chunk in enumerate(chunks):
-                    embedding = await services.embedding_service.generate_embedding(
-                        chunk["content"]
-                    )
-                    embeddings_data.append(
-                        {
-                            "chunk_id": f"{document_id}_chunk_{i}",
-                            "content": chunk["content"],
-                            "metadata": chunk.get("metadata", {}),
-                            "embedding": embedding,
-                        }
-                    )
-
-                    chunk_dicts.append(
-                        {
-                            "content": chunk["content"],
-                            "token_count": chunk.get("token_count"),
-                            "metadata": chunk.get("metadata", {}),
-                        }
-                    )
-
-                await services.vector_store.store_embeddings(
-                    document_id, embeddings_data
-                )
-                await document_service.add_chunks(session, doc_uuid, chunk_dicts)
-
-                await document_service.update_document_metadata(
-                    session=session,
-                    document_id=doc_uuid,
-                    doc_metadata={
-                        "processing_method": "basic",
-                        "chunk_count": len(chunks),
-                    },
-                )
-
-                await document_service.update_document_status(
-                    session=session, document_id=doc_uuid, status="completed"
-                )
-
-            logger.info(f"✅ Document {document_id} processed successfully")
-
-            # Get updated document for chunk count
-            document = await document_service.get_document(session, doc_uuid)
-            chunk_count = len(document.chunks) if document else 0
-
-            await notify_clients(
-                {
-                    "type": "processing_completed",
-                    "document_id": document_id,
-                    "chunk_count": chunk_count,
-                }
-            )
-
-            # Track document processing analytics
-            await track_event(
-                session,
-                event_type="document_processed",
-                document_id=document_id,
-                event_data={
-                    "chunk_count": chunk_count,
-                    "method": "enhanced" if use_enhanced else "basic",
-                },
-            )
-
-        except Exception as e:
-            logger.error(f"❌ Document processing failed for {document_id}: {e}")
-
-            # Update document status to failed
-            await document_service.update_document_status(
-                session=session,
-                document_id=doc_uuid,
-                status="failed",
-                error={"message": str(e), "type": type(e).__name__},
-            )
-
-            await notify_clients(
-                {
-                    "type": "processing_failed",
-                    "document_id": document_id,
-                    "error": str(e),
-                }
-            )
+# process_document_task lives in services/document/processing_task.py so the
+# job worker can import it without executing this app module (see §war-stories).
 
 
 # Reused across requests: keeps conversation contexts alive and avoids
@@ -804,7 +602,8 @@ async def query_documents(
                 "context_info": result.get("context_info", {}),
             }
         else:
-            result = await svc.rag_service.process_query(
+            # Modern service — searches the collections ingestion writes to
+            result = await svc.modern_rag_service.process_query(
                 query=query_req.query,
                 conversation_id=conversation_id,
                 owner_id=owner_id,
@@ -1412,6 +1211,7 @@ async def process_sample_document(
         "text/plain",
         True,
         request.app.state.services,
+        notify_clients,
     )
 
     return {

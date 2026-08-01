@@ -5,7 +5,7 @@ meeting pipeline. Every agent listed here is wired into a live execution path �
 this registry contains no aspirational entries.
 
 **The count:** 4 document-ingestion agents + 1 prep agent + 4 research agents +
-8 live-meeting agents + 1 summary agent = **18 specialized agents**, coordinated by
+9 live-meeting agents + 1 summary agent = **19 specialized agents**, coordinated by
 an orchestration layer (research pipeline, per-utterance streaming dispatcher,
 summary pipeline).
 
@@ -40,7 +40,7 @@ Orchestrated by `ResearchPipeline` (`apps/api/services/research/pipeline.py`).
 |---|-------|------|------|
 | 9 | PrepAgent | `apps/api/services/meeting/prep_agent.py` | Free-text/voice input → structured prep JSON (role, goal, agenda, risks) — Smart Fill + conversational setup |
 
-## Phase 2 — Live Meeting Intelligence (8)
+## Phase 2 — Live Meeting Intelligence (9)
 
 Fanned out per utterance by `AgentDispatcher`
 (`apps/api/services/meeting/agent_dispatcher.py`) as a **streaming** fan-out
@@ -59,12 +59,13 @@ LLM call.
 | 15 | ActivationAgent | `apps/api/services/meeting/activation_agent.py` | "Your expertise needed" — match live topics to attendee expertise, delivered privately |
 | 16 | MemoryAgent | `apps/api/services/meeting/memory_agent.py` | Resurface past decisions when a settled topic comes back up |
 | 17 | AgendaAgent | `apps/api/services/meeting/agenda_agent.py` | Track agenda coverage lexically; progress events + "uncovered items" nudges (LLM-free) |
+| 18 | FlowAgent | `apps/api/services/meeting/flow_agent.py` | Meeting-flow awareness: talk-time balance meter + "N minutes, no decision" nudges (LLM-free) |
 
 ## Phase 3 — Post-Meeting / Decision-Tracking (1)
 
 | # | Agent | File | Role |
 |---|-------|------|------|
-| 18 | SummaryAgent | `apps/api/services/meeting/summary_agent.py` | Synthesize transcript + decisions (with trigger quotes) + pinned nudges + research into a structured report; extracts new action items |
+| 19 | SummaryAgent | `apps/api/services/meeting/summary_agent.py` | Synthesize transcript + decisions (with trigger quotes) + pinned nudges + research into a structured report; extracts new action items |
 
 Run by `SummaryPipeline` (`apps/api/services/meeting/summary_pipeline.py`), which
 persists extracted action items and mirrors the meeting into the Neo4j knowledge
@@ -85,14 +86,14 @@ graph (Meeting → Decisions / ActionItems / ResearchTopics / Transcript).
 
 ## How the count maps to the resume
 
-> "Designed a 3-phase agentic architecture orchestrating 18 specialized AI agents
+> "Designed a 3-phase agentic architecture orchestrating 19 specialized AI agents
 > across document-ingestion, research, meeting-intelligence, and decision-tracking
 > pipelines."
 
 - Document ingestion → **4** (Phase 0)
 - Meeting prep → **1** (Phase 1.5)
 - Research pipeline → **4** (Phase 1)
-- Meeting-intelligence pipeline → **8** (Phase 2)
+- Meeting-intelligence pipeline → **9** (Phase 2)
 - Decision-tracking → **1** (Phase 3, SummaryAgent + the decision/action-item graph it writes)
 
-= **18 specialized agents**, with 4 pipeline orchestrators on top.
+= **19 specialized agents**, with 4 pipeline orchestrators on top.

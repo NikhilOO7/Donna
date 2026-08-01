@@ -17,11 +17,16 @@ from apps.api.core.resilience import resilient_call
 
 logger = logging.getLogger(__name__)
 
-# Cheap pre-filter — only call GPT when these patterns appear
+# Cheap pre-filter — only call GPT when these patterns appear.
+# Tuned against evals/datasets/scribe_decisions.jsonl (run: evals.run):
+# "we should …" alone proved to be musing, not commitment (precision), and
+# "i'll take a look" is not "i'll take the follow-up" — ownership needs an
+# object. "consider it done" / "it's settled" are commitments (recall).
 DECISION_PATTERNS = re.compile(
     r"\b(let's go with|we decided|we'll go|agreed|the decision is|"
-    r"the plan is|i'll take|i will take|action item|going forward|"
-    r"we should|next step is|let's commit|finalize|approved)\b",
+    r"the plan is|(i'll|i will) (take (the|over)|own)|action item|"
+    r"going forward|next step is|let's commit|finalize|approved|"
+    r"consider it done|it'?s settled)\b",
     re.IGNORECASE,
 )
 

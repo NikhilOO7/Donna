@@ -19,6 +19,7 @@ import DonnaLogo from '@/components/brand/DonnaLogo';
 import AnalyticsDashboard from '@/components/analytics/AnalyticsDashboard';
 import MeetingList from '@/components/meeting/MeetingList';
 import OpenItemsPanel from '@/components/meeting/OpenItemsPanel';
+import CalendarConnect from '@/components/meeting/CalendarConnect';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import IntelligenceBanner from '@/components/IntelligenceBanner';
 import { apiClient, type AuthUser } from '@/lib/api-client';
@@ -218,6 +219,9 @@ export default function Home() {
               );
             })}
           </nav>
+
+          {/* Integrations */}
+          <CalendarConnect />
 
           {/* Divider */}
           <div className="mx-4 border-t border-gray-100" />

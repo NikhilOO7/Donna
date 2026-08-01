@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Donna — an AI meeting collaborator with document intelligence. FastAPI backend, Next.js frontend, an 18-agent meeting pipeline (research / live nudges / summary), contextual embeddings, knowledge graph (Neo4j), and real-time voice via LiveKit/Deepgram/Cartesia.
+Donna — an AI meeting collaborator with document intelligence. FastAPI backend, Next.js frontend, a 19-agent meeting pipeline (research / live nudges / summary), contextual embeddings, knowledge graph (Neo4j), and real-time voice via LiveKit/Deepgram/Cartesia.
 
 ## Commands
 
@@ -78,9 +78,9 @@ Embeddings combine three context levels with weighted contributions:
 - `enhanced_livekit_service.py` — voice agent with Deepgram STT + Cartesia TTS + OpenAI LLM
 
 #### Meeting Intelligence (`services/meeting/`, `services/research/`)
-The live product surface — 18 specialized agents across 4 pipelines (see `docs/AGENT_REGISTRY.md`):
+The live product surface — 19 specialized agents across 4 pipelines (see `docs/AGENT_REGISTRY.md`):
 - **Research pipeline** (`services/research/`) — topic → Exa search → tier validation → synthesis
-- **Live meeting agents** (`services/meeting/`) — scribe, context, insight, fact-check, KG-query, activation, memory, agenda — streamed per utterance by `agent_dispatcher.py` (`asyncio.as_completed`, per-agent timeouts)
+- **Live meeting agents** (`services/meeting/`) — scribe, context, insight, fact-check, KG-query, activation, memory, agenda, flow — streamed per utterance by `agent_dispatcher.py` (`asyncio.as_completed`, per-agent timeouts)
 - **Summary pipeline** — post-meeting aggregation, action-item extraction, Neo4j sync
 - **Realtime** — `realtime.py` MeetingHub (WebSocket + Redis pub/sub fan-out)
 

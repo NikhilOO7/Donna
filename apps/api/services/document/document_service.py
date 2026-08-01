@@ -94,6 +94,16 @@ class DocumentService:
                             DocumentChunk.document_id == existing.id
                         )
                     )
+                    # Analytics rows reference documents (FK) — detach, don't
+                    # delete: the events remain valid product metrics even
+                    # after their document is replaced.
+                    from apps.api.models.analytics import AnalyticsEvent
+
+                    await session.execute(
+                        update(AnalyticsEvent)
+                        .where(AnalyticsEvent.document_id == existing.id)
+                        .values(document_id=None)
+                    )
                     await session.execute(
                         delete(Document).where(Document.id == existing.id)
                     )

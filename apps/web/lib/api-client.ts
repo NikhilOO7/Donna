@@ -409,6 +409,21 @@ class ApiClient {
     return response.data;
   }
 
+  async googleCalendarStatus(): Promise<any> {
+    const response = await this.client.get('/api/v1/integrations/google/status');
+    return response.data;
+  }
+
+  async googleCalendarAuthUrl(): Promise<any> {
+    const response = await this.client.get('/api/v1/integrations/google/auth-url');
+    return response.data;
+  }
+
+  async googleCalendarSync(): Promise<any> {
+    const response = await this.client.post('/api/v1/integrations/google/sync');
+    return response.data;
+  }
+
   async downloadCalendar(meetingId: string): Promise<void> {
     const response = await this.client.get(`/api/v1/meetings/${meetingId}/calendar.ics`, { responseType: 'blob' });
     const url = URL.createObjectURL(new Blob([response.data], { type: 'text/calendar' }));
@@ -441,6 +456,9 @@ class ApiClient {
     let pingInterval: ReturnType<typeof setInterval> | null = null;
     let closed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    // Exponential backoff (2s → 15s cap) so a backend restart or deploy
+    // produces a couple of quiet retries, not a console full of failures.
+    let reconnectDelay = 2000;
 
     const connect = () => {
       if (closed) return;
@@ -450,6 +468,7 @@ class ApiClient {
 
       ws.onopen = () => {
         console.log(`[MeetingWS] connected to ${meetingId.slice(0, 8)}`);
+        reconnectDelay = 2000; // healthy again — reset the backoff
         pingInterval = setInterval(() => {
           if (ws?.readyState === WebSocket.OPEN) ws.send('ping');
         }, 25000);
@@ -470,7 +489,8 @@ class ApiClient {
           pingInterval = null;
         }
         if (!closed) {
-          reconnectTimer = setTimeout(connect, 2000);
+          reconnectTimer = setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, 15000);
         }
       };
 

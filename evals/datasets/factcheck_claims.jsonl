@@ -1,0 +1,27 @@
+# Ground truth: does this utterance contain a checkable factual claim worth verifying?
+{"id": "fc-01", "text": "Their revenue grew 15% last quarter.", "label": true}
+{"id": "fc-02", "text": "The market size is around $4 billion.", "label": true}
+{"id": "fc-03", "text": "According to Gartner, adoption doubled in 2025.", "label": true}
+{"id": "fc-04", "text": "Churn dropped from 8% to 5% after the redesign.", "label": true}
+{"id": "fc-05", "text": "Research shows remote teams ship 20% slower.", "label": true}
+{"id": "fc-06", "text": "Their headcount rose to 1200 employees.", "label": true}
+{"id": "fc-07", "text": "The report says their market share fell below 10%.", "label": true}
+{"id": "fc-08", "text": "Cloud spend increased more than 30% year over year.", "label": true}
+{"id": "fc-09", "text": "They raised $50 million in their series B.", "label": true}
+{"id": "fc-10", "text": "Latency decreased to under 100 milliseconds after the rewrite.", "label": true}
+{"id": "fc-11", "text": "Competitor pricing starts at $99 per seat.", "label": true}
+{"id": "fc-12", "text": "Their user base tripled since the acquisition.", "label": true}
+{"id": "fc-13", "text": "I love the new dashboard design.", "label": false}
+{"id": "fc-14", "text": "Let's move to the next agenda item.", "label": false}
+{"id": "fc-15", "text": "This feels like the right direction to me.", "label": false}
+{"id": "fc-16", "text": "Can everyone see my slides?", "label": false}
+{"id": "fc-17", "text": "We had a great conversation with their CTO.", "label": false}
+{"id": "fc-18", "text": "The design language feels dated to me.", "label": false}
+{"id": "fc-19", "text": "I'm not sure the team has bandwidth this sprint.", "label": false}
+{"id": "fc-20", "text": "Their office is somewhere in Austin I believe.", "label": false}
+{"id": "fc-21", "text": "That demo was impressive.", "label": false}
+{"id": "fc-22", "text": "We should loop in security before signing.", "label": false}
+{"id": "fc-23", "text": "Their platform is the fastest on the market.", "label": true}
+{"id": "fc-24", "text": "Everyone is switching away from that framework these days.", "label": true}
+{"id": "fc-25", "text": "Thanks everyone, good energy today.", "label": false}
+{"id": "fc-26", "text": "Their NPS is reportedly in the seventies.", "label": true}

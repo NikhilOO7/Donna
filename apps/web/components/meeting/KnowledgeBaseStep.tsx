@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, FileText, Trash2, CheckCircle, ChevronRight, Network, Layers } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import KnowledgeGraphView from './KnowledgeGraphView';
@@ -31,12 +31,25 @@ export default function KnowledgeBaseStep({ meetingId }: { meetingId?: string })
     fetchDocs();
   }, []);
 
-  // Poll while any document is still processing so spinners resolve on their own
+  // Poll while any document is still processing so spinners resolve on their
+  // own. Backoff after a minute: big PDFs legitimately take a while, but a
+  // stuck backend must never turn the browser into a 4s battering ram.
   const hasProcessing = documents.some((d) => d.processing_status === 'processing');
+  const pollCount = useRef(0);
   useEffect(() => {
-    if (!hasProcessing) return;
-    const t = setInterval(fetchDocs, 4000);
-    return () => clearInterval(t);
+    if (!hasProcessing) {
+      pollCount.current = 0;
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      pollCount.current += 1;
+      fetchDocs();
+      const delay = pollCount.current < 15 ? 4000 : 15000;
+      timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, 4000);
+    return () => clearTimeout(timer);
   }, [hasProcessing]);
 
   const handleUpload = async (files: FileList | null) => {

@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 970" width="1140" height="970" preserveAspectRatio="xMidYMid meet">
+<rect width="100%" height="100%" fill="#0a0f1c"/>
+<style>
+.node-bg{fill:#1a2336;stroke:#2b3654;stroke-width:1.2}
+.node-bg.indigo{stroke:#6366f1;fill:#1b1d3a}
+.node-bg.violet{stroke:#8b5cf6;fill:#221a3a}
+.node-bg.amber{stroke:#f59e0b;fill:#2c2418}
+.node-bg.emerald{stroke:#10b981;fill:#152a23}
+.node-bg.pink{stroke:#ec4899;fill:#2a1a26}
+.node-bg.sky{stroke:#0ea5e9;fill:#15273a}
+.node-bg.rose{stroke:#f43f5e;fill:#2a1820}
+.node-bg.green{stroke:#22c55e;fill:#152a22}
+.node-bg.cyan{stroke:#06b6d4;fill:#132a30}
+.node-label{fill:#eaeef4;font:600 12.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle}
+.node-sub{fill:#8a93ab;font:10.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.06em}
+.node-tag{fill:#cbd5e1;font:700 9.5px Inter,system-ui,sans-serif;text-anchor:middle;dominant-baseline:middle;letter-spacing:.12em;text-transform:uppercase}
+.edge{fill:none;stroke:#3a4258;stroke-width:1.4}
+.edge.dashed{stroke-dasharray:5 5}
+.edge.flow{stroke:#5c6788}
+.edge.accent{stroke:#8b5cf6}
+.edge.amber{stroke:#f59e0b}
+.edge.pink{stroke:#ec4899}
+.edge.emerald{stroke:#10b981}
+.edge.sky{stroke:#0ea5e9}
+.edge.rose{stroke:#f43f5e}
+.edge.cyan{stroke:#06b6d4}
+.edge-label{fill:#9ca3b8;font:10.5px ui-monospace,SFMono-Regular,monospace;text-anchor:middle;letter-spacing:.04em}
+.lane-label{fill:#6b7390;font:700 10.5px Inter,system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+text[text-anchor="start"]{text-anchor:start}
+text[text-anchor="end"]{text-anchor:end}
+@keyframes flowA{0%{offset-distance:0%}100%{offset-distance:100%}}
+@keyframes nodePulse{0%,100%{filter:drop-shadow(0 0 0 rgba(99,102,241,0))}50%{filter:drop-shadow(0 0 8px rgba(99,102,241,.55))}}
+@keyframes nodePulseViolet{0%,100%{filter:drop-shadow(0 0 0 rgba(139,92,246,0))}50%{filter:drop-shadow(0 0 8px rgba(139,92,246,.55))}}
+@keyframes nodePulseEmerald{0%,100%{filter:drop-shadow(0 0 0 rgba(16,185,129,0))}50%{filter:drop-shadow(0 0 8px rgba(16,185,129,.55))}}
+.node-pulse{animation:nodePulse 2.6s ease-in-out infinite}
+.node-pulse.violet{animation-name:nodePulseViolet}
+.node-pulse.emerald{animation-name:nodePulseEmerald}
+.flow-dot{filter:drop-shadow(0 0 4px currentColor)}
+</style>
+<defs>
+<marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6788"/></marker>
+<marker id="fa-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+<marker id="fa-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+<marker id="fa-p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ec4899"/></marker>
+<marker id="fa-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+<marker id="fa-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9"/></marker>
+<marker id="fa-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f43f5e"/></marker>
+</defs>
+
+        <text x="570" y="24" class="lane-label">DONNA — FULL SYSTEM · 10 CONTAINERS + SAAS EDGE · HOT / WARM / COLD</text>
+
+        <!-- ===== CLIENT ===== -->
+        <text x="570" y="48" class="lane-label" style="fill:#4c5670">CLIENT</text>
+        <g transform="translate(210,58)">
+          <rect class="node-bg indigo" width="720" height="76" rx="14"/>
+          <text class="node-label" x="360" y="22">🖥 Next.js 14 (App Router) · Tailwind · LiveKit React SDK</text>
+          <text class="node-sub" x="360" y="42">dashboard · /meetings/[id] · assistant · login · canvas · open-items</text>
+          <text class="node-tag" x="360" y="60">JWT REST · WS (token) · WebRTC mic · optimistic WS + 30s reconcile</text>
+        </g>
+        <path class="edge accent" d="M390,134 V188" marker-end="url(#fa-v)"/>
+        <text x="398" y="162" class="edge-label" text-anchor="start">REST + WS · JWT</text>
+        <path class="edge sky" d="M760,134 V188" marker-end="url(#fa-s)"/>
+        <text x="768" y="162" class="edge-label" text-anchor="start">WebRTC audio</text>
+        <circle class="flow-dot" r="3" fill="#6366f1" style="offset-path:path('M390,134 L390,186');animation:flowA 2.2s linear infinite"/>
+        <circle class="flow-dot" r="3" fill="#0ea5e9" style="offset-path:path('M760,134 L760,186');animation:flowA 2.6s linear infinite"/>
+
+        <!-- ===== API + REALTIME ===== -->
+        <g transform="translate(40,190)">
+          <rect class="node-bg indigo" width="540" height="300" rx="16"/>
+          <text class="node-label" x="270" y="20">🏛 BACKEND — FastAPI :8000</text>
+          <text class="node-sub" x="270" y="38">routers: auth · meetings · voice · integrations · documents + /query</text>
+        </g>
+        <g transform="translate(60,245)" class="node-pulse">
+          <rect class="node-bg rose" width="240" height="110" rx="12"/>
+          <text class="node-tag" x="14" y="14" text-anchor="start" style="fill:#fda4af">HOT PATH</text>
+          <text class="node-label" x="120" y="36">🎯 agent dispatcher</text>
+          <text class="node-sub" x="120" y="56">9 agents / utterance</text>
+          <text class="node-sub" x="120" y="72">as_completed · timeouts · gates</text>
+          <text class="node-tag" x="120" y="94">redis lock · burst coalescing</text>
+        </g>
+        <g transform="translate(320,245)">
+          <rect class="node-bg amber" width="240" height="110" rx="12"/>
+          <text class="node-tag" x="14" y="14" text-anchor="start" style="fill:#fbbf24">WARM PATH</text>
+          <text class="node-label" x="120" y="36">📡 MeetingHub WS</text>
+          <text class="node-sub" x="120" y="56">per-connection privacy filter</text>
+          <text class="node-sub" x="120" y="72">Redis pub/sub replica bridge</text>
+          <text class="node-tag" x="120" y="94">&lt; 50ms fan-out (benchmarked)</text>
+        </g>
+        <path class="edge rose" d="M300,300 H318" marker-end="url(#fa-r)"/>
+        <g transform="translate(60,370)">
+          <rect class="node-bg" width="500" height="54" rx="10"/>
+          <text class="node-label" x="250" y="20" style="font-size:11.5px">service layer</text>
+          <text class="node-sub" x="250" y="38">meeting · rag · research · memory indexer · email/.ics · llm_meter · caches</text>
+        </g>
+        <g transform="translate(60,432)">
+          <rect class="node-bg" width="500" height="42" rx="10"/>
+          <text class="node-sub" x="250" y="16">auth: JWT (Argon2) · service X-API-Key · get_service_or_user</text>
+          <text class="node-tag" x="250" y="32">owner_id tenancy at rows · vectors · caches · graph</text>
+        </g>
+
+        <g transform="translate(660,190)">
+          <rect class="node-bg sky" width="200" height="70" rx="12"/>
+          <text class="node-label" x="100" y="22">📡 LiveKit SFU</text>
+          <text class="node-sub" x="100" y="40">room meeting-&lt;uuid&gt;</text>
+          <text class="node-tag" x="100" y="56">1 track / person</text>
+        </g>
+        <g transform="translate(650,300)">
+          <rect class="node-bg sky" width="230" height="100" rx="12"/>
+          <text class="node-tag" x="14" y="14" text-anchor="start" style="fill:#7dd3fc">VOICE-WORKER</text>
+          <text class="node-label" x="115" y="34">🎙 STT ⇄ TTS bridge</text>
+          <text class="node-sub" x="115" y="52">per-track Deepgram nova-2</text>
+          <text class="node-sub" x="115" y="68">interims → ghost text (no DB)</text>
+          <text class="node-tag" x="115" y="86">cartesia tts · barge-in</text>
+        </g>
+        <path class="edge sky" d="M760,260 V298" marker-end="url(#fa-s)"/>
+        <text x="768" y="284" class="edge-label" text-anchor="start">every track</text>
+        <circle class="flow-dot" r="3" fill="#0ea5e9" style="offset-path:path('M760,260 L760,296');animation:flowA 2s linear infinite"/>
+        <path class="edge emerald" d="M648,350 H584" marker-end="url(#fa-e)"/>
+        <text x="616" y="340" class="edge-label">utterances</text>
+
+        <g transform="translate(920,190)">
+          <rect class="node-bg violet" width="200" height="70" rx="12"/>
+          <text class="node-label" x="100" y="20">🤝 assistant-worker</text>
+          <text class="node-sub" x="100" y="38">Talk to Donna (voice chat)</text>
+          <text class="node-tag" x="100" y="56">STT+LLM+TTS+VAD</text>
+        </g>
+        <path class="edge sky dashed" d="M918,225 H862" marker-end="url(#fa-s)"/>
+        <g transform="translate(920,300)">
+          <rect class="node-bg violet" width="200" height="100" rx="12"/>
+          <text class="node-tag" x="14" y="14" text-anchor="start" style="fill:#c4b5fd">MCP SERVER</text>
+          <text class="node-label" x="100" y="36">🧰 Donna as tools</text>
+          <text class="node-sub" x="100" y="54">5 cited read-only tools</text>
+          <text class="node-sub" x="100" y="70">stdio · Claude Desktop/Code</text>
+          <text class="node-tag" x="100" y="86">owner-scoped via env</text>
+        </g>
+
+        <!-- ===== COLD ===== -->
+        <text x="570" y="522" class="lane-label" style="fill:#4c5670">COLD PATH — LATENCY-TOLERANT, OFF THE API PROCESS</text>
+        <g transform="translate(170,545)">
+          <rect class="node-bg pink" width="150" height="44" rx="10"/>
+          <text class="node-label" x="75" y="18">📬 Arq queue</text>
+          <text class="node-sub" x="75" y="34">jobs in Redis</text>
+        </g>
+        <path class="edge pink" d="M245,492 V543" marker-end="url(#fa-p)"/>
+        <text x="253" y="522" class="edge-label" text-anchor="start">enqueue_job</text>
+        <path class="edge pink" d="M320,567 H378" marker-end="url(#fa-p)"/>
+        <circle class="flow-dot" r="3" fill="#ec4899" style="offset-path:path('M245,492 L245,545 L245,567 L376,567');animation:flowA 3s linear infinite"/>
+        <g transform="translate(380,535)" class="node-pulse violet">
+          <rect class="node-bg violet" width="360" height="90" rx="12"/>
+          <text class="node-tag" x="14" y="14" text-anchor="start" style="fill:#c4b5fd">JOB-WORKER · COLD</text>
+          <text class="node-label" x="180" y="34">🧊 heavy work off the API</text>
+          <text class="node-sub" x="180" y="54">research · summary · doc-processing · dispatch</text>
+          <text class="node-tag" x="180" y="74">cron 04:10 utc re-scan · models warm across jobs</text>
+        </g>
+        <path class="edge dashed pink" d="M800,400 V636" marker-end="url(#fa-p)"/>
+        <text x="808" y="500" class="edge-label" text-anchor="start">speak channel</text>
+        <text x="808" y="516" class="edge-label" text-anchor="start">+ partial events</text>
+        <path class="edge dashed accent" d="M990,400 V636" marker-end="url(#fa-v)"/>
+        <text x="998" y="500" class="edge-label" text-anchor="start">read-only</text>
+
+        <!-- ===== DATA PLANE BUS ===== -->
+        <path class="edge flow" d="M100,492 V638" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M560,625 V638" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M90,640 H1050"/>
+        <circle class="flow-dot" r="3" fill="#10b981" style="offset-path:path('M90,640 L1050,640');animation:flowA 7s linear infinite"/>
+        <path class="edge flow" d="M140,640 V676" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M365,640 V676" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M595,640 V676" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M815,640 V676" marker-end="url(#fa)"/>
+        <path class="edge flow" d="M1020,640 V676" marker-end="url(#fa)"/>
+
+        <text x="570" y="666" class="lane-label" style="fill:#4c5670">DATA PLANE — PICKED BY ACCESS PATTERN</text>
+        <g transform="translate(40,680)">
+          <rect class="node-bg emerald" width="200" height="96" rx="12"/>
+          <text class="node-label" x="100" y="20">🐘 PostgreSQL 15</text>
+          <text class="node-sub" x="100" y="38">doc_intel · system of record</text>
+          <text class="node-sub" x="100" y="54">meetings · transcripts · nudges</text>
+          <text class="node-tag" x="100" y="76">jsonb computed server-side</text>
+        </g>
+        <g transform="translate(260,680)">
+          <rect class="node-bg pink" width="210" height="96" rx="12"/>
+          <text class="node-label" x="105" y="20">⚡ Redis 7 — five jobs</text>
+          <text class="node-sub" x="105" y="38">cache · locks · pub/sub</text>
+          <text class="node-sub" x="105" y="54">queue · meters/cooldowns</text>
+          <text class="node-tag" x="105" y="76">every use degrades gracefully</text>
+        </g>
+        <g transform="translate(490,680)">
+          <rect class="node-bg indigo" width="210" height="96" rx="12"/>
+          <text class="node-label" x="105" y="20">🎯 Qdrant</text>
+          <text class="node-sub" x="105" y="38">4 collections · 1536-d</text>
+          <text class="node-sub" x="105" y="54">docs + meeting memories</text>
+          <text class="node-tag" x="105" y="76">owner_id payload filter</text>
+        </g>
+        <g transform="translate(720,680)">
+          <rect class="node-bg violet" width="190" height="96" rx="12"/>
+          <text class="node-label" x="95" y="20">🕸 Neo4j (optional)</text>
+          <text class="node-sub" x="95" y="38">entities · relations</text>
+          <text class="node-sub" x="95" y="54">meeting→decision graph</text>
+          <text class="node-tag" x="95" y="76">falls back to pg-only</text>
+        </g>
+        <g transform="translate(930,680)">
+          <rect class="node-bg amber" width="180" height="96" rx="12"/>
+          <text class="node-label" x="90" y="20">🪣 MinIO</text>
+          <text class="node-sub" x="90" y="38">original uploads</text>
+          <text class="node-sub" x="90" y="54">reprocess forever</text>
+          <text class="node-tag" x="90" y="76">s3-compatible</text>
+        </g>
+
+        <!-- ===== EXTERNAL ===== -->
+        <text x="570" y="814" class="lane-label" style="fill:#4c5670">EXTERNAL SAAS — CIRCUIT-BROKEN · RETRIED · METERED · ABSENT CONFIG = FEATURE OFF</text>
+        <g transform="translate(40,832)">
+          <rect class="node-bg violet" width="210" height="70" rx="12"/>
+          <text class="node-label" x="105" y="20">🧠 OpenAI (tiered)</text>
+          <text class="node-sub" x="105" y="38">fast 4o-mini · smart 4o · embeds</text>
+          <text class="node-tag" x="105" y="56">→ backend + job-worker</text>
+        </g>
+        <g transform="translate(270,832)">
+          <rect class="node-bg" width="170" height="70" rx="12"/>
+          <text class="node-label" x="85" y="20">🔎 Exa</text>
+          <text class="node-sub" x="85" y="38">semantic web search</text>
+          <text class="node-tag" x="85" y="56">→ research · fact-check</text>
+        </g>
+        <g transform="translate(460,832)">
+          <rect class="node-bg amber" width="170" height="70" rx="12"/>
+          <text class="node-label" x="85" y="20">🗣 Deepgram</text>
+          <text class="node-sub" x="85" y="38">nova-2-meeting STT</text>
+          <text class="node-tag" x="85" y="56">→ voice-worker</text>
+        </g>
+        <g transform="translate(650,832)">
+          <rect class="node-bg amber" width="160" height="70" rx="12"/>
+          <text class="node-label" x="80" y="20">🎵 Cartesia</text>
+          <text class="node-sub" x="80" y="38">sonic TTS · raw PCM</text>
+          <text class="node-tag" x="80" y="56">→ voice-worker</text>
+        </g>
+        <g transform="translate(830,832)">
+          <rect class="node-bg emerald" width="150" height="70" rx="12"/>
+          <text class="node-label" x="75" y="20">✉️ Postmark</text>
+          <text class="node-sub" x="75" y="38">out + inbound hook</text>
+          <text class="node-tag" x="75" y="56">→ backend</text>
+        </g>
+        <g transform="translate(1000,832)">
+          <rect class="node-bg sky" width="120" height="70" rx="12"/>
+          <text class="node-label" x="60" y="20">📅 Google</text>
+          <text class="node-sub" x="60" y="38">Calendar OAuth</text>
+          <text class="node-tag" x="60" y="56">→ backend</text>
+        </g>
+
+        <text x="570" y="944" class="edge-label">solid = in-cluster · dashed = external / optional · ROSE hot · AMBER warm · PINK redis+cold · SKY media · dots = live flow</text>
+      </svg>

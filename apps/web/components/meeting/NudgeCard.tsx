@@ -101,6 +101,15 @@ const TYPE_CONFIG: Record<string, {
     accent: 'border-rose-300',
     barColor: 'bg-rose-400',
   },
+  flow: {
+    icon: TrendingUp,
+    gradient: 'from-cyan-50 to-sky-50',
+    border: 'border-cyan-200/60',
+    iconBg: 'bg-gradient-to-br from-cyan-400 to-sky-500',
+    label: 'Meeting Flow',
+    accent: 'border-cyan-300',
+    barColor: 'bg-cyan-400',
+  },
 };
 
 const FACT_CHECK_STATUS: Record<string, { label: string; classes: string }> = {

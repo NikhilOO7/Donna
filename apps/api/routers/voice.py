@@ -78,7 +78,7 @@ async def get_voice_token(
 
         return {
             "token": token.to_jwt(),
-            "url": settings.livekit_url,
+            "url": settings.livekit_client_url,
             "room_name": room_name,
             "session_id": session_id,
         }
