@@ -14,13 +14,11 @@ Silently no-ops when ``EXA_API_KEY`` is not configured.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.coordination import cooldown_passed
 from apps.api.core.resilience import resilient_call
@@ -51,7 +49,16 @@ CLAIM_PATTERNS = re.compile(
     r"according to|reports? (say|show)|research (shows|found)|reportedly|"
     r"fastest|slowest|biggest|largest|cheapest|most popular|market leader|"
     r"everyone is (switching|using|moving)|"
-    r"market (size|share|cap))\b)",
+    r"market (size|share|cap)|"
+    # Money spoken aloud rarely carries a "$" — people say "fifty grand" and
+    # "about 2 million", which the numeric alternatives above never matched
+    # (eval case fc-27). Checkable amounts are the highest-value claims to
+    # verify, so missing the spoken form defeats the gate's purpose.
+    r"\d+\s*(k|grand|million|billion|bn|m)\b|"
+    r"(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|"
+    r"fifty|sixty|seventy|eighty|ninety|hundred)[\s-]*"
+    r"(k|grand|thousand|million|billion|percent)"
+    r")\b)",
     re.IGNORECASE,
 )
 
@@ -60,7 +67,7 @@ class FactCheckAgent:
     """Verify factual claims in transcript via Exa + GPT-4o-mini."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
         self.search_agent = SearchAgent()
 
     async def analyze(
@@ -124,12 +131,44 @@ class FactCheckAgent:
             return None
 
         top = sources[0]
+        explanation = verdict.get("explanation", "") or ""
+
+        # Is the explanation actually supported by the sources it cites?
+        #
+        # This is the highest-stakes generated text in the product: it is an
+        # LLM's prose about someone's spoken claim, and fact_check is one of
+        # only two nudge types Donna will say ALOUD. An explanation that
+        # invents a figure would be asserted to the room, with a citation
+        # attached that makes it more credible, not less.
+        grounding = None
+        relevance = float(verdict.get("confidence") or 0.7)
+        try:
+            from apps.api.services.rag.groundedness import assess
+
+            grounding = assess(
+                explanation, [(s.get("text") or "") for s in sources[:3]]
+            ).to_dict()
+            if grounding["label"] != "supported":
+                # Cap below _SPEAK_MIN_RELEVANCE (0.8) so an ungrounded
+                # explanation can still be SHOWN — with its sources, for a
+                # human to judge — but is never SPOKEN. Reading a possible
+                # hallucination out loud into a meeting is the one failure
+                # this system should refuse outright.
+                relevance = min(relevance, 0.75)
+                logger.warning(
+                    f"[FactCheck] explanation not fully grounded in sources "
+                    f"({grounding['label']}, score={grounding['score']}) — "
+                    f"suppressing speech for claim: {claim[:80]}"
+                )
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"[FactCheck] groundedness check skipped: {e}")
+
         return {
             "nudge_type": "fact_check",
             "title": f"I'd double-check that — {status.title()}",
             "content": (
                 f'Claim: "{claim}"\n\n'
-                f"{verdict.get('explanation', '')}\n\n"
+                f"{explanation}\n\n"
                 f"Source: {top.get('title') or top.get('url')}"
             ),
             "source_agent": "fact_check_agent",
@@ -138,9 +177,12 @@ class FactCheckAgent:
                 "status": status,
                 "source_url": top.get("url"),
                 "source_title": top.get("title"),
-                "explanation": verdict.get("explanation"),
+                "explanation": explanation,
+                # Provenance for the verdict itself: the card can show that
+                # Donna checked her own explanation against the sources.
+                "groundedness": grounding,
             },
-            "relevance_score": float(verdict.get("confidence") or 0.7),
+            "relevance_score": relevance,
         }
 
     # ------------------------------------------------------------------
@@ -218,7 +260,7 @@ class FactCheckAgent:
                 settings.model_fast,
                 response.usage,
             )
-            return json.loads(response.choices[0].message.content or "{}")
+            return json_parse.loads(response.choices[0].message.content, {})
         except Exception as e:
             logger.warning(f"[FactCheck] verdict failed: {e}")
             return None

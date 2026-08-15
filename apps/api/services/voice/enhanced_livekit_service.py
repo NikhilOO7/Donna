@@ -11,8 +11,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 # OpenAI SDK
-import openai
-
 # LiveKit imports
 from livekit import rtc
 from livekit.agents import (
@@ -25,6 +23,7 @@ from livekit.agents import (
 )
 
 # Your app imports
+from apps.api.core import llm_provider
 from apps.api.core.config import settings
 from apps.api.core.persona import DONNA_PERSONA
 
@@ -450,7 +449,7 @@ class DocumentAwareLLM(llm.LLM):
     def __init__(self, doc_agent: DocumentIntelligenceVoiceAgent):
         super().__init__()
         self.doc_agent = doc_agent
-        self._client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        self._client = llm_provider.failover_client()
 
     async def chat(
         self,

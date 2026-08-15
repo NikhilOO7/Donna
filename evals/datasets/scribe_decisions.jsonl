@@ -28,3 +28,16 @@
 {"id": "sd-26", "text": "We should probably think about this some more.", "label": false}
 {"id": "sd-27", "text": "Maybe we should ask marketing what they think first.", "label": false}
 {"id": "sd-28", "text": "I will take a look when I get a chance.", "label": false}
+# --- Adversarial batch (2026-08). Added deliberately to make this suite capable
+# --- of failing again: a suite that has scored 1.0 for months is either finished
+# --- or asleep, and the number alone cannot tell you which. Labeled by judgment.
+{"id": "sd-29", "text": "If legal signs off, we go with Acme — but that's a big if.", "label": false}
+{"id": "sd-30", "text": "Consider it done, I'll have the migration plan out by Friday.", "label": true}
+{"id": "sd-31", "text": "Right, so we're NOT doing the rewrite this quarter. Agreed?", "label": true}
+{"id": "sd-32", "text": "Shall we just go with option B then?", "label": true}
+{"id": "sd-33", "text": "Last week we decided to use Postgres, just recapping.", "label": false}
+{"id": "sd-34", "text": "I'd be inclined to say yes, but let me sleep on it.", "label": false}
+{"id": "sd-35", "text": "Fine. Do it.", "label": true}
+{"id": "sd-36", "text": "Hypothetically, if we picked Acme, we'd need two more engineers.", "label": false}
+{"id": "sd-37", "text": "Locking this in: Priya owns the rollout, deadline June 1.", "label": true}
+{"id": "sd-38", "text": "We're not going to decide this today.", "label": false}

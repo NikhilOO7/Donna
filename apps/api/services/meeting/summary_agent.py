@@ -5,12 +5,10 @@ Generates a structured meeting summary from transcript, decisions,
 nudges, and pre-meeting research using GPT-4.
 """
 
-import json
 import logging
 from typing import Any, Dict, List
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.persona import DONNA_PERSONA
 from apps.api.core.resilience import resilient_call
@@ -22,7 +20,7 @@ class SummaryAgent:
     """Generate post-meeting summary from meeting data."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     @resilient_call("openai", max_retries=2, timeout_seconds=60)
     async def generate_summary(
@@ -150,10 +148,8 @@ class SummaryAgent:
         await record_cost(meeting_id, "summary", settings.model_smart, response.usage)
 
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
 
-        result = json.loads(content)
+        result = json_parse.loads(content)
         logger.info(
             f"Summary generated: {len(result.get('decisions_summary', []))} decisions, "
             f"{len(result.get('action_items', []))} action items"

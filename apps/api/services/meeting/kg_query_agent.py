@@ -22,6 +22,7 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from apps.api.core.coordination import cooldown_passed
+from apps.api.core.logging import warn_throttled
 from apps.api.core.neo4j_client import neo4j_client
 
 logger = logging.getLogger(__name__)
@@ -184,7 +185,12 @@ class KGQueryAgent:
                     if 3 <= len(norm) <= 60 and norm not in _STOP_WORDS:
                         out.add(norm)
             except Exception as e:
-                logger.debug(f"[KG] spaCy extraction failed: {e}")
+                warn_throttled(
+                    logger,
+                    "kg.spacy",
+                    f"[KG] spaCy extraction failed — connection nudges are silently "
+                    f"not firing: {e}",
+                )
 
         # Always also run the regex pass — cheap, catches the cases
         # where spaCy misclassifies a clearly-capitalized proper noun.

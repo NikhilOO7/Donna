@@ -39,6 +39,7 @@ DETERMINISTIC = (
     "activation",
     "agenda_coverage",
     "flow",
+    "groundedness",
 )
 
 

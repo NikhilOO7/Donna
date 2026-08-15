@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
+from apps.api.core import llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -52,7 +53,7 @@ class ImageAgent:
 
     def _get_client(self) -> Optional[AsyncOpenAI]:
         if self._client is None and settings.openai_api_key:
-            self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+            self._client = llm_provider.failover_client()
         return self._client
 
     async def process_images(

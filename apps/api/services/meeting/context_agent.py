@@ -23,6 +23,11 @@ from apps.api.services.document.vector_store import ModernVectorStore
 
 logger = logging.getLogger(__name__)
 
+# Upper bound on the passage kept for the detail view. Generous enough that a
+# retrieved chunk survives intact, small enough that source_data stays a
+# reasonable size on a long meeting.
+_MAX_STORED_PASSAGE = 4000
+
 MIN_SIMILARITY = 0.55  # Below this, no nudge
 
 # How many candidates to pull from Qdrant before re-ranking. 5 is enough
@@ -46,7 +51,17 @@ _IMAGE_BOOST_DEFAULT = 1.05
 
 
 class ContextAgent:
-    """Surface relevant Knowledge Base content during a meeting."""
+    """Surface relevant Knowledge Base content during a meeting.
+
+    Deliberately NOT groundedness-checked, unlike the fact-check agent: this
+    agent never generates prose. ``content`` is a verbatim slice of a stored
+    chunk, so it is grounded by construction — there is no generation step in
+    which a figure could be invented. Retrieval can be *irrelevant* here, which
+    is what the relevance score measures, but it cannot be *unfaithful*.
+
+    Add a groundedness check here the moment this agent starts summarizing or
+    paraphrasing chunks instead of quoting them.
+    """
 
     def __init__(self):
         self._embedder: Optional[ContextualEmbeddingGenerator] = None
@@ -149,7 +164,13 @@ class ContextAgent:
         # Strip the synthetic-chunk markers the enhanced pipeline prepends
         # to table/image chunks so users never see literal "[TABLE]" text.
         content = content.removeprefix("[TABLE]\n").removeprefix("[IMAGE]\n").lstrip()
+        # The card shows a glanceable snippet; the detail view shows the whole
+        # passage. Both are stored, because truncating before persistence threw
+        # the rest away — "CoreScale spun out of..." was all anyone could ever
+        # see of that finding, and the sentence that mattered was the one after
+        # the ellipsis.
         snippet = content[:300] + ("..." if len(content) > 300 else "")
+        full_passage = content[:_MAX_STORED_PASSAGE]
         doc_id = getattr(c, "document_id", "unknown")
 
         # Human-readable citation fields (best-effort from indexed metadata)
@@ -187,6 +208,10 @@ class ContextAgent:
                 "score": base_score,
                 "boosted_score": top["boosted_score"],
                 "document_title": document_title,
+                # The untruncated passage, for the insight detail view. Bounded
+                # so one pathological chunk can't bloat every nudge row.
+                "full_content": full_passage,
+                "truncated": len(content) > 300,
                 "section_path": section_path,
                 "page_number": page_number,
                 # Visual insight: ship the actual table so the card can

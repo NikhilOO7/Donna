@@ -36,6 +36,11 @@ from apps.api.models.meeting import (  # noqa: F401
     Nudge,
     ResearchBrief,
 )
+from apps.api.models.data_connection import (  # noqa: F401
+    DataConnection,
+    DataQueryLog,
+)
+from apps.api.models.outbox import KGOutbox  # noqa: F401
 from apps.api.models.user import User  # noqa: F401
 
 config = context.config

@@ -5,13 +5,11 @@ Classifies sources into tiers (T1/T2/T3), assigns credibility scores,
 and filters to the top sources per topic.
 """
 
-import json
 import logging
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -46,7 +44,7 @@ class ValidationAgent:
     """Validate and score search results by source credibility."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     async def validate_sources(
         self, sources: List[Dict[str, Any]], top_n: int = 5
@@ -139,9 +137,7 @@ class ValidationAgent:
             )
 
             content = response.choices[0].message.content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-            return json.loads(content)
+            return json_parse.loads_array(content, [])
         except Exception as e:
             logger.warning(f"GPT-4 source validation failed: {e}")
             return []

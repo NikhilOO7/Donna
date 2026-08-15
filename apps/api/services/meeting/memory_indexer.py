@@ -19,7 +19,6 @@ insight built on it can say exactly where the knowledge came from.
 All indexing is best-effort: memory must never fail a summary.
 """
 
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -127,11 +126,10 @@ class MemoryIndexer:
         if not transcript_text and not summary_text:
             return []
         try:
-            from openai import AsyncOpenAI
-
+            from apps.api.core import json_parse, llm_provider
             from apps.api.core.config import settings
 
-            client = AsyncOpenAI(api_key=settings.openai_api_key)
+            client = llm_provider.failover_client()
             response = await client.chat.completions.create(
                 model=settings.model_fast,
                 messages=[
@@ -161,9 +159,7 @@ class MemoryIndexer:
                 max_tokens=1200,
             )
             content = (response.choices[0].message.content or "").strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-            facts = json.loads(content).get("facts", [])
+            facts = json_parse.loads(content, {}).get("facts", [])
             return facts if isinstance(facts, list) else []
         except Exception as e:
             logger.info(f"[Memory] fact extraction skipped: {e}")

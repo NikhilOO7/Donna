@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, Trash2, CheckCircle, ChevronRight, Network, Layers } from 'lucide-react';
+import { Upload, FileText, Trash2, CheckCircle, ChevronRight, Network, Layers, AlertCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import KnowledgeGraphView from './KnowledgeGraphView';
 import DocumentElementsView from './DocumentElementsView';
@@ -9,6 +9,29 @@ import DocumentElementsView from './DocumentElementsView';
 type DetailTab = 'graph' | 'elements';
 
 type Notice = { kind: 'info' | 'error'; text: string } | null;
+
+
+/** Human-readable reason a document failed, with the next action.
+ *
+ * `processing_error` holds the raw provider/pipeline error. Showing it raw is
+ * noise; hiding it entirely is what left "failed" meaning nothing at all. So:
+ * translate the cases we recognise, fall back to the raw text otherwise. */
+function docErrorText(doc: any): string {
+  const raw =
+    typeof doc.processing_error === 'string'
+      ? doc.processing_error
+      : doc.processing_error?.message || doc.processing_error?.error || '';
+  const s = String(raw);
+  if (/insufficient_quota|credit_balance_exhausted|no credits/i.test(s))
+    return 'Failed — OpenAI credits exhausted. Add credits, then re-upload.';
+  if (/429|rate.?limit/i.test(s))
+    return 'Failed — provider rate limit. Try again shortly.';
+  if (/timeout|timed out/i.test(s))
+    return 'Failed — processing timed out. Try a smaller file.';
+  if (/unsupported|not supported|cannot parse/i.test(s))
+    return 'Failed — unsupported or unreadable file format.';
+  return s ? `Failed — ${s.slice(0, 120)}` : 'Failed — see server logs for the reason.';
+}
 
 export default function KnowledgeBaseStep({ meetingId }: { meetingId?: string }) {
   const [documents, setDocuments] = useState<any[]>([]);
@@ -176,11 +199,20 @@ export default function KnowledgeBaseStep({ meetingId }: { meetingId?: string })
                     <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{doc.filename}</p>
-                      <p className="text-xs text-gray-500">
-                        {doc.chunk_count > 0
-                          ? `${doc.chunk_count} chunks`
-                          : doc.processing_status}
-                      </p>
+                      {/* A bare "failed" tells the user nothing actionable. The
+                          backend records why (quota, OCR, unsupported format) —
+                          surface it, and say what to do next. */}
+                      {doc.processing_status === 'failed' ? (
+                        <p className="text-xs text-red-600 truncate" title={docErrorText(doc)}>
+                          {docErrorText(doc)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-500">
+                          {doc.chunk_count > 0
+                            ? `${doc.chunk_count} chunks`
+                            : doc.processing_status}
+                        </p>
+                      )}
                     </div>
                   </button>
                   <div className="flex items-center gap-2">
@@ -188,6 +220,8 @@ export default function KnowledgeBaseStep({ meetingId }: { meetingId?: string })
                       <CheckCircle className="w-4 h-4 text-green-500" />
                     ) : doc.processing_status === 'processing' ? (
                       <div className="w-4 h-4 border-2 border-[#4f46e5] border-t-transparent rounded-full animate-spin" />
+                    ) : doc.processing_status === 'failed' ? (
+                      <AlertCircle className="w-4 h-4 text-red-500" />
                     ) : null}
                     <button
                       onClick={() => handleDelete(doc.id)}

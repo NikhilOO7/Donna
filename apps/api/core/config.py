@@ -1,7 +1,7 @@
 # apps/api/core/config.py
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -186,6 +186,83 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("EMBEDDING_DIMENSIONS", "embedding_dimensions"),
     )
 
+    # --- Ollama fallback -------------------------------------------------
+    # Ollama speaks the OpenAI wire protocol at /v1, so failover is a base_url
+    # swap rather than a second client implementation. See
+    # apps/api/core/llm_provider.py for why chat and embeddings fail over to
+    # *different* Ollama endpoints.
+    #
+    #   auto   → prefer OpenAI, fall back to Ollama on quota/auth/network
+    #            failure, retry OpenAI after a cooldown
+    #   openai → OpenAI only, fail loudly (correct for production)
+    #   ollama → Ollama only, never call OpenAI (correct for offline dev)
+    llm_provider: Literal["auto", "openai", "ollama"] = Field(
+        default="auto",
+        validation_alias=AliasChoices("LLM_PROVIDER", "llm_provider"),
+    )
+
+    # Ollama Cloud — hosted, large models (gpt-oss:120b and friends). Used for
+    # CHAT ONLY: the cloud catalogue is all chat models and serves no embedding
+    # model at all, so embeddings cannot fail over here.
+    ollama_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("OLLAMA_API_KEY", "ollama_api_key"),
+    )
+    ollama_cloud_base_url: str = Field(
+        default="https://ollama.com",
+        validation_alias=AliasChoices("OLLAMA_CLOUD_BASE_URL", "ollama_cloud_base_url"),
+    )
+    ollama_cloud_chat_model: str = Field(
+        default="gpt-oss:20b",
+        validation_alias=AliasChoices(
+            "OLLAMA_CLOUD_CHAT_MODEL", "ollama_cloud_chat_model"
+        ),
+    )
+    ollama_cloud_chat_model_smart: Optional[str] = Field(
+        default="gpt-oss:120b",
+        validation_alias=AliasChoices(
+            "OLLAMA_CLOUD_CHAT_MODEL_SMART", "ollama_cloud_chat_model_smart"
+        ),
+    )
+
+    # Local Ollama — the only place a fallback EMBEDDING model exists, and the
+    # chat fallback when no cloud key is configured.
+    ollama_base_url: str = Field(
+        # host.docker.internal, not localhost: the API runs in a container and
+        # Ollama runs on the host. Inside the container localhost is the
+        # container.
+        default="http://host.docker.internal:11434",
+        validation_alias=AliasChoices("OLLAMA_BASE_URL", "ollama_base_url"),
+    )
+    ollama_chat_model: str = Field(
+        default="llama3.2:3b",
+        validation_alias=AliasChoices("OLLAMA_CHAT_MODEL", "ollama_chat_model"),
+    )
+    ollama_chat_model_smart: Optional[str] = Field(
+        # Used where OpenAI would have used model_smart. Empty falls back to
+        # ollama_chat_model.
+        default="qwen2.5:7b",
+        validation_alias=AliasChoices(
+            "OLLAMA_CHAT_MODEL_SMART", "ollama_chat_model_smart"
+        ),
+    )
+    ollama_embedding_model: str = Field(
+        default="nomic-embed-text",
+        validation_alias=AliasChoices(
+            "OLLAMA_EMBEDDING_MODEL", "ollama_embedding_model"
+        ),
+    )
+    ollama_embedding_dimensions: int = Field(
+        # nomic-embed-text is 768-wide. This MUST match the model: it decides
+        # the width of the Qdrant collections created for this embedding space,
+        # and a mismatch is rejected at write time by Qdrant rather than
+        # silently coerced.
+        default=768,
+        validation_alias=AliasChoices(
+            "OLLAMA_EMBEDDING_DIMENSIONS", "ollama_embedding_dimensions"
+        ),
+    )
+
     # Deepgram Settings
     deepgram_api_key: Optional[str] = Field(
         default=None,
@@ -234,6 +311,7 @@ class Settings(BaseSettings):
     @property
     def livekit_client_url(self) -> str:
         return self.livekit_public_url or self.livekit_url
+
     livekit_api_key: str = Field(
         default="", validation_alias=AliasChoices("LIVEKIT_API_KEY", "livekit_api_key")
     )
@@ -430,6 +508,34 @@ class Settings(BaseSettings):
         default=False, validation_alias=AliasChoices("USE_JOB_QUEUE", "use_job_queue")
     )
 
+    # ------------------------------------------------------------------
+    # Customer data connections (read-only access to a company's own DB)
+    # ------------------------------------------------------------------
+    # Encrypts stored database credentials. Production refuses to boot without
+    # it: a key that regenerates on restart makes every stored credential
+    # undecryptable, which presents as data loss rather than misconfiguration.
+    encryption_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("ENCRYPTION_KEY", "encryption_key")
+    )
+    # Whether a customer database may live on a private/loopback address.
+    # OFF by default: with it on, "connect your database" becomes an SSRF
+    # primitive pointed at Donna's own network. Self-hosted deployments where
+    # the DB genuinely is private must opt in explicitly — it is an operator
+    # decision, never a per-request parameter.
+    data_connection_allow_private: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "DATA_CONNECTION_ALLOW_PRIVATE", "data_connection_allow_private"
+        ),
+    )
+    # Hard ceiling on rows returned from a customer database in one query.
+    data_connection_max_rows: int = Field(
+        default=500,
+        validation_alias=AliasChoices(
+            "DATA_CONNECTION_MAX_ROWS", "data_connection_max_rows"
+        ),
+    )
+
     # Observability
     enable_tracing: bool = Field(
         default=False, validation_alias=AliasChoices("ENABLE_TRACING", "enable_tracing")
@@ -495,6 +601,72 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    # ------------------------------------------------------------------
+    # Production safety gate
+    # ------------------------------------------------------------------
+    def production_safety_errors(self) -> List[str]:
+        """Configuration states that must never ship to production.
+
+        Tenant isolation is driver #1, and with ``require_auth`` off every
+        request is ownerless: meetings aren't owner-scoped and the RAG cache
+        key collapses to the shared ``'global'`` namespace, so one user can be
+        served another's cached answer. That is a *correctness* property being
+        protected by a *configuration* value, which is too weak a guarantee to
+        leave implicit — so production refuses to boot instead.
+
+        Returns a list of human-readable errors; empty means safe.
+        """
+        if not self.is_production:
+            return []
+
+        errors: List[str] = []
+        if not self.require_auth:
+            errors.append(
+                "REQUIRE_AUTH=false with APP_ENV=production: requests would be "
+                "ownerless, meetings would not be owner-scoped, and the RAG "
+                "response cache would collapse to a shared 'global' key "
+                "(cross-tenant answer leak). Set REQUIRE_AUTH=true."
+            )
+        if not self.encryption_key:
+            errors.append(
+                "ENCRYPTION_KEY is not set: customer database credentials "
+                "would be unprotected at rest. Generate one with "
+                '`python -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())"`.'
+            )
+        if self.jwt_secret == "dev-secret-change-in-production":
+            errors.append(
+                "JWT_SECRET is still the development default: anyone can mint "
+                "valid tokens for any user, and the Google OAuth state HMAC is "
+                "forgeable. Set a strong JWT_SECRET."
+            )
+        return errors
+
+    def production_safety_warnings(self) -> List[str]:
+        """Operationally risky, but not a correctness or isolation break."""
+        if not self.is_production:
+            return []
+
+        warnings: List[str] = []
+        if not self.use_job_queue:
+            warnings.append(
+                "USE_JOB_QUEUE=false in production: background work runs as "
+                "in-process BackgroundTasks, so it is lost on restart and never "
+                "retried. Set USE_JOB_QUEUE=true."
+            )
+        if self.debug:
+            warnings.append("APP_DEBUG=true in production.")
+        return warnings
+
+    def assert_production_safe(self) -> None:
+        """Raise if the configuration is unsafe for production. Called at startup."""
+        errors = self.production_safety_errors()
+        if errors:
+            raise RuntimeError(
+                "Refusing to start: unsafe production configuration.\n  - "
+                + "\n  - ".join(errors)
+            )
 
     @property
     def voice_pipeline_config(self) -> Dict[str, Any]:

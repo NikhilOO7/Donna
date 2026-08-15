@@ -11,9 +11,10 @@ import voyageai
 
 # Original imports
 # Enhanced imports
-from openai import AsyncOpenAI, OpenAI
+from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 
+from apps.api.core import llm_provider
 from apps.api.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ class ContextualEmbeddingGenerator:
 
     def __init__(self):
         # Initialize OpenAI client
-        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.openai_client = llm_provider.failover_client()
 
         # Initialize Voyage AI client (better embeddings)
         if getattr(settings, "voyage_api_key", None):
@@ -183,26 +184,28 @@ class ContextualEmbeddingGenerator:
                 embedding_result = await self._generate_embedding(
                     combined_text, use_voyage
                 )
-                # Pick the best embedding that matches expected dimensions
-                target_dim = settings.embedding_dimensions  # 1536
+                # Take the first vector whose width matches the active space.
+                # Anything else is discarded rather than reshaped: a vector
+                # padded or truncated to fit is not a worse embedding, it is a
+                # meaningless one that still scores confidently against real
+                # neighbours. Better to store nothing and surface the gap.
+                target_dim = llm_provider.embedding_provider().embed_dims
                 best = None
-                for provider in ("openai", "voyage", "local"):
-                    vec = embedding_result.get(provider)
+                for source in ("openai", "voyage", "local"):
+                    vec = embedding_result.get(source)
                     if vec and len(vec) == target_dim:
                         best = vec
                         break
                 if best is None:
-                    # Fall back to any available, even wrong dim (will be caught later)
-                    best = next((v for v in embedding_result.values() if v), None)
-                    if best and len(best) != target_dim:
-                        logger.warning(
-                            f"Embedding dim mismatch: got {len(best)}, expected {target_dim}. "
-                            "Padding/truncating to target."
+                    wrong = {s: len(v) for s, v in embedding_result.items() if v}
+                    if wrong:
+                        logger.error(
+                            "Discarding embeddings with wrong width %s (space "
+                            "expects %dd). Chunk %d will not be indexed.",
+                            wrong,
+                            target_dim,
+                            absolute_idx,
                         )
-                        if len(best) < target_dim:
-                            best = best + [0.0] * (target_dim - len(best))
-                        else:
-                            best = best[:target_dim]
                 embeddings[context_type] = best
 
             # Use the local-context embedding as the canonical single vector
@@ -352,6 +355,45 @@ class ContextualEmbeddingGenerator:
             )[:5]
             return ", ".join(concepts)
 
+    async def _embed_one(self, text: str, provider) -> List[float]:
+        """Embed one string with an explicit provider, via Redis cache.
+
+        Verifies the returned width against what the provider promised. A
+        mismatch means the configured ``*_EMBEDDING_DIMENSIONS`` disagrees with
+        the model actually serving the request, and every vector written from
+        here on would be silently unusable — so it raises rather than coercing
+        the vector to fit.
+        """
+        from apps.api.core.cache import get_cached_embedding, set_cached_embedding
+
+        cached = await get_cached_embedding(text, provider.embed_model)
+        if cached is not None:
+            return cached
+
+        client = llm_provider.client_for(provider)
+        kwargs: Dict[str, Any] = {"input": text, "model": provider.embed_model}
+        # `dimensions` is a Matryoshka-truncation feature of OpenAI's v3
+        # embedding models. Ollama's compatibility layer rejects it.
+        if provider.name == "openai":
+            kwargs["dimensions"] = provider.embed_dims
+
+        response = await client.embeddings.create(**kwargs)
+        vector = response.data[0].embedding
+
+        if len(vector) != provider.embed_dims:
+            raise ValueError(
+                f"{provider.name} model '{provider.embed_model}' returned "
+                f"{len(vector)}-dim vectors but config declares "
+                f"{provider.embed_dims}. Fix the dimension setting to match the "
+                f"model — a padded or truncated vector is not comparable to a "
+                f"real one and would corrupt retrieval silently."
+            )
+
+        if provider.name == "openai":
+            llm_provider.note_success()
+        await set_cached_embedding(text, provider.embed_model, vector)
+        return vector
+
     async def _generate_embedding(
         self, text: str, use_voyage: bool = True
     ) -> Dict[str, List[float]]:
@@ -363,27 +405,34 @@ class ContextualEmbeddingGenerator:
 
         embeddings = {}
 
-        # Generate OpenAI embedding with standardized dimensions
-        # (Redis-cached: shared across API workers and job workers)
-        from apps.api.core.cache import get_cached_embedding, set_cached_embedding
+        # Primary embedding, from whichever provider is currently active.
+        # (Redis-cached: shared across API workers and job workers. The cache
+        # key includes the model name, so an OpenAI vector can never be served
+        # for an Ollama request or vice versa.)
 
+        provider = llm_provider.embedding_provider()
         try:
-            cached = await get_cached_embedding(text, settings.embedding_model)
-            if cached is not None:
-                embeddings["openai"] = cached
-            else:
-                response = await self.openai_client.embeddings.create(
-                    input=text,
-                    model=settings.embedding_model,
-                    dimensions=settings.embedding_dimensions,
-                )
-                embeddings["openai"] = response.data[0].embedding
-                await set_cached_embedding(
-                    text, settings.embedding_model, embeddings["openai"]
-                )
+            embeddings["openai"] = await self._embed_one(text, provider)
         except Exception as e:
-            logger.error(f"OpenAI embedding failed: {e}")
-            embeddings["openai"] = None
+            # Only a systemic OpenAI failure justifies switching providers; a
+            # one-off error should not silently move this document into a
+            # different vector space from its siblings.
+            if provider.name == "openai" and llm_provider.note_failure(e):
+                fallback = llm_provider.embedding_provider()
+                logger.warning(
+                    "Embedding via Ollama (%s, %dd) after OpenAI failure: %s",
+                    fallback.embed_model,
+                    fallback.embed_dims,
+                    e,
+                )
+                try:
+                    embeddings["openai"] = await self._embed_one(text, fallback)
+                except Exception as e2:
+                    logger.error(f"Fallback embedding failed: {e2}")
+                    embeddings["openai"] = None
+            else:
+                logger.error(f"Embedding failed ({provider.name}): {e}")
+                embeddings["openai"] = None
 
         # Generate Voyage embedding (if available and requested)
         # Note: voyage-3-large produces 1024-dim which may not match Qdrant's

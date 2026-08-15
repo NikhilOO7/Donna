@@ -11,6 +11,8 @@ import asyncio
 import logging
 from typing import Any, Callable, Coroutine, Dict, Optional
 
+from sqlalchemy import select
+
 from apps.api.core.database import AsyncSessionLocal
 from apps.api.models.meeting import ResearchBrief
 from apps.api.services.research.search_agent import SearchAgent
@@ -29,6 +31,33 @@ class ResearchPipeline:
         self.search_agent = SearchAgent()
         self.validation_agent = ValidationAgent()
         self.synthesis_agent = SynthesisAgent()
+
+    @staticmethod
+    async def _meeting_owner(session, meeting_id: str):
+        """Owner of the meeting — the tenancy key for any data-connection read."""
+        from sqlalchemy import select as _select
+
+        from apps.api.models.meeting import Meeting
+
+        row = await session.execute(
+            _select(Meeting.owner_id).where(Meeting.id == meeting_id)
+        )
+        return row.scalar_one_or_none()
+
+    @staticmethod
+    async def _meeting_agenda(session, meeting_id: str):
+        """Agenda item titles, which are what the query planner reasons over."""
+        from sqlalchemy import select as _select
+
+        from apps.api.models.meeting import Meeting
+
+        row = await session.execute(
+            _select(Meeting.agenda).where(Meeting.id == meeting_id)
+        )
+        agenda = row.scalar_one_or_none() or []
+        return [
+            a.get("title") for a in agenda if isinstance(a, dict) and a.get("title")
+        ]
 
     async def run(
         self,
@@ -52,9 +81,34 @@ class ResearchPipeline:
 
         async with AsyncSessionLocal() as session:
             try:
-                # Create research brief record
-                brief = ResearchBrief(meeting_id=meeting_id, status="researching")
-                session.add(brief)
+                # Reuse the meeting's existing brief rather than inserting a
+                # new one per run. Meeting.research_brief is declared
+                # uselist=False, so a second row makes the relationship
+                # ambiguous and SQLAlchemy returns an arbitrary one — in
+                # practice the oldest. A re-run would then succeed while the UI
+                # kept rendering the original failure forever, which looks
+                # exactly like "the retry button does nothing".
+                existing = (
+                    (
+                        await session.execute(
+                            select(ResearchBrief)
+                            .where(ResearchBrief.meeting_id == meeting_id)
+                            .order_by(ResearchBrief.created_at.desc())
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
+
+                if existing:
+                    brief = existing
+                    brief.status = "researching"
+                    brief.executive_summary = None
+                    brief.topics = []
+                    brief.source_count = 0
+                else:
+                    brief = ResearchBrief(meeting_id=meeting_id, status="researching")
+                    session.add(brief)
                 await session.commit()
                 await session.refresh(brief)
                 brief_id = brief.id
@@ -138,6 +192,46 @@ class ResearchPipeline:
                     }
                 )
 
+                # Step 3b: The customer's own database.
+                #
+                # This is the step that makes research useful when nobody
+                # uploaded a document. Web sources describe the world; the
+                # company's own data describes THEIR situation, which is what
+                # an agenda item like "review vendor spend" actually needs.
+                #
+                # Cold path by design: agenda -> planned SQL -> guards ->
+                # their database. Minutes-tolerant, fully audited, and never
+                # on the critical path of a live conversation.
+                db_findings = []
+                try:
+                    from apps.api.services.data_connection import (
+                        service as data_service,
+                    )
+
+                    owner_id = await self._meeting_owner(session, meeting_id)
+                    agenda_items = await self._meeting_agenda(session, meeting_id)
+                    db_findings = await data_service.gather_for_meeting(
+                        session,
+                        owner_id,
+                        title=title,
+                        agenda=agenda_items or [t["topic"] for t in topics],
+                        meeting_id=meeting_id,
+                    )
+                    if db_findings:
+                        await _notify(
+                            {
+                                "type": "research_progress",
+                                "step": "queried_your_database",
+                                "finding_count": len(db_findings),
+                            }
+                        )
+                except Exception as e:
+                    # A database that is down, misconfigured or revoked must
+                    # degrade the brief, never fail it.
+                    logger.warning(
+                        f"[Research {meeting_id}] customer database step skipped: {e}"
+                    )
+
                 # Step 4: Synthesize
                 logger.info(f"[Research {meeting_id}] Synthesizing...")
                 synthesis = await self.synthesis_agent.synthesize(
@@ -146,6 +240,12 @@ class ResearchPipeline:
                     meeting_title=title,
                     meeting_id=meeting_id,
                 )
+                if db_findings:
+                    # Attached rather than merged into `key_findings`: data
+                    # from the customer's own systems is a different kind of
+                    # evidence than a web source, and the UI should be able to
+                    # say so (and show the exact SQL that produced it).
+                    synthesis["database_findings"] = db_findings
 
                 # Build topics data for storage. The synthesis agent's key
                 # findings are attached to the topic whose sources back them

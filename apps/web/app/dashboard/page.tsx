@@ -14,6 +14,8 @@ import {
   LogOut,
   Mic,
   Home as HomeIcon,
+  Settings,
+  ClipboardList,
 } from 'lucide-react';
 import DonnaLogo from '@/components/brand/DonnaLogo';
 import AnalyticsDashboard from '@/components/analytics/AnalyticsDashboard';
@@ -25,7 +27,7 @@ import IntelligenceBanner from '@/components/IntelligenceBanner';
 import { apiClient, type AuthUser } from '@/lib/api-client';
 import type { HealthStatus, WebSocketMessage } from '@/types';
 
-type View = 'meetings' | 'analytics';
+type View = 'meetings' | 'actions' | 'analytics';
 
 const STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
   scheduled: { dot: 'bg-gray-400', label: 'Scheduled' },
@@ -41,6 +43,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [recentMeetings, setRecentMeetings] = useState<any[]>([]);
+  const [openItemCount, setOpenItemCount] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [sessionSearch, setSessionSearch] = useState('');
@@ -84,6 +87,24 @@ export default function Home() {
     } catch (e) { /* silent */ }
   }, []);
 
+  // Fetched here, not only inside the panel: the badge has to be right on
+  // arrival, and the panel only mounts once you've already opened the section
+  // the badge exists to draw you to.
+  const fetchOpenItemCount = useCallback(async () => {
+    try {
+      const data = await apiClient.listOpenItems();
+      setOpenItemCount((data.items || []).length);
+    } catch {
+      setOpenItemCount(null); // auth-off/demo — show no badge rather than a wrong one
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOpenItemCount();
+    const i = setInterval(fetchOpenItemCount, 30000);
+    return () => clearInterval(i);
+  }, [fetchOpenItemCount]);
+
   useEffect(() => {
     fetchRecentMeetings();
     const i = setInterval(fetchRecentMeetings, 15000);
@@ -103,6 +124,9 @@ export default function Home() {
 
   const navItems = [
     { id: 'meetings' as View, name: 'Meetings', icon: CalendarDays, count: recentMeetings.length },
+    // The count is the point of this section — what's still owed across every
+    // meeting is the one number a leader wants without opening anything.
+    { id: 'actions' as View, name: 'Action Items', icon: ClipboardList, count: openItemCount ?? undefined },
     { id: 'analytics' as View, name: 'Analytics', icon: BarChart3 },
   ];
 
@@ -155,6 +179,13 @@ export default function Home() {
                       {user.full_name || user.email}
                     </span>
                   </div>
+                  <Link
+                    href="/settings"
+                    title="Settings — connect your company database"
+                    className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </Link>
                   <button
                     onClick={handleSignOut}
                     title="Sign out"
@@ -316,12 +347,31 @@ export default function Home() {
             {activeView === 'meetings' && (
               <ErrorBoundary sectionName="Meetings">
                 <div className="animate-fade-up">
-                  <OpenItemsPanel />
                   <MeetingList
                     onSelectMeeting={(id) => router.push(`/meetings/${id}`)}
                   />
                 </div>
               </ErrorBoundary>
+            )}
+
+            {/* Action Items View — cross-meeting commitments, on their own
+                screen rather than stacked above the meeting list where a long
+                list pushed the meetings off the fold. */}
+            {activeView === 'actions' && (
+              <div className="space-y-6 animate-fade-up">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-1">Action items</h2>
+                  <p className="text-gray-500">
+                    Everything still owed across your meetings, newest first.
+                  </p>
+                </div>
+                <ErrorBoundary sectionName="Action items">
+                  <OpenItemsPanel
+                    variant="page"
+                    onCountChange={setOpenItemCount}
+                  />
+                </ErrorBoundary>
+              </div>
             )}
 
             {/* Analytics View */}

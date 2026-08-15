@@ -25,6 +25,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Optional
 
 from apps.api.core.connections import get_redis_client
+from apps.api.core.logging import warn_throttled
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,14 @@ async def cooldown_passed(key: str, ttl_seconds: float) -> bool:
             ok = await r.set(full, "1", nx=True, ex=max(1, int(round(ttl_seconds))))
             return bool(ok)
         except Exception as e:
-            logger.debug(f"[coord] redis cooldown failed, using local: {e}")
+            # Process-local cooldowns are per-replica: the same claim can fire
+            # once per replica instead of once overall. Operators need to know.
+            warn_throttled(
+                logger,
+                "coord.cooldown.fallback",
+                f"[coord] Redis cooldown failed — falling back to process-local "
+                f"state. Cooldowns are no longer shared across replicas: {e}",
+            )
 
     now = time.monotonic()
     last = _LOCAL_COOLDOWNS.get(key)
@@ -106,7 +114,16 @@ async def distributed_lock(
             try:
                 ok = await r.set(full, token, nx=True, px=int(ttl_seconds * 1000))
             except Exception as e:
-                logger.debug(f"[coord] redis lock error, falling back local: {e}")
+                # The serious one: a process-local lock serializes dispatch
+                # only within this replica, so N replicas can run the same
+                # meeting's cycle concurrently and double-emit nudges.
+                warn_throttled(
+                    logger,
+                    "coord.lock.fallback",
+                    f"[coord] Redis lock error — falling back to a process-local "
+                    f"lock. Mutual exclusion no longer holds ACROSS replicas; "
+                    f"expect duplicate work if more than one replica is running: {e}",
+                )
                 r = None
                 break
             if ok:

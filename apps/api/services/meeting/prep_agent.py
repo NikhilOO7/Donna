@@ -17,8 +17,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -85,7 +84,7 @@ class PrepAgent:
     """Structured meeting prep from free-form input (Smart Fill + conversational setup)."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     @resilient_call("openai", max_retries=2, timeout_seconds=20)
     async def generate(
@@ -113,9 +112,7 @@ class PrepAgent:
         )
 
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-        result = json.loads(content)
+        result = json_parse.loads(content)
         return self._normalize(result)
 
     @staticmethod

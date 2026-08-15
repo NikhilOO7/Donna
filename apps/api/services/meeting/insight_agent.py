@@ -6,12 +6,10 @@ surfaces an `insight` nudge citing the relevant finding when a
 topical match is found.
 """
 
-import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -22,7 +20,7 @@ class InsightAgent:
     """Surface pre-meeting research when it becomes topically relevant."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     async def analyze(
         self,
@@ -119,9 +117,7 @@ class InsightAgent:
         )
 
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-        return json.loads(content)
+        return json_parse.loads_array(content, [])
 
 
 insight_agent = InsightAgent()

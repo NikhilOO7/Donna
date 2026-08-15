@@ -1,0 +1,219 @@
+{
+  "_readme": [
+    "Meeting scenario paired with data/test_corpus/. Every utterance carries an",
+    "`expect` list naming the agents it should trigger, so a run can be scored",
+    "rather than eyeballed. `note` explains WHY, which is what makes a failure",
+    "diagnosable instead of just red.",
+    "",
+    "Ground truth lives in data/test_corpus/GROUND_TRUTH.json. Utterances marked",
+    "`contradicts_corpus: true` deliberately state figures the documents",
+    "disprove — a fact-check that stays silent on those is a false negative, not",
+    "a quiet success."
+  ],
+  "meeting": {
+    "title": "Project Atlas — Vendor Selection Review",
+    "description": "Decide between Acme Systems, Beacon Cloud and CoreScale for the Project Atlas search infrastructure. Review the security audit findings and the budget impact, then assign an owner and a deadline.",
+    "meeting_type": "decision",
+    "agenda": [
+      {
+        "title": "Review vendor evaluation and comparison table",
+        "status": "pending"
+      },
+      {
+        "title": "Security audit findings and remediation",
+        "status": "pending"
+      },
+      {
+        "title": "Budget impact and approval path",
+        "status": "pending"
+      },
+      {
+        "title": "Decide vendor, assign owner and deadline",
+        "status": "pending"
+      }
+    ],
+    "attendees": [
+      {
+        "name": "Priya Raman",
+        "email": "priya.raman@example.com",
+        "expertise": [
+          "security",
+          "compliance",
+          "audit"
+        ]
+      },
+      {
+        "name": "Daniel Okafor",
+        "email": "daniel.okafor@example.com",
+        "expertise": [
+          "infrastructure",
+          "latency",
+          "platform"
+        ]
+      },
+      {
+        "name": "Sarah Chen",
+        "email": "sarah.chen@example.com",
+        "expertise": [
+          "budget",
+          "procurement",
+          "contracts"
+        ]
+      }
+    ]
+  },
+  "documents": [
+    "data/test_corpus/01_vendor_evaluation.docx",
+    "data/test_corpus/02_security_audit.docx",
+    "data/test_corpus/03_q3_financials.pdf",
+    "data/test_corpus/04_master_services_agreement.pdf"
+  ],
+  "transcript": [
+    {
+      "speaker": "Sarah Chen",
+      "text": "Okay, let's get started. First item is the vendor evaluation — I want to walk through the comparison table before we talk about anything else.",
+      "expect": [
+        "agenda"
+      ],
+      "note": "Names agenda item 1 almost verbatim; the lexical coverage matcher should flip it to covered."
+    },
+    {
+      "speaker": "Daniel Okafor",
+      "text": "So on latency, Acme Systems came out clearly ahead. Their p95 was well under a hundred milliseconds in our tests.",
+      "expect": [
+        "context",
+        "kg_query"
+      ],
+      "note": "Entity 'Acme Systems' + a latency question. Context should retrieve the comparison table; the table row is the ideal hit and exercises the element-type boost."
+    },
+    {
+      "speaker": "Priya Raman",
+      "text": "I should flag that the security audit found seven findings including two critical vulnerabilities in the authentication layer.",
+      "expect": [
+        "fact_check",
+        "context"
+      ],
+      "contradicts_corpus": true,
+      "note": "GROUND TRUTH: 3 medium, 0 critical. Fact-check should contest this. If the verdict explanation itself invents figures, groundedness caps relevance below 0.8 so it is shown but never SPOKEN aloud."
+    },
+    {
+      "speaker": "Sarah Chen",
+      "text": "Wait — I thought revenue grew 23% last quarter, reaching about 6.8 million.",
+      "expect": [
+        "fact_check"
+      ],
+      "contradicts_corpus": true,
+      "note": "GROUND TRUTH: 15% growth to $4.2M. A second, independent contradiction so one lucky catch is not mistaken for a working gate."
+    },
+    {
+      "speaker": "Daniel Okafor",
+      "text": "There's a wrinkle on data residency. Acme only covers three regions and the MSA requires EU coverage before launch.",
+      "expect": [
+        "context",
+        "kg_query",
+        "activation"
+      ],
+      "note": "Cross-document link: regions from doc 1, MSA clause from doc 4. Also mentions compliance, which is Priya's expertise — activation should tap her privately, addressed by EMAIL not display name."
+    },
+    {
+      "speaker": "Daniel Okafor",
+      "text": "And to be fair the CoreScale option is cheaper, but they spun out of Beacon Cloud so they share a control plane. It's not really an independent third choice.",
+      "expect": [
+        "kg_query",
+        "context"
+      ],
+      "note": "CoreScale->Beacon Cloud relationship appears in doc 1 only; a 2-hop graph traversal should surface the connection."
+    },
+    {
+      "speaker": "Sarah Chen",
+      "text": "Before we decide — is there anything in the market we should know about? I'd like to understand how the search infrastructure vendor landscape is moving before we commit for a year.",
+      "expect": [
+        "insight",
+        "agenda"
+      ],
+      "note": "Topical match against the pre-meeting research brief's topics. Requires --research (EXA_API_KEY); without a brief the insight agent has nothing to match and correctly stays silent."
+    },
+    {
+      "speaker": "Daniel Okafor",
+      "text": "Honestly I've been running most of these numbers myself, and I keep coming back to the same conclusion on the platform side, which is that latency should win over regional coverage here, because our enterprise accounts care more about speed than residency in practice, at least based on the support tickets I've seen this quarter.",
+      "expect": [
+        "flow"
+      ],
+      "note": "Deliberately long and one-sided — by this point Daniel dominates word count, which should trip the talk-time dominance check (top share >= 65% with >= 2 speakers)."
+    },
+    {
+      "speaker": "Sarah Chen",
+      "text": "On budget — Acme at a hundred and eighty five thousand fits under our two hundred thousand line. Beacon at two forty would need a finance committee exception.",
+      "expect": [
+        "agenda",
+        "context",
+        "fact_check"
+      ],
+      "note": "Covers agenda item 3. Figures here are CORRECT per the corpus — a fact-check that contests them would be a false positive, which is exactly what precision floors exist to catch."
+    },
+    {
+      "speaker": "Priya Raman",
+      "text": "From a security standpoint I'm comfortable proceeding as long as SEC-02 is closed before we route production traffic.",
+      "expect": [
+        "agenda",
+        "context"
+      ],
+      "note": "Covers agenda item 2 and cites a specific finding ID from doc 2."
+    },
+    {
+      "speaker": "Sarah Chen",
+      "text": "Alright, let's go with Acme Systems then. Locking this in: Daniel owns the rollout, deadline is June 1.",
+      "expect": [
+        "scribe",
+        "agenda"
+      ],
+      "note": "Two decision phrases ('let's go with', 'locking this in') plus an owner and deadline — the scribe gate should fire and the extraction should capture all three fields. Covers agenda item 4."
+    },
+    {
+      "speaker": "Priya Raman",
+      "text": "Just to recap, last month we decided to standardise on Postgres for the metadata store — that's unchanged.",
+      "expect": [],
+      "note": "NEGATIVE CASE. Contains 'we decided' but is a retrospective reference, not a new decision. The scribe gate must NOT fire — this is the retrospective-exclusion fix, and a nudge here means it regressed."
+    },
+    {
+      "speaker": "Daniel Okafor",
+      "text": "Sounds good. I'll get the contract over to legal this week.",
+      "expect": [
+        "scribe"
+      ],
+      "note": "'I'll' + ownership — a genuine action item following the decision."
+    }
+  ],
+  "assertions": {
+    "must_fire": [
+      "scribe",
+      "agenda"
+    ],
+    "should_fire_with_documents": [
+      "context"
+    ],
+    "should_fire_with_exa_key": [
+      "fact_check"
+    ],
+    "should_fire_with_neo4j": [
+      "kg_query",
+      "memory"
+    ],
+    "must_not": {
+      "retrospective_decision": "No scribe nudge should be attributed to the 'just to recap, last month we decided' utterance."
+    },
+    "notes": [
+      "activation fires only when the matched person is NOT the speaker and the",
+      "per-person cooldown has elapsed, so it may legitimately fire once rather",
+      "than on every eligible utterance.",
+      "memory needs PRIOR meetings in the graph. On a first run it correctly fires",
+      "nothing — run the scenario twice (the second run can recall the first run's",
+      "decision) to exercise it. This is a property of the retention loop, not a",
+      "gap in the scenario.",
+      "insight needs a research brief: pass --research and set EXA_API_KEY."
+    ],
+    "should_fire_with_research": [
+      "insight"
+    ]
+  }
+}

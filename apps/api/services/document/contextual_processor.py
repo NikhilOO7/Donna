@@ -23,7 +23,7 @@ from pdfplumber import PDF
 from sentence_transformers import SentenceTransformer
 
 # Your imports
-from apps.api.core.config import settings
+from apps.api.core import llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -815,9 +815,7 @@ class ContextualEmbeddingGenerator:
     """Generate contextual embeddings with 3-level context"""
 
     def __init__(self):
-        from openai import AsyncOpenAI
-
-        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.openai_client = llm_provider.failover_client()
         self.context_weights = {
             "local": 0.5,
             "document": 0.3,
@@ -911,16 +909,54 @@ class ContextualEmbeddingGenerator:
         return embeddings
 
     async def _embed_batch(self, texts: List[str]) -> List[List[float]]:
-        """Embed a list of texts in batched OpenAI calls."""
-        vectors: List[List[float]] = []
-        batch_size = 96
-        for i in range(0, len(texts), batch_size):
-            response = await self.openai_client.embeddings.create(
-                input=[t[:8000] for t in texts[i : i + batch_size]],
-                model=settings.embedding_model,
-                dimensions=settings.embedding_dimensions,
+        """Embed a list of texts, batched, with OpenAI → Ollama failover.
+
+        The whole call is retried against the fallback rather than individual
+        batches: a document must not end up half in one vector space and half
+        in another, since the two halves would then be mutually unsearchable.
+        """
+        provider = llm_provider.embedding_provider()
+        try:
+            return await self._embed_batch_with(texts, provider)
+        except Exception as e:
+            if provider.name != "openai" or not llm_provider.note_failure(e):
+                raise
+            fallback = llm_provider.embedding_provider()
+            logger.warning(
+                "Embedding batch of %d via Ollama (%s, %dd) after OpenAI failure: %s",
+                len(texts),
+                fallback.embed_model,
+                fallback.embed_dims,
+                e,
             )
+            return await self._embed_batch_with(texts, fallback)
+
+    async def _embed_batch_with(self, texts: List[str], provider) -> List[List[float]]:
+        """Embed against one explicit provider, verifying vector width."""
+        client = llm_provider.client_for(provider)
+        vectors: List[List[float]] = []
+        # Ollama serves embeddings from a single local process; large batches
+        # queue up behind one another and blow the request timeout.
+        batch_size = 16 if provider.is_local else 96
+        for i in range(0, len(texts), batch_size):
+            kwargs: Dict[str, Any] = {
+                "input": [t[:8000] for t in texts[i : i + batch_size]],
+                "model": provider.embed_model,
+            }
+            if provider.name == "openai":
+                kwargs["dimensions"] = provider.embed_dims
+            response = await client.embeddings.create(**kwargs)
             vectors.extend(d.embedding for d in response.data)
+
+        if vectors and len(vectors[0]) != provider.embed_dims:
+            raise ValueError(
+                f"{provider.name} model '{provider.embed_model}' returned "
+                f"{len(vectors[0])}-dim vectors but config declares "
+                f"{provider.embed_dims}. Set the matching dimension value — "
+                f"these vectors cannot be stored safely."
+            )
+        if provider.name == "openai":
+            llm_provider.note_success()
         return vectors
 
     async def _find_related_documents(
@@ -1080,19 +1116,17 @@ class ContextualEmbeddingGenerator:
         global_context: str,
         use_voyage: bool = False,
     ) -> List[float]:
-        """Generate embedding using OpenAI (1536-dim)"""
+        """Generate one embedding in the active embedding space."""
 
         combined_text = f"{content} {local_context} {document_context} {global_context}"
 
         try:
-            response = await self.openai_client.embeddings.create(
-                input=combined_text,
-                model=settings.embedding_model,
-                dimensions=settings.embedding_dimensions,
-            )
-            return response.data[0].embedding
+            # Routed through _embed_batch so this shares the provider failover
+            # and width verification rather than re-implementing them.
+            vectors = await self._embed_batch([combined_text])
+            return vectors[0]
         except Exception as e:
-            logger.error(f"OpenAI embedding failed: {e}")
+            logger.error(f"Embedding failed: {e}")
             raise
 
     async def generate_contextual_embedding(
@@ -1121,19 +1155,23 @@ class ContextualEmbeddingGenerator:
         # burst dispatches) — serve repeats from Redis instead of OpenAI.
         from apps.api.core.cache import get_cached_embedding, set_cached_embedding
 
-        cached = await get_cached_embedding(combined_text, settings.embedding_model)
+        # Keyed by the *active* model: a query must be embedded by the same
+        # model that produced the vectors it will be compared against, so
+        # serving an OpenAI-cached query vector while running on Ollama would
+        # search the Ollama space with an OpenAI vector and return nonsense.
+        active_model = llm_provider.embedding_provider().embed_model
+        cached = await get_cached_embedding(combined_text, active_model)
         if cached is not None:
             return cached
 
         try:
-            response = await self.openai_client.embeddings.create(
-                input=combined_text,
-                model=settings.embedding_model,
-                dimensions=settings.embedding_dimensions,
+            vector = (await self._embed_batch([combined_text]))[0]
+            await set_cached_embedding(
+                combined_text,
+                llm_provider.embedding_provider().embed_model,
+                vector,
             )
-            vector = response.data[0].embedding
-            await set_cached_embedding(combined_text, settings.embedding_model, vector)
             return vector
         except Exception as e:
-            logger.error(f"OpenAI embedding failed for query: {e}")
+            logger.error(f"Query embedding failed: {e}")
             raise

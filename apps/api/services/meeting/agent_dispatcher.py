@@ -35,6 +35,12 @@ from uuid import UUID
 from apps.api.core.config import settings
 from apps.api.core.coordination import distributed_lock
 from apps.api.core.database import AsyncSessionLocal
+from apps.api.core.logging import warn_throttled
+from apps.api.core.metrics import (
+    DISPATCH_QUEUE_WAIT_SECONDS,
+    FIRST_NUDGE_SECONDS,
+    NUDGE_END_TO_END_SECONDS,
+)
 from apps.api.core.tracing import get_tracer
 from apps.api.services.meeting.activation_agent import activation_agent
 from apps.api.services.meeting.agenda_agent import agenda_agent
@@ -47,20 +53,32 @@ from apps.api.services.meeting.meeting_service import meeting_service
 from apps.api.services.meeting.memory_agent import memory_agent
 from apps.api.services.meeting.nudge_feedback import should_suppress
 from apps.api.services.meeting.realtime import meeting_hub
+from apps.api.services.meeting.reply_agent import reply_agent
 from apps.api.services.meeting.scribe_agent import scribe_agent
 
 logger = logging.getLogger(__name__)
 
 # Donna speaks: only these types are worth interrupting the room for,
 # and only above this relevance. Rate-limited to one spoken nudge / 2 min.
-_SPEAK_TYPES = {"fact_check", "decision_prompt"}
+_SPEAK_TYPES = {"fact_check", "decision_prompt", "context", "insight", "memory"}
 _SPEAK_MIN_RELEVANCE = 0.8
 _SPEAK_COOLDOWN_SECONDS = 120
+
+# A direct question is a different act from an unsolicited observation. The
+# cooldown exists to stop Donna interjecting over a conversation she wasn't
+# invited into — it must not silence her when someone asks her something and
+# waits for an answer. Replies bypass both the cooldown and the relevance bar.
+_SPEAK_ALWAYS_TYPES = {"reply"}
+
+# Cartesia reads this aloud; past roughly this length it stops being an
+# interjection and becomes a monologue over a live conversation.
+_MAX_SPOKEN_CHARS = 320
 
 # Per-agent wall-clock budgets (seconds). Tiered by dependency class:
 # in-process matchers < retrieval < LLM/web calls.
 _AGENT_TIMEOUTS = {
     "scribe": 12.0,  # regex pre-check + one gpt-4o-mini call
+    "reply": 15.0,  # retrieval + one short answer; someone is waiting on it
     "context": 10.0,  # embedding + Qdrant
     "insight": 12.0,  # gpt-4o-mini topical match
     "fact_check": 25.0,  # Exa search + verdict call
@@ -83,19 +101,31 @@ async def _maybe_speak_nudge(meeting_id: str, nudge: Dict[str, Any]) -> None:
     (Redis flag set via POST /{id}/voice-nudges).
     """
     try:
-        if nudge.get("nudge_type") not in _SPEAK_TYPES:
-            return
-        if float(nudge.get("relevance_score") or 0) < _SPEAK_MIN_RELEVANCE:
-            return
+        ntype = nudge.get("nudge_type")
+        is_reply = ntype in _SPEAK_ALWAYS_TYPES
+
+        if not is_reply:
+            if ntype not in _SPEAK_TYPES:
+                return
+            if float(nudge.get("relevance_score") or 0) < _SPEAK_MIN_RELEVANCE:
+                return
 
         import json as _json
 
         from apps.api.core.connections import get_redis_client
 
         redis = await get_redis_client()
-        if await redis.get(f"voice_nudges:{meeting_id}") != "1":
+
+        # The voice-nudges flag governs *unsolicited* interjections — whether
+        # Donna is allowed to speak into a conversation nobody invited her
+        # into. Someone addressing her by name and waiting for an answer is
+        # the opposite of that, so a reply is not gated on it. Staying silent
+        # when directly asked a question is indistinguishable from being
+        # broken, which is exactly the impression the default-off flag created.
+        if not is_reply and await redis.get(f"voice_nudges:{meeting_id}") != "1":
             return
-        if not await redis.set(
+
+        if not is_reply and not await redis.set(
             f"voice_nudges:{meeting_id}:cooldown",
             "1",
             nx=True,
@@ -103,16 +133,68 @@ async def _maybe_speak_nudge(meeting_id: str, nudge: Dict[str, Any]) -> None:
         ):
             return
 
-        text = f"{nudge.get('title', '')}. {nudge.get('content', '')}"[:280]
+        # A reply is already a complete spoken sentence; prefixing it with the
+        # card title ("Answering Nikhil.") would make Donna narrate her own UI.
+        text = (
+            str(nudge.get("content") or "")[:_MAX_SPOKEN_CHARS]
+            if is_reply
+            else f"{nudge.get('title', '')}. {nudge.get('content', '')}"[
+                :_MAX_SPOKEN_CHARS
+            ]
+        )
+        if not text.strip():
+            return
+
         await redis.publish(f"meeting:{meeting_id}:speak", _json.dumps({"text": text}))
-        logger.info(f"[Dispatcher] spoke nudge aloud in meeting {meeting_id}")
+        logger.info(
+            f"[Dispatcher] spoke {ntype} aloud in meeting {meeting_id}"
+            f"{' (reply)' if is_reply else ''}"
+        )
     except Exception as e:
-        logger.debug(f"[Dispatcher] speak skipped: {e}")
+        warn_throttled(
+            logger,
+            "dispatcher.speak",
+            f"[Dispatcher] spoken-nudge path failed: {e}",
+        )
+
+
+# Agents that spend their budget waiting on an LLM. Their ceiling has to move
+# when the provider does; the rest (pure matchers, Neo4j traversal, one SQL
+# aggregate) are unaffected by which model is serving and keep their budgets.
+_LLM_BOUND_AGENTS = frozenset({"scribe", "insight", "fact_check", "context", "reply"})
+
+
+def _agent_timeout(name: str) -> float:
+    """Wall-clock budget for one agent, scaled to the active provider.
+
+    These budgets are tuned for gpt-4o-mini. They are enforced here with
+    asyncio.wait_for, *outside* the resilient_call decorator, so raising the
+    timeout inside resilience alone changes nothing — the dispatcher cancels
+    the coroutine first. On fallback every LLM agent hit its ceiling and
+    degraded to None, which reads as Donna having nothing to say.
+
+    Non-LLM agents keep their original budgets: a slower chat model is no
+    reason to let a Neo4j traversal run longer.
+    """
+    base = _AGENT_TIMEOUTS.get(name, 15.0)
+    if name not in _LLM_BOUND_AGENTS:
+        return base
+    try:
+        from apps.api.core import llm_provider
+
+        provider = llm_provider.active_provider()
+        if provider.name == "openai":
+            return base
+        # Live nudges are worthless if they land after the moment passed, so
+        # this is a bounded stretch, not an open-ended one.
+        return min(base * 4.0, 45.0)
+    except Exception:
+        return base
 
 
 async def _run_agent(name: str, coro) -> tuple[str, Optional[Dict[str, Any]]]:
     """Run one agent with tracing + timeout; failures degrade to None."""
-    timeout = _AGENT_TIMEOUTS.get(name, 15.0)
+    timeout = _agent_timeout(name)
     try:
         if settings.enable_tracing:
             tracer = get_tracer("meeting.agents")
@@ -178,8 +260,36 @@ class AgentDispatcher:
         except Exception:
             return False
 
+    @staticmethod
+    async def _accepted_at(meeting_id: str) -> Optional[float]:
+        """When the utterance driving this cycle was accepted (epoch seconds).
+
+        Set by the utterance endpoint; absent if the key expired, Redis is
+        down, or the cycle was triggered some other way. None means "don't
+        record a latency" — a guessed start time is worse than no measurement.
+        """
+        try:
+            from apps.api.core.connections import get_redis_client
+
+            redis = await get_redis_client()
+            raw = await redis.get(f"utt:accepted:{meeting_id}")
+            return float(raw) if raw else None
+        except Exception:
+            return None
+
     async def _dispatch_locked(self, meeting_id: str, mid: UUID) -> None:
         try:
+            import time as _time
+
+            accepted_at = await self._accepted_at(meeting_id)
+            if accepted_at is not None:
+                # Queue wait, isolated from agent time: this is what separates
+                # "the agents were slow" from "nothing was draining the queue".
+                DISPATCH_QUEUE_WAIT_SECONDS.observe(
+                    max(0.0, _time.time() - accepted_at)
+                )
+            first_nudge_recorded = False
+
             # Short-lived session: load state, release the connection.
             # Holding one across the (up to 25s) agent fan-out would pin a
             # pool connection per active meeting and exhaust the pool.
@@ -195,6 +305,15 @@ class AgentDispatcher:
                 asyncio.create_task(_run_agent(name, coro))
                 for name, coro in (
                     ("scribe", scribe_agent.analyze(utterances)),
+                    (
+                        "reply",
+                        reply_agent.analyze(
+                            utterances,
+                            meeting_id=meeting_id,
+                            owner_id=owner_id,
+                            attached_doc_ids=state["attached_doc_ids"],
+                        ),
+                    ),
                     (
                         "context",
                         context_agent.analyze(
@@ -262,6 +381,16 @@ class AgentDispatcher:
                         continue
                     if await self._emit_nudge(mid, meeting_id, nudge):
                         created += 1
+                        # Stop the clock at the moment the nudge reached the
+                        # room — after persistence and broadcast, not before.
+                        if accepted_at is not None:
+                            elapsed = max(0.0, _time.time() - accepted_at)
+                            NUDGE_END_TO_END_SECONDS.labels(
+                                agent=name, nudge_type=nudge["nudge_type"]
+                            ).observe(elapsed)
+                            if not first_nudge_recorded:
+                                FIRST_NUDGE_SECONDS.observe(elapsed)
+                                first_nudge_recorded = True
             finally:
                 # No-op on the normal path (all done); on an exception it
                 # stops orphaned agent tasks from running unobserved.
@@ -308,6 +437,10 @@ class AgentDispatcher:
                 source_data=nudge.get("source_data"),
                 relevance_score=nudge.get("relevance_score"),
             )
+            if persisted is None:
+                # Duplicate of something already on screen. Don't broadcast it
+                # and above all don't say it out loud again.
+                return False
             await _maybe_speak_nudge(meeting_id, nudge)
             await meeting_hub.broadcast(
                 meeting_id,

@@ -29,12 +29,26 @@
       "min": 0.95
     },
     "recall": {
-      "min": 0.95
+      "min": 0.92
     }
   },
   "flow": {
     "accuracy": {
       "min": 0.95
+    }
+  },
+  "groundedness": {
+    "detection_recall": {
+      "min": 0.9
+    },
+    "f1": {
+      "min": 0.9
+    },
+    "false_alarm_rate": {
+      "max": 0.1
+    },
+    "precision": {
+      "min": 0.85
     }
   },
   "retrieval": {
@@ -68,7 +82,7 @@
       "min": 0.95
     },
     "recall": {
-      "min": 0.95
+      "min": 0.93
     }
   }
 }

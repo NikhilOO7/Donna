@@ -160,6 +160,10 @@ services:
       - '--storage.tsdb.path=/prometheus'
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      # Alert rules must be mounted too — prometheus.yml references
+      # /etc/prometheus/alerts.yml and Prometheus fails to start if the
+      # rule_files path is missing, so this mount is not optional.
+      - ./alerts.yml:/etc/prometheus/alerts.yml
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"

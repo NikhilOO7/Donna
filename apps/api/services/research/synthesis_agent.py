@@ -5,12 +5,10 @@ Takes validated research sources and produces an executive summary
 with strategic insights, key findings, and identified data gaps.
 """
 
-import json
 import logging
 from typing import Any, Dict, List
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -21,7 +19,7 @@ class SynthesisAgent:
     """Generate executive summary from validated research."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     @resilient_call("openai", max_retries=2, timeout_seconds=45)
     async def synthesize(
@@ -103,10 +101,8 @@ class SynthesisAgent:
         )
 
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
 
-        result = json.loads(content)
+        result = json_parse.loads(content)
         logger.info(
             f"Synthesis complete: {len(result.get('key_findings', []))} findings, "
             f"{len(result.get('data_gaps', []))} gaps"

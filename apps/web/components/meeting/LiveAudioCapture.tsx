@@ -19,12 +19,27 @@ import { apiClient } from '@/lib/api-client';
 interface LiveAudioCaptureProps {
   meetingId: string;
   speakerName: string;
+  /** Lets the stage tell the truth about whether audio is actually flowing. */
+  onStatusChange?: (status: Status) => void;
 }
 
-type Status = 'idle' | 'connecting' | 'live' | 'error';
+export type Status = 'idle' | 'connecting' | 'live' | 'error';
 
-export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCaptureProps) {
-  const [status, setStatus] = useState<Status>('idle');
+export default function LiveAudioCapture({
+  meetingId,
+  speakerName,
+  onStatusChange,
+}: LiveAudioCaptureProps) {
+  const [status, setStatusRaw] = useState<Status>('idle');
+
+  const setStatus = useCallback(
+    (next: Status) => {
+      setStatusRaw(next);
+      onStatusChange?.(next);
+    },
+    [onStatusChange],
+  );
+
   const [conference, setConference] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -113,17 +128,25 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
 
   // --- UI ---
 
+  // NOTE: this component renders on a WHITE stage. Earlier revisions styled it
+  // for a dark surface (text-white on bg-white/10), which left "Enable Mic"
+  // technically present but invisible — the meeting looked like it had hung
+  // while waiting for a click nobody could see.
+
   if (status === 'idle' || status === 'error') {
     return (
-      <div className="flex items-center gap-2">
-        {status === 'error' && error && (
-          <div className="flex items-center gap-1.5 text-[11px] text-red-300 max-w-[260px] truncate" title={error}>
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate">{error}</span>
-          </div>
-        )}
+      <div className="flex flex-col items-center gap-3">
+        <button
+          onClick={handleStart}
+          className="flex items-center gap-2 px-6 py-3 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-md hover:shadow-lg transition-all active:scale-[0.98]"
+          title="Enable microphone for live transcription"
+        >
+          <Mic className="w-4 h-4" />
+          <span>{status === 'error' ? 'Retry microphone' : 'Enable microphone'}</span>
+        </button>
+
         <label
-          className="flex items-center gap-1.5 text-[11px] text-gray-400 cursor-pointer select-none"
+          className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 cursor-pointer select-none"
           title="Several people share one microphone — Donna separates speakers acoustically"
         >
           <input
@@ -134,14 +157,16 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
           />
           Conference room
         </label>
-        <button
-          onClick={handleStart}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
-          title="Enable microphone for live transcription"
-        >
-          <Mic className="w-4 h-4" />
-          <span>Enable Mic</span>
-        </button>
+
+        {status === 'error' && error && (
+          <div
+            className="flex items-start gap-1.5 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 max-w-sm"
+            title={error}
+          >
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+            <span>{error}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -150,10 +175,10 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
     return (
       <button
         disabled
-        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 text-white/70 text-sm cursor-wait"
+        className="flex items-center gap-2 px-6 py-3 rounded-full bg-gray-100 text-gray-500 text-sm font-semibold cursor-wait"
       >
         <Loader2 className="w-4 h-4 animate-spin" />
-        <span>Connecting...</span>
+        <span>Connecting…</span>
       </button>
     );
   }
@@ -163,10 +188,10 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
     <div className="flex items-center gap-2">
       <button
         onClick={handleToggleMute}
-        className={`p-2.5 rounded-xl transition-all ${
+        className={`p-2.5 rounded-full border transition-all ${
           isMuted
-            ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30'
-            : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+            ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
         }`}
         title={isMuted ? 'Unmute' : 'Mute'}
       >
@@ -174,10 +199,10 @@ export default function LiveAudioCapture({ meetingId, speakerName }: LiveAudioCa
       </button>
       <button
         onClick={handleStop}
-        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+        className="px-4 py-2 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 text-sm transition-colors"
         title="Stop transcription"
       >
-        Stop Mic
+        Stop mic
       </button>
     </div>
   );

@@ -118,6 +118,41 @@ async def voice_health_check() -> Dict[str, Any]:
         health_status["services"]["livekit"] = f"unhealthy: {str(e)}"
         health_status["status"] = "degraded"
 
+    # Voice-worker liveness. The worker is a separate process with no HTTP
+    # surface: if it dies, meetings keep looking healthy while transcription
+    # silently stops. It stamps a Redis heartbeat every 10s with a 30s TTL,
+    # so an absent key means it has missed ~3 beats or is not running.
+    worker: Dict[str, Any] = {"status": "unknown"}
+    try:
+        import json as _json
+        import time as _time
+
+        from apps.api.core.connections import get_redis_client
+
+        redis = await get_redis_client()
+        raw = await redis.get("worker:voice:heartbeat")
+        if not raw:
+            worker = {
+                "status": "down",
+                "detail": (
+                    "no heartbeat in the last 30s — the voice worker is not "
+                    "running; meetings will receive no transcription"
+                ),
+            }
+            health_status["status"] = "degraded"
+        else:
+            beat = _json.loads(raw)
+            age = round(_time.time() - float(beat.get("ts", 0)), 1)
+            worker = {
+                "status": "healthy",
+                "heartbeat_age_seconds": age,
+                "active_rooms": beat.get("active_rooms", 0),
+                "rooms": beat.get("rooms", []),
+            }
+    except Exception as e:
+        worker = {"status": "unknown", "detail": f"heartbeat unreadable: {e}"}
+
+    health_status["voice_worker"] = worker
     return health_status
 
 

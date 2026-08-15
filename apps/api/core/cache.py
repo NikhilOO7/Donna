@@ -13,6 +13,7 @@ import struct
 from typing import Any, Dict, Optional
 
 from apps.api.core.connections import get_redis_client
+from apps.api.core.logging import warn_throttled
 from apps.api.core.metrics import CACHE_HITS, CACHE_MISSES
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,12 @@ async def get_cached_response(
         return json.loads(raw)
 
     except Exception as e:
-        logger.debug(f"Cache lookup failed: {e}")
+        warn_throttled(
+            logger,
+            "cache.rag.get",
+            f"RAG response cache unavailable — serving uncached (full cost per "
+            f"query) until Redis recovers: {e}",
+        )
         return None
 
 
@@ -78,7 +84,7 @@ async def set_cached_response(
         await redis.set(key, json.dumps(response, default=str), ex=ttl)
 
     except Exception as e:
-        logger.debug(f"Cache store failed: {e}")
+        warn_throttled(logger, "cache.rag.set", f"RAG response cache write failed: {e}")
 
 
 def _embed_key(text: str, model: str) -> str:
@@ -115,7 +121,12 @@ async def get_cached_embedding(text: str, model: str) -> Optional[list]:
         return _unpack_vector(raw)
 
     except Exception as e:
-        logger.debug(f"Embedding cache lookup failed: {e}")
+        warn_throttled(
+            logger,
+            "cache.embed.get",
+            f"Embedding cache unavailable — re-embedding every query at full "
+            f"OpenAI cost until Redis recovers: {e}",
+        )
         return None
 
 
@@ -129,7 +140,7 @@ async def set_cached_embedding(text: str, model: str, vector: list) -> None:
         await redis.set(_embed_key(text, model), _pack_vector(vector), ex=EMBED_TTL)
 
     except Exception as e:
-        logger.debug(f"Embedding cache store failed: {e}")
+        warn_throttled(logger, "cache.embed.set", f"Embedding cache write failed: {e}")
 
 
 async def invalidate_document_cache() -> None:
@@ -151,4 +162,9 @@ async def invalidate_document_cache() -> None:
         logger.info("RAG query cache invalidated")
 
     except Exception as e:
-        logger.debug(f"Cache invalidation failed: {e}")
+        warn_throttled(
+            logger,
+            "cache.invalidate",
+            f"RAG cache invalidation FAILED — stale answers may be served after a "
+            f"document change: {e}",
+        )

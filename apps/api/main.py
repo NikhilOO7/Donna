@@ -69,8 +69,8 @@ from apps.api.core.resilience import get_all_breaker_states
 from apps.api.core.tracing import configure_tracing
 from apps.api.models.requests import QueryRequest
 from apps.api.models.responses import QueryResponse
+from apps.api.routers import admin, data_connections, integrations, meetings, voice
 from apps.api.routers import auth as auth_router
-from apps.api.routers import integrations, meetings, voice
 from apps.api.services.analytics_service import (
     append_message,
     get_conversation_history,
@@ -121,6 +121,14 @@ active_connections: List[WebSocket] = []
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     logger.info("Starting Donna — AI meeting intelligence...")
+
+    # Fail fast on unsafe production config, BEFORE anything connects.
+    # Tenant isolation must not depend on an env var being set correctly:
+    # in production an unsafe combination is a boot failure, not a warning
+    # someone scrolls past. See core/config.production_safety_errors().
+    settings.assert_production_safe()
+    for _warning in settings.production_safety_warnings():
+        logger.warning(f"[config] {_warning}")
 
     try:
         # Initialize database
@@ -294,6 +302,8 @@ app.include_router(auth_router.router)
 app.include_router(voice.router)
 app.include_router(meetings.router)
 app.include_router(integrations.router)
+app.include_router(admin.router)
+app.include_router(data_connections.router)
 
 # Mount static files
 if Path("static").is_dir():
@@ -349,6 +359,28 @@ async def health_check():
     except Exception as e:
         services_status["qdrant"] = f"unhealthy: {e}"
 
+    # Which LLM/embedding backend is actually serving requests right now.
+    # Surfaced because a silent failover to a local 3B model changes answer
+    # quality and makes the OpenAI-indexed corpus temporarily unsearchable —
+    # both are things an operator needs to see without reading logs.
+    try:
+        from apps.api.core import llm_provider
+
+        provider_state = llm_provider.status()
+        if provider_state["failover_active"]:
+            provider_state["note"] = (
+                f"OpenAI unavailable. Chat is running on "
+                f"{provider_state['chat_provider']} "
+                f"({provider_state['chat_model']}); embeddings on "
+                f"{provider_state['embedding_provider']} "
+                f"({provider_state['embedding_model']}). Content indexed with "
+                f"OpenAI embeddings is intact but not searchable until OpenAI "
+                f"is restored."
+            )
+        services_status["llm_provider"] = provider_state
+    except Exception as e:
+        services_status["llm_provider"] = f"unknown: {e}"
+
     # Check service instances via DI container
     svc = getattr(app.state, "services", None)
     services_status["embeddings"] = (
@@ -356,6 +388,51 @@ async def health_check():
     )
     services_status["voice"] = "healthy" if svc and svc.voice_service else "unavailable"
     services_status["voice_worker"] = "separate_process"
+
+    # Job queue depths. Splitting hot/bulk means a queue with no worker
+    # consuming it accepts jobs that never run — the depth is how that
+    # failure becomes visible instead of silent.
+    queues = {}
+    try:
+        from apps.api.core.jobs import QUEUE_HOT, queue_depths
+
+        queues = await queue_depths()
+        hot_depth = queues.get(QUEUE_HOT)
+        # The hot queue should drain continuously; a standing backlog means
+        # no dispatch-worker is running.
+        if hot_depth is not None and hot_depth > 50:
+            services_status["dispatch_queue"] = (
+                f"backlogged: {hot_depth} pending — is dispatch-worker running?"
+            )
+        else:
+            services_status["dispatch_queue"] = "healthy"
+    except Exception as e:
+        services_status["dispatch_queue"] = f"unknown: {e}"
+
+    # Knowledge-graph outbox: is Neo4j in step with Postgres?
+    # A non-zero failed count means the two stores are KNOWN to disagree,
+    # which used to be invisible (the old dual-write logged and moved on).
+    kg_outbox_stats = {}
+    try:
+        from apps.api.core.database import AsyncSessionLocal
+        from apps.api.services.document import kg_outbox as _kg_outbox
+
+        async with AsyncSessionLocal() as _s:
+            kg_outbox_stats = await _kg_outbox.stats(_s)
+        if kg_outbox_stats.get("graph_diverged"):
+            services_status["knowledge_graph"] = (
+                f"diverged: {kg_outbox_stats['failed']} write(s) permanently "
+                f"failed — Postgres and Neo4j disagree"
+            )
+        elif (kg_outbox_stats.get("oldest_pending_age_seconds") or 0) > 600:
+            services_status["knowledge_graph"] = (
+                f"lagging: oldest pending write is "
+                f"{kg_outbox_stats['oldest_pending_age_seconds']}s old"
+            )
+        else:
+            services_status["knowledge_graph"] = "in_sync"
+    except Exception as e:
+        services_status["knowledge_graph"] = f"unknown: {e}"
 
     # Determine overall health
     core_services = [services_status["database"], services_status["redis"]]
@@ -373,9 +450,49 @@ async def health_check():
         "status": overall_health,
         "services": services_status,
         "circuit_breakers": get_all_breaker_states(),
+        "queues": queues,
+        "kg_outbox": kg_outbox_stats,
         "version": settings.app_version,
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@app.get("/health/llm")
+@limiter.exempt
+async def llm_health():
+    """Reachability of the fallback backends, checked live.
+
+    Separate from /health because it makes outbound network calls: a slow or
+    unreachable Ollama endpoint should never be able to make the main liveness
+    probe time out and get the container killed.
+    """
+    from apps.api.core import llm_provider
+
+    endpoints = await llm_provider.probe_all()
+    state = llm_provider.status()
+
+    warnings = []
+    if not endpoints["local"].get("reachable"):
+        warnings.append(
+            "Local Ollama unreachable — no embedding fallback available. If "
+            "OpenAI credits run out, indexing and retrieval will both stop."
+        )
+    elif endpoints["local"].get("embed_model_present") is False:
+        warnings.append(
+            f"Local Ollama is up but '{state['embedding_model']}' is not "
+            f"pulled. Run: ollama pull {state['embedding_model']}"
+        )
+    if state["cloud_configured"] and not endpoints["cloud"].get("reachable"):
+        warnings.append(
+            "Ollama Cloud configured but unreachable — check OLLAMA_API_KEY."
+        )
+    if not state["cloud_configured"]:
+        warnings.append(
+            "No OLLAMA_API_KEY set — chat fallback will use the local model "
+            "instead of the larger cloud models."
+        )
+
+    return {"routing": state, "endpoints": endpoints, "warnings": warnings}
 
 
 # Document upload endpoint

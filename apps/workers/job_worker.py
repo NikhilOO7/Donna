@@ -28,7 +28,11 @@ env_path = project_root / ".env"
 if env_path.exists():
     load_dotenv(env_path)
 
-from apps.api.core.jobs import get_redis_settings  # noqa: E402
+from apps.api.core.jobs import (  # noqa: E402
+    QUEUE_BULK,
+    QUEUE_HOT,
+    get_redis_settings,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("job-worker")
@@ -222,6 +226,23 @@ async def scheduled_research(ctx: Dict[str, Any]) -> None:
         )
 
 
+async def kg_outbox_drain_job(ctx: Dict[str, Any]) -> None:
+    """Drain pending knowledge-graph writes into Neo4j.
+
+    The reconciliation half of the outbox pattern. Runs on a schedule so a
+    Neo4j outage self-heals: entries accumulate while it is down and converge
+    when it returns, instead of the graph silently diverging from Postgres
+    forever (which is what the old direct dual-write did).
+    """
+    from apps.api.core.database import AsyncSessionLocal
+    from apps.api.services.document import kg_outbox
+
+    async with AsyncSessionLocal() as session:
+        result = await kg_outbox.drain(session, limit=200)
+        if result.get("applied") or result.get("failed"):
+            logger.info(f"[cron] kg_outbox_drain: {result}")
+
+
 async def on_job_failure(ctx: Dict[str, Any]) -> None:
     """Logged when a job exhausts its retries (lightweight DLQ signal)."""
     logger.error(
@@ -233,17 +254,59 @@ async def on_job_failure(ctx: Dict[str, Any]) -> None:
 def _cron_jobs():
     from arq import cron
 
-    # 04:10 UTC daily — the "overnight research" run
-    return [cron(scheduled_research, hour=4, minute=10)]
+    return [
+        # 04:10 UTC daily — the "overnight research" run
+        cron(scheduled_research, hour=4, minute=10),
+        # Every 2 minutes — reconcile Postgres -> Neo4j. Frequent because the
+        # cost of a run with an empty outbox is one indexed SELECT, and the
+        # cost of NOT running is a graph that disagrees with the system of
+        # record for however long the gap is.
+        cron(kg_outbox_drain_job, minute=set(range(0, 60, 2))),
+    ]
 
 
 class WorkerSettings:
-    """Arq worker configuration."""
+    """Bulk worker — the cold path. Consumes ``donna:bulk``.
 
-    functions = [dispatch_job, research_job, summary_job, process_document_job]
+    Research, summaries and document processing: minutes-long jobs that
+    nobody is watching a spinner for. Deliberately does NOT handle
+    ``dispatch_job``: a 100-document upload batch would otherwise fill every
+    slot here with 600-second jobs while a live meeting's dispatch waits
+    behind it, inverting the hot/cold design (see core/jobs.py).
+
+        uv run arq apps.workers.job_worker.WorkerSettings
+    """
+
+    functions = [research_job, summary_job, process_document_job, kg_outbox_drain_job]
     cron_jobs = _cron_jobs()
     redis_settings = get_redis_settings()
+    queue_name = QUEUE_BULK
     max_tries = 3
     job_timeout = 600  # seconds — document OCR/layout can run for minutes
     keep_result = 3600
     health_check_interval = 30
+
+
+class DispatchWorkerSettings:
+    """Hot worker — the live meeting path. Consumes ``donna:hot``.
+
+    Only ``dispatch_job``, so an in-progress meeting's agent fan-out never
+    queues behind bulk work. Must be running whenever ``USE_JOB_QUEUE=true``,
+    or dispatch jobs accumulate unconsumed — ``/health`` reports the depth of
+    this queue precisely so that failure is visible rather than silent.
+
+        uv run arq apps.workers.job_worker.DispatchWorkerSettings
+    """
+
+    functions = [dispatch_job]
+    redis_settings = get_redis_settings()
+    queue_name = QUEUE_HOT
+    max_tries = 3
+    # The dispatcher's own per-agent budgets cap a cycle near 25s; this is the
+    # outer bound on the whole job, not a per-agent one.
+    job_timeout = 90
+    keep_result = 300
+    health_check_interval = 30
+    # Live dispatch is bursty and short — allow more concurrency than the
+    # bulk worker's default so a busy meeting room never queues on itself.
+    max_jobs = 20

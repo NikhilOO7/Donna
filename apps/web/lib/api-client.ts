@@ -321,6 +321,53 @@ class ApiClient {
     return response.data;
   }
 
+  // ---- Customer database connections (Settings) ----------------------
+  // The password is write-only across this whole surface: it is sent on
+  // create/update and never returned by any response.
+
+  async listDataConnections(): Promise<{
+    connections: any[]; encryption_ready: boolean; allow_private_hosts: boolean;
+  }> {
+    const response = await this.client.get('/api/v1/data-connections');
+    return response.data;
+  }
+
+  async createDataConnection(body: {
+    name: string; host: string; port: number; database: string;
+    username: string; password: string; ssl_mode?: string; engine?: string;
+  }): Promise<any> {
+    const response = await this.client.post('/api/v1/data-connections', body);
+    return response.data;
+  }
+
+  /** Connect, prove the account cannot write, and discover the schema. */
+  async verifyDataConnection(id: string): Promise<{
+    connection: any; check: any; tables: any[];
+  }> {
+    const response = await this.client.post(`/api/v1/data-connections/${id}/verify`);
+    return response.data;
+  }
+
+  async updateDataConnection(id: string, body: Record<string, any>): Promise<any> {
+    const response = await this.client.patch(`/api/v1/data-connections/${id}`, body);
+    return response.data;
+  }
+
+  /** Snapshot approved tables so in-meeting insights need no live query. */
+  async syncDataConnection(id: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/data-connections/${id}/sync`);
+    return response.data;
+  }
+
+  async getDataConnectionAudit(id: string): Promise<{ queries: any[] }> {
+    const response = await this.client.get(`/api/v1/data-connections/${id}/audit`);
+    return response.data;
+  }
+
+  async deleteDataConnection(id: string): Promise<void> {
+    await this.client.delete(`/api/v1/data-connections/${id}`);
+  }
+
   async getMeetingCost(meetingId: string): Promise<{
     calls: number; total_tokens: number; estimated_usd: number; by_agent: Record<string, number>;
   }> {
@@ -339,6 +386,14 @@ class ApiClient {
   }
 
   // Nudge feedback
+  /** One insight in full, plus the other nudges from the same thread. */
+  async getNudgeThread(meetingId: string, nudgeId: string): Promise<any> {
+    const response = await this.client.get(
+      `/api/v1/meetings/${meetingId}/nudges/${nudgeId}/thread`,
+    );
+    return response.data;
+  }
+
   async dismissNudge(meetingId: string, nudgeId: string): Promise<any> {
     const response = await this.client.post(`/api/v1/meetings/${meetingId}/nudges/${nudgeId}/dismiss`);
     return response.data;

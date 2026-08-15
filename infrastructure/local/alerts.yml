@@ -1,0 +1,201 @@
+# Prometheus alerting rules for Donna.
+#
+# These correspond 1:1 to the objectives in docs/SLO.md. An SLO with no alert
+# is a document; an alert with no SLO is noise. Anything in the SLO doc marked
+# `unmeasured` deliberately has NO rule here — inventing an alert for a metric
+# that does not exist is how you get a rule that can never fire and everyone
+# assumes is protecting them.
+#
+# Severity convention:
+#   critical — a correctness or data property is broken; page.
+#   warning  — degraded; the product still works. Ticket, don't page.
+#
+# Load into Prometheus by adding to prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/alerts.yml
+
+groups:
+
+  # ── Correctness and data integrity ─────────────────────────────────────
+  - name: donna-correctness
+    interval: 30s
+    rules:
+
+      - alert: KnowledgeGraphDiverged
+        # The outbox exhausted retries on at least one write, so Postgres and
+        # Neo4j are KNOWN to disagree. Before the outbox this was invisible;
+        # the whole point of surfacing it is that somebody acts on it.
+        expr: donna_kg_outbox_failed > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Knowledge graph has diverged from Postgres"
+          description: >-
+            {{ $value }} outbox entries permanently failed. The memory and
+            kg_query agents are now answering from a graph that disagrees with
+            the system of record. Fix the cause, then
+            POST /api/v1/admin/kg-outbox/retry to replay.
+          runbook: "docs/adr/009-transactional-outbox.md"
+
+      - alert: KnowledgeGraphLagging
+        expr: donna_kg_outbox_oldest_pending_seconds > 600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Neo4j replication lagging (>10m)"
+          description: >-
+            Oldest pending outbox entry is {{ $value | humanizeDuration }} old.
+            The drainer runs every 2 minutes, so a standing backlog means Neo4j
+            is unreachable or the bulk worker is not running.
+
+  # ── Latency (SLOs from docs/SLO.md) ────────────────────────────────────
+  - name: donna-latency
+    interval: 30s
+    rules:
+
+      - alert: FirstNudgeSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(first_nudge_seconds_bucket[10m])) by (le)
+          ) > 2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Time to first insight p95 above 2s"
+          description: >-
+            p95 is {{ $value | printf "%.2f" }}s. A nudge that arrives after
+            the topic has moved on is worth zero, not less. Check
+            dispatch_queue_wait_seconds first — if that is the bulk of it, the
+            dispatch worker is starved rather than the agents being slow.
+
+      - alert: DispatchQueueStarved
+        # Separates "agents are slow" from "nothing is draining the queue".
+        # These look identical in end-to-end latency alone.
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(dispatch_queue_wait_seconds_bucket[10m])) by (le)
+          ) > 5
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dispatch jobs waiting >5s to be picked up"
+          description: >-
+            The hot queue is not being drained fast enough. Is
+            dispatch-worker running? Check /health -> services.dispatch_queue.
+            Bulk work cannot cause this — the queues are split (ADR-011).
+
+      - alert: LLMNudgeSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(nudge_end_to_end_seconds_bucket{agent=~"scribe|insight|fact_check"}[10m])) by (le)
+          ) > 12
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM-backed nudges p95 above 12s"
+
+      - alert: RAGQuerySlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(rag_query_duration_seconds_bucket[10m])) by (le)
+          ) > 3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG query p95 above 3s"
+
+  # ── External dependencies ──────────────────────────────────────────────
+  - name: donna-dependencies
+    interval: 30s
+    rules:
+
+      - alert: CircuitBreakerOpen
+        expr: increase(external_api_calls_total{status="circuit_open"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker open for {{ $labels.service }}"
+          description: >-
+            Calls are being rejected without being attempted. The product's
+            spine (transcription, meetings, decisions) is unaffected by design —
+            this degrades intelligence only. Do NOT restart to "clear" it: that
+            resets breaker state and sends full load back at a provider that is
+            still down.
+
+      - alert: ExternalAPIErrorRate
+        expr: |
+          sum(rate(external_api_calls_total{status="error"}[10m])) by (service)
+          /
+          sum(rate(external_api_calls_total[10m])) by (service)
+          > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} error rate above 25%"
+
+  # ── Cost and cache efficiency ──────────────────────────────────────────
+  - name: donna-cost
+    interval: 60s
+    rules:
+
+      - alert: EmbeddingCacheIneffective
+        # The embedding cache is a cost control, not a nicety: a collapsed hit
+        # rate means every query is being re-embedded at full price. Usually
+        # Redis is down, in which case other alerts fire too — but this is the
+        # one that shows it costing money.
+        expr: |
+          sum(rate(cache_hits_total{cache_name="embedding"}[30m]))
+          /
+          clamp_min(
+            sum(rate(cache_hits_total{cache_name="embedding"}[30m]))
+            + sum(rate(cache_misses_total{cache_name="embedding"}[30m])),
+            1
+          ) < 0.3
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Embedding cache hit rate below 30%"
+          description: >-
+            Embeddings are deterministic per model+text, so a low hit rate
+            means the cache is not working, not that the workload changed.
+
+  # ── Availability ───────────────────────────────────────────────────────
+  - name: donna-availability
+    interval: 30s
+    rules:
+
+      - alert: APIDown
+        expr: up{job="donna-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Donna API is not responding to scrapes"
+
+      - alert: HTTPErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[10m]))
+          / clamp_min(sum(rate(http_requests_total[10m])), 1)
+          > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx rate above 5%"
+
+# NOT covered here, deliberately — see docs/SLO.md:
+#   * API availability SLO — no baseline measured yet, so any threshold would
+#     be invented rather than derived.
+#   * Transcription accuracy (WER) — unmeasured; no metric exists.
+#   * RPO/RTO — no scheduled production backup yet (ADR-008).
+# Adding rules for these before the underlying measurement exists would create
+# alerts that cannot fire and a false sense of coverage.

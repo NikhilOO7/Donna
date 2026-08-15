@@ -73,6 +73,7 @@ class ActivationAgent:
         now = time.time()
         for attendee in attendees:
             name = (attendee.get("name") or "").strip()
+            email = (attendee.get("email") or "").strip().lower()
             expertise = attendee.get("expertise") or []
             if not name or not expertise:
                 continue
@@ -80,7 +81,9 @@ class ActivationAgent:
             if name.lower() == latest_speaker:
                 continue
 
-            key = (meeting_id, name.lower())
+            # Cooldown keys on email when we have one: two attendees sharing a
+            # display name are two different people and must not share a cooldown.
+            key = (meeting_id, email or name.lower())
             if now - self._last_fired.get(key, 0) < _COOLDOWN_SECONDS:
                 continue
 
@@ -105,6 +108,12 @@ class ActivationAgent:
                 "source_agent": "activation_agent",
                 "source_data": {
                     "person": name,
+                    # The addressing key. Display names are not identities:
+                    # two attendees named "Chris" would each have received the
+                    # other's private expertise nudge when the privacy filters
+                    # matched on `person` alone. Email is the identity already
+                    # used for participant access, so it is what filters match.
+                    "person_email": email or None,
                     "matched_expertise": matched,
                     "conversation_topic": latest_text[:200],
                     "triggered_by": latest.get("speaker"),

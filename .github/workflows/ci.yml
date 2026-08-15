@@ -19,6 +19,11 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check apps/ tests/
       - run: uv run ruff format --check apps/ tests/
+      # The committed OpenAPI spec must match the routes. Same idea as
+      # `alembic check`: an API change should be visible in the diff that
+      # caused it, not discovered later by a client that broke.
+      - name: OpenAPI spec is current
+        run: uv run python scripts/export-openapi.py --check
 
   test:
     name: Tests
@@ -44,6 +49,27 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Retrieval and tenancy filtering are exercised against a real vector
+      # store, not a mock — an owner_id filter that silently stops applying
+      # is a cross-tenant leak no mocked client would catch.
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports: ["6333:6333", "6334:6334"]
+      # Neo4j is optional in production (ADR-007) but must be exercised here:
+      # the outbox drainer and the two graph agents are only meaningfully
+      # tested against a real graph, and "degrades when absent" is a claim
+      # that needs the present case tested too.
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/voicedoc123
+          NEO4J_PLUGINS: '["apoc"]'
+        ports: ["7687:7687", "7474:7474"]
+        options: >-
+          --health-cmd "wget -qO- http://localhost:7474 || exit 1"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 10
     env:
       POSTGRES_HOST: localhost
       POSTGRES_USER: voicedoc
@@ -52,6 +78,11 @@ jobs:
       REDIS_HOST: localhost
       REDIS_PASSWORD: ""
       QDRANT_HOST: localhost
+      QDRANT_PORT: "6333"
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: voicedoc123
+      NEO4J_ENABLED: "true"
       APP_ENV: test
       REQUIRE_API_KEY: "false"
       LOG_FORMAT: console
@@ -82,11 +113,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans history, not just the tip
       - uses: astral-sh/setup-uv@v6
         with:
           version: "latest"
       - run: uv sync --frozen
       - run: uv run pip-audit --strict --desc 2>/dev/null || echo "pip-audit not installed, skipping"
+      # Dependency CVEs were gated; committed credentials were not. This app
+      # holds eight provider keys and a JWT secret, and a leaked key in git
+      # history stays leaked after the commit that removes it.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A production config with auth disabled (or the dev JWT secret) must be
+      # refused at boot, not merely warned about — tenant isolation cannot rest
+      # on an env var being set correctly. Asserted here so the gate itself
+      # cannot silently regress.
+      - name: Production config safety gate
+        run: |
+          uv run python - <<'PY'
+          from apps.api.core.config import Settings
+
+          unsafe = [
+              ("auth disabled",  dict(APP_ENV="production", REQUIRE_AUTH=False,
+                                      JWT_SECRET="x")),
+              ("default secret", dict(APP_ENV="production", REQUIRE_AUTH=True,
+                                      JWT_SECRET="dev-secret-change-in-production")),
+          ]
+          for label, kw in unsafe:
+              try:
+                  Settings(**kw).assert_production_safe()
+              except RuntimeError:
+                  print(f"OK  refused: {label}")
+              else:
+                  raise SystemExit(f"FAIL: production booted with {label}")
+
+          Settings(APP_ENV="production", REQUIRE_AUTH=True,
+                   JWT_SECRET="a-real-secret").assert_production_safe()
+          print("OK  safe production config still boots")
+
+          Settings(APP_ENV="development", REQUIRE_AUTH=False).assert_production_safe()
+          print("OK  development is unaffected")
+          PY
 
   build:
     name: Docker Build

@@ -8,8 +8,7 @@ normalize headers, infer types, and produce clean markdown.
 import logging
 from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
-
+from apps.api.core import llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -20,7 +19,7 @@ class TableAgent:
     """Extract and normalize tables from documents."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     async def process_tables(
         self, tables: List[Dict[str, Any]]

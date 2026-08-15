@@ -1,0 +1,110 @@
+name: Backup Restore Drill
+
+# An unverified backup is a hypothesis. This exercises the RESTORE path on a
+# schedule so it fails here, on a Tuesday, rather than during an incident.
+#
+# It deliberately does NOT back up production — it builds a representative
+# database from the migration chain, backs that up, wipes it, restores it, and
+# asserts the data came back. What is under test is the tooling and the
+# procedure, which is the part that actually rots.
+#
+# Backing up real data is deployment-shaped and must be configured against the
+# production stack; see docs/adr/0004-backup-and-restore.md.
+
+on:
+  schedule:
+    - cron: "20 5 * * 1"   # Mondays 05:20 UTC
+  workflow_dispatch:        # and on demand, e.g. after changing the scripts
+  pull_request:
+    paths:
+      - "scripts/backup.sh"
+      - "scripts/restore.sh"
+      - "scripts/verify-backup.sh"
+      - "alembic/versions/**"
+
+jobs:
+  drill:
+    name: Backup → restore → assert
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: voicedoc
+          POSTGRES_PASSWORD: voicedoc123
+          POSTGRES_DB: voice_doc_intel
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_USER: voicedoc
+      POSTGRES_PASSWORD: voicedoc123
+      POSTGRES_DB: voice_doc_intel
+      REDIS_HOST: localhost
+      APP_ENV: test
+      LOG_FORMAT: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+      - run: uv sync --frozen
+
+      - name: Build a representative database
+        run: uv run python -m alembic upgrade head
+
+      - name: Seed rows the drill can assert on
+        run: |
+          PGPASSWORD=voicedoc123 psql -h localhost -U voicedoc -d voice_doc_intel <<'SQL'
+          INSERT INTO doc_intel.users (id, email, hashed_password, is_active, created_at)
+          VALUES (gen_random_uuid(), 'drill@example.com', 'x', true, now());
+          INSERT INTO doc_intel.meetings (id, title, status, created_at)
+          VALUES (gen_random_uuid(), 'Backup Drill Meeting', 'completed', now());
+          SQL
+
+      - name: Take a backup
+        run: |
+          # The scripts talk to a container by name; in CI Postgres is a
+          # service, so point pg_dump at it directly with the same flags the
+          # script uses (custom format, no owner).
+          mkdir -p backups/drill
+          PGPASSWORD=voicedoc123 pg_dump -h localhost -U voicedoc -d voice_doc_intel \
+            --format=custom --no-owner > backups/drill/postgres.dump
+          test -s backups/drill/postgres.dump
+          echo "dump bytes: $(wc -c < backups/drill/postgres.dump)"
+
+      - name: Destroy the schema (simulate the incident)
+        run: |
+          PGPASSWORD=voicedoc123 psql -h localhost -U voicedoc -d voice_doc_intel \
+            -c "DROP SCHEMA doc_intel CASCADE;"
+
+      - name: Restore
+        run: |
+          PGPASSWORD=voicedoc123 pg_restore -h localhost -U voicedoc \
+            -d voice_doc_intel --no-owner backups/drill/postgres.dump || true
+
+      - name: Assert the data actually came back
+        run: |
+          # Asserting on OUTCOMES, not on the absence of errors — pg_restore
+          # warns routinely, and "no errors" is not the same as "data present".
+          USERS=$(PGPASSWORD=voicedoc123 psql -h localhost -U voicedoc -d voice_doc_intel -tAc \
+            "SELECT count(*) FROM doc_intel.users WHERE email='drill@example.com';")
+          MEETINGS=$(PGPASSWORD=voicedoc123 psql -h localhost -U voicedoc -d voice_doc_intel -tAc \
+            "SELECT count(*) FROM doc_intel.meetings WHERE title='Backup Drill Meeting';")
+          TABLES=$(PGPASSWORD=voicedoc123 psql -h localhost -U voicedoc -d voice_doc_intel -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='doc_intel';")
+          echo "users=$USERS meetings=$MEETINGS tables=$TABLES"
+          test "$USERS"    = "1" || { echo "::error::seeded user did not survive restore"; exit 1; }
+          test "$MEETINGS" = "1" || { echo "::error::seeded meeting did not survive restore"; exit 1; }
+          test "$TABLES" -gt 5  || { echo "::error::schema did not come back"; exit 1; }
+          echo "RESTORE DRILL PASSED"
+
+      - name: Script syntax check
+        run: |
+          bash -n scripts/backup.sh
+          bash -n scripts/restore.sh
+          bash -n scripts/verify-backup.sh

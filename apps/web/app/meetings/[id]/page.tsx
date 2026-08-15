@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Sparkles, LayoutDashboard } from 'lucide-react';
-import MeetingTimeline from '@/components/meeting/MeetingTimeline';
+import { Sparkles, LayoutDashboard, Settings } from 'lucide-react';
+import MeetingWizard from '@/components/meeting/MeetingWizard';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import IntelligenceBanner from '@/components/IntelligenceBanner';
 import { apiClient } from '@/lib/api-client';
@@ -39,19 +39,28 @@ export default function MeetingPage() {
             </div>
             <span className="font-bold text-gray-900 tracking-tight">Donna</span>
           </Link>
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            Dashboard
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/settings"
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </Link>
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <ErrorBoundary sectionName="Meeting">
-          <MeetingTimeline
+          <MeetingWizard
             meetingId={meetingId}
             onBack={() => router.push('/dashboard')}
           />

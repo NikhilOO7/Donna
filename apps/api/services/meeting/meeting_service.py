@@ -5,7 +5,7 @@ Manages meetings, decisions, action items, and nudges across all 3 phases.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -233,14 +233,24 @@ class MeetingService:
             transcript = t_row[0] if t_row else None
             utterance_count = int(t_row[1] or 0) if t_row else 0
 
+            # Newest-first + first(), not scalar_one_or_none(): meetings
+            # researched before the pipeline reused a single row can have
+            # several completed briefs, and scalar_one_or_none() raises on
+            # more than one rather than picking the current answer.
             topics = (
-                await session.execute(
-                    select(ResearchBrief.topics).where(
-                        ResearchBrief.meeting_id == meeting_id,
-                        ResearchBrief.status == "completed",
+                (
+                    await session.execute(
+                        select(ResearchBrief.topics)
+                        .where(
+                            ResearchBrief.meeting_id == meeting_id,
+                            ResearchBrief.status == "completed",
+                        )
+                        .order_by(ResearchBrief.created_at.desc())
                     )
                 )
-            ).scalar_one_or_none()
+                .scalars()
+                .first()
+            )
 
             doc_rows = await session.execute(
                 select(MeetingDocument.document_id).where(
@@ -487,6 +497,31 @@ class MeetingService:
 
     # -- Nudges ------------------------------------------------------------
 
+    @staticmethod
+    def _nudge_fingerprint(
+        nudge_type: str, content: str, dedupe_key: Optional[str] = None
+    ) -> str:
+        """Identity of a nudge, for suppressing repeats.
+
+        Retrieval agents re-run every dispatch cycle, and a document chunk
+        relevant to the last utterance is usually still relevant to the next.
+        Scores drift between runs, so identity is the type plus the normalized
+        text — never the score.
+
+        ``dedupe_key`` exists because that is not always the right identity.
+        An LLM-generated answer is worded differently each time it is produced,
+        so two answers to the *same question* hash differently and both survive
+        — the user asks once and Donna replies twice, slightly differently,
+        which is worse than either reply alone. Agents that know their own
+        stable identity (the reply agent knows it is the question) pass it here.
+        """
+        import hashlib
+        import re
+
+        basis = dedupe_key if dedupe_key else content
+        normalized = re.sub(r"\s+", " ", (basis or "").strip().lower())
+        return hashlib.sha256(f"{nudge_type}|{normalized}".encode()).hexdigest()[:32]
+
     async def add_nudge(
         self,
         session: AsyncSession,
@@ -497,8 +532,45 @@ class MeetingService:
         source_agent: Optional[str] = None,
         source_data: Optional[dict] = None,
         relevance_score: Optional[float] = None,
-    ) -> Nudge:
+        dedupe_window_s: int = 900,
+    ) -> Optional[Nudge]:
+        """Persist a nudge, or return None if it repeats a recent one.
+
+        Without this, a finding that stays relevant is re-inserted every cycle:
+        one real insight became nine cards saying the same thing at 58–80%
+        confidence. The panel then buries the second genuine finding under
+        repeats of the first, which is worse than showing nothing — the user
+        stops reading it.
+
+        Deliberately scoped per meeting and windowed rather than permanent: if
+        a risk resurfaces half an hour later in a different part of the
+        conversation, that IS worth raising again.
+        """
         try:
+            fingerprint = self._nudge_fingerprint(
+                nudge_type, content, (source_data or {}).get("dedupe_key")
+            )
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=dedupe_window_s)
+            existing = (
+                await session.execute(
+                    select(Nudge.id).where(
+                        Nudge.meeting_id == meeting_id,
+                        Nudge.nudge_type == nudge_type,
+                        Nudge.created_at >= cutoff,
+                        cast(Nudge.source_data, JSONB)["fingerprint"].astext
+                        == fingerprint,
+                    )
+                )
+            ).first()
+            if existing is not None:
+                logger.debug(
+                    f"Nudge '{nudge_type}' suppressed as duplicate for {meeting_id}"
+                )
+                return None
+
+            source_data = dict(source_data or {})
+            source_data["fingerprint"] = fingerprint
+
             nudge = Nudge(
                 meeting_id=meeting_id,
                 nudge_type=nudge_type,

@@ -5,12 +5,10 @@ Analyzes a meeting brief and extracts 3-5 specific, searchable
 research topics with rationale and suggested search queries.
 """
 
-import json
 import logging
 from typing import Any, Dict, List
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -21,7 +19,7 @@ class TopicAgent:
     """Extract research topics from a meeting brief."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     @resilient_call("openai", max_retries=2, timeout_seconds=20)
     async def extract_topics(
@@ -57,10 +55,7 @@ class TopicAgent:
             max_tokens=1000,
         )
 
-        content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-
-        topics = json.loads(content)
+        content = response.choices[0].message.content
+        topics = json_parse.loads_array(content, [])
         logger.info(f"Extracted {len(topics)} research topics")
         return topics

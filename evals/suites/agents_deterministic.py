@@ -20,13 +20,19 @@ from evals.metrics import classification_metrics, exact_match_rate
 
 @suite("scribe_precheck")
 async def scribe_precheck() -> SuiteResult:
-    """Does the decision-language gate fire on real decisions (and only them)?"""
-    from apps.api.services.meeting.scribe_agent import DECISION_PATTERNS
+    """Does the decision-language gate fire on real decisions (and only them)?
+
+    Grades ``is_decision_language`` — the function the dispatcher actually
+    calls — not the raw pattern, so the retrospective-reference exclusion is
+    covered too. Grading the regex alone would have scored a behaviour the
+    product no longer has.
+    """
+    from apps.api.services.meeting.scribe_agent import is_decision_language
 
     cases = load_dataset("scribe_decisions.jsonl")
     pairs, failures = [], []
     for c in cases:
-        predicted = bool(DECISION_PATTERNS.search(c["text"]))
+        predicted = is_decision_language(c["text"])
         pairs.append((c["label"], predicted))
         if predicted != c["label"]:
             failures.append({"id": c["id"], "text": c["text"], "expected": c["label"]})

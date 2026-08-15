@@ -22,7 +22,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from apps.api.core.config import settings
+from apps.api.core import llm_provider
 from apps.api.core.connections import get_qdrant_client, get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -59,8 +59,16 @@ class VectorStoreService:
     """Original vector store service for backward compatibility"""
 
     def __init__(self):
-        self.collection_name = settings.qdrant_collection_name
-        self.vector_size = settings.embedding_dimensions
+        pass
+
+    @property
+    def collection_name(self) -> str:
+        # Scoped to the active embedding space — see ModernVectorStore.
+        return llm_provider.collection_prefix()
+
+    @property
+    def vector_size(self) -> int:
+        return llm_provider.embedding_provider().embed_dims
 
     async def initialize(self):
         """Initialize vector store"""
@@ -174,41 +182,77 @@ class VectorStoreService:
 
 
 class ModernVectorStore:
-    """Enhanced vector store with contextual embeddings support"""
+    """Enhanced vector store with contextual embeddings support.
+
+    Collection names and vector width are resolved *per access* rather than
+    frozen at construction, because the active embedding model can change at
+    runtime when OpenAI fails over to Ollama. Caching them in ``__init__``
+    would leave a long-lived instance writing 768-dim Ollama vectors under the
+    1536-dim OpenAI collection names — the exact vector-space collision the
+    provider layer exists to prevent.
+    """
 
     def __init__(self):
-        # Collection names for different context levels
-        self.collections = {
-            "local": f"{settings.qdrant_collection_name}_local",
-            "document": f"{settings.qdrant_collection_name}_document",
-            "global": f"{settings.qdrant_collection_name}_global",
-            "unified": f"{settings.qdrant_collection_name}_unified",
-        }
-        # Use standardized embedding dimensions from config
-        self.vector_size = settings.embedding_dimensions
         self.cache_ttl = 3600  # 1 hour cache
+        self._initialized_space: Optional[str] = None
+
+    @property
+    def collections(self) -> Dict[str, str]:
+        """Collection names for the embedding space currently in force."""
+        prefix = llm_provider.collection_prefix()
+        return {
+            "local": f"{prefix}_local",
+            "document": f"{prefix}_document",
+            "global": f"{prefix}_global",
+            "unified": f"{prefix}_unified",
+        }
+
+    @property
+    def vector_size(self) -> int:
+        return llm_provider.embedding_provider().embed_dims
 
     async def initialize(self):
-        """Initialize all collections"""
-        client = await get_qdrant_client()
+        """Create the collections for the active embedding space if missing.
 
-        # Create collections for each context level
+        Idempotent and safe to call on every write path: it short-circuits once
+        the current space is known to exist, and does real work again only when
+        the space changes under it (a provider failover).
+        """
+        space = llm_provider.embedding_provider().space_id()
+        if self._initialized_space == space:
+            return
+
+        client = await get_qdrant_client()
         existing_collections = [
             c.name for c in (await client.get_collections()).collections
         ]
 
+        size = self.vector_size
         for context_level, collection_name in self.collections.items():
             if collection_name not in existing_collections:
                 await client.create_collection(
                     collection_name=collection_name,
-                    vectors_config=VectorParams(
-                        size=self.vector_size, distance=Distance.COSINE
-                    ),
+                    vectors_config=VectorParams(size=size, distance=Distance.COSINE),
                     optimizers_config=OptimizersConfigDiff(
                         indexing_threshold=20000, memmap_threshold=50000
                     ),
                 )
-                logger.info(f"Created collection: {collection_name}")
+                logger.info(
+                    "Created collection %s (%dd, space=%s)",
+                    collection_name,
+                    size,
+                    space,
+                )
+
+        if self._initialized_space is not None:
+            logger.warning(
+                "Embedding space changed %s → %s. Retrieval now runs against the "
+                "new space only; content indexed under the previous space is "
+                "intact but not searchable until that provider is restored.",
+                self._initialized_space,
+                space,
+            )
+        self._initialized_space = space
 
     async def store_memory_records(
         self,
@@ -224,6 +268,8 @@ class ModernVectorStore:
         Idempotent per (meeting, kind, index): re-summarizing a meeting
         overwrites its memories instead of duplicating them.
         """
+        # Cheap no-op unless the embedding space changed under us.
+        await self.initialize()
         client = await get_qdrant_client()
         points_by_collection: Dict[str, List[PointStruct]] = {
             name: [] for name in self.collections.values()
@@ -268,6 +314,7 @@ class ModernVectorStore:
         ``owner_id`` is written into every point's payload so retrieval can
         be scoped to a tenant (see ``search_with_context`` filters).
         """
+        await self.initialize()
         client = await get_qdrant_client()
         redis_client = await get_redis_client()
 
@@ -396,6 +443,10 @@ class ModernVectorStore:
         top_k: int = 5,
     ) -> List[SearchResult]:
         """Search with specific context level"""
+        # Guarantees the collections for the active space exist, so a search
+        # right after a failover returns "nothing indexed here yet" instead of
+        # a Qdrant 404.
+        await self.initialize()
         client = await get_qdrant_client()
 
         # Determine collection to search

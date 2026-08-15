@@ -27,6 +27,9 @@ interface NudgeCardProps {
   onAskDonna?: (prompt: string) => void;
   /** Compact rendering for canvas mode. */
   compact?: boolean;
+  /** Open the full insight. Cards clip their text, so this is how the rest of
+   *  a truncated passage becomes reachable at all. */
+  onOpen?: (nudgeId: string) => void;
 }
 
 const TYPE_CONFIG: Record<string, {
@@ -388,12 +391,22 @@ function CardExtras({ data }: { data: Record<string, any> }) {
 }
 
 export default function NudgeCard({
-  nudge, onLogDecision, onDismiss, onPin, onAskDonna, compact,
+  nudge, onLogDecision, onDismiss, onPin, onAskDonna, compact, onOpen,
 }: NudgeCardProps) {
   const config = TYPE_CONFIG[nudge.type] || TYPE_CONFIG.insight;
   const Icon = config.icon;
   const isPinned = Boolean(nudge.pinned_at);
   const data = nudge.source_data || {};
+
+  // Is there anything behind the click? True when the agent truncated the
+  // passage before storing it, when a longer version exists, or when the text
+  // is long enough that the 4-line clamp is hiding some of it.
+  const hasMore =
+    Boolean(data.truncated) ||
+    (typeof data.full_content === 'string' &&
+      data.full_content.length > (nudge.content || '').length) ||
+    (nudge.content || '').trimEnd().endsWith('...') ||
+    (nudge.content || '').length > 240;
   const confidence = nudge.relevance_score
     ? Math.min(Math.round(nudge.relevance_score * 100), 100)
     : null;
@@ -484,6 +497,21 @@ export default function NudgeCard({
       <p className={`text-[13px] text-gray-600 mt-1 leading-relaxed ${compact ? 'line-clamp-2' : 'line-clamp-4'}`}>
         {nudge.content}
       </p>
+
+      {/* Only offered when there is genuinely more to see. An affordance that
+          opens a view identical to the card teaches people to stop clicking. */}
+      {onOpen && !compact && hasMore && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(nudge.id);
+          }}
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+        >
+          Read full insight
+          <ChevronRight className="w-3 h-3" />
+        </button>
+      )}
 
       {!compact && data.visual_table && <VisualTable markdown={data.visual_table} />}
       {!compact && <CardExtras data={data} />}

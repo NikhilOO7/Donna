@@ -93,9 +93,14 @@ services:
     command: --dev
     restart: unless-stopped
     ports:
-      - "7880:7880"  # HTTP API
-      - "7881:7881"  # RTC/TCP
-      - "7882:7882"  # RTC/UDP
+      - "7880:7880"      # HTTP + WebSocket signalling
+      - "7881:7881"      # RTC over TCP (fallback when UDP is blocked)
+      # WebRTC media is UDP. Docker's port syntax defaults to TCP, so the
+      # previous "7882:7882" published TCP — signalling succeeded, the browser
+      # negotiated ICE, and then the peer connection failed with
+      # "could not establish pc connection" because no media could flow.
+      # The /udp suffix is load-bearing.
+      - "7882:7882/udp"  # RTC over UDP
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
     healthcheck:
@@ -105,6 +110,83 @@ services:
       retries: 5
     networks:
       - voice-doc-network
+
+  # Neo4j - Knowledge graph (entities, relationships, Meeting→Decision→Topic)
+  #
+  # Powers the kg_query and memory agents, and receives the summary pipeline's
+  # writes via the transactional outbox. The application still treats it as
+  # OPTIONAL in code (NEO4J_ENABLED, per-call detection, PostgreSQL fallback) —
+  # running it here means the default local stack has full graph features, not
+  # that the code may now assume it. See docs/adr/007-neo4j-optional.md.
+  neo4j:
+    image: neo4j:5-community
+    container_name: voice-doc-neo4j
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-voicedoc123}
+      # Modest footprint for a laptop. Neo4j's defaults size to the host and
+      # will happily take several GB alongside Postgres, Qdrant and MinIO.
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=512m
+      # Accept connections from the other containers, not just loopback.
+      - NEO4J_server_default__listen__address=0.0.0.0
+    ports:
+      - "7474:7474"  # HTTP browser UI
+      - "7687:7687"  # Bolt (what the driver uses)
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      # Query over Bolt rather than polling the HTTP port: the browser UI is up
+      # well before Bolt will accept a query, and Bolt is what the app uses.
+      test:
+        [
+          "CMD-SHELL",
+          "cypher-shell -u $${NEO4J_USER:-neo4j} -p $${NEO4J_PASSWORD:-voicedoc123} 'RETURN 1' || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s  # JVM + store recovery is genuinely slow to start
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
+
+  # ---------------------------------------------------------------------
+  # Sample "customer" database — for testing the read-only data connection
+  # ---------------------------------------------------------------------
+  # Stands in for a company's own production database so §11 can be exercised
+  # end to end. Seeded with Project Atlas data that MATCHES
+  # data/test_corpus/GROUND_TRUTH.json, plus two tables (employees,
+  # api_credentials) that exist purely to give the guardrails something to
+  # catch.
+  #
+  # Published on 55432 so it cannot be confused with Donna's own Postgres.
+  # NOTE: because it lives on the Docker network, the SSRF guard blocks it by
+  # default — connecting requires DATA_CONNECTION_ALLOW_PRIVATE=true, which is
+  # the documented self-hosted escape hatch. That is the guard working, not a
+  # bug to route around.
+  sample-db:
+    image: postgres:15-alpine
+    container_name: donna-sample-customer-db
+    environment:
+      POSTGRES_USER: atlas_owner
+      POSTGRES_PASSWORD: atlas_owner_pw
+      POSTGRES_DB: atlas_corp
+    volumes:
+      - ./infrastructure/local/sample-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - sample_db_data:/var/lib/postgresql/data
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas_owner -d atlas_corp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
 
   # ====================
   # Application Services
@@ -116,6 +198,8 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: voice-doc-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # App Config
       - APP_ENV=production
@@ -141,6 +225,14 @@ services:
       - QDRANT_PORT=6333
       - QDRANT_GRPC_PORT=6334
 
+      # Neo4j knowledge graph. NEO4J_ENABLED stays configurable so the
+      # PostgreSQL-only fallback remains testable by flipping one variable.
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-voicedoc123}
+      - NEO4J_DATABASE=${NEO4J_DATABASE:-neo4j}
+      - NEO4J_ENABLED=${NEO4J_ENABLED:-true}
+
       # MinIO
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-voicedoc}
@@ -156,6 +248,22 @@ services:
 
       # AI APIs (from .env file)
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # --- Local model fallback (Ollama on the host) ---------------------
+      # host.docker.internal, not localhost: Ollama runs on the host, this
+      # runs in a container. See apps/api/core/llm_provider.py.
+      - LLM_PROVIDER=${LLM_PROVIDER:-auto}
+      # Cloud = chat fallback (large hosted models). No embedding models exist
+      # in the cloud catalogue, so embeddings always use the local instance.
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_CLOUD_BASE_URL=${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      - OLLAMA_CLOUD_CHAT_MODEL=${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:20b}
+      - OLLAMA_CLOUD_CHAT_MODEL_SMART=${OLLAMA_CLOUD_CHAT_MODEL_SMART:-gpt-oss:120b}
+      # Local = embedding fallback, and chat fallback when no cloud key is set.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      - OLLAMA_CHAT_MODEL_SMART=${OLLAMA_CHAT_MODEL_SMART:-qwen2.5:7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OLLAMA_EMBEDDING_DIMENSIONS=${OLLAMA_EMBEDDING_DIMENSIONS:-768}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
       - VOYAGEAI_API_KEY=${VOYAGEAI_API_KEY}
@@ -173,6 +281,18 @@ services:
       # lets the voice worker POST transcripts without a user JWT.
       - REQUIRE_AUTH=${REQUIRE_AUTH:-true}
       - API_KEY=${API_KEY:-donna-dev-service-key}
+      # JWT_SECRET must be forwarded explicitly: this service has no env_file,
+      # so a value in .env does NOT reach the container on its own. Without it
+      # the app falls back to the dev default, and with APP_ENV=production the
+      # startup safety gate refuses to boot (correctly — that default lets
+      # anyone mint a token for any user).
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env for production mode}
+      # Encrypts customer database credentials at rest. Must be forwarded
+      # explicitly (no env_file here), and must be stable across restarts —
+      # a regenerated key makes every stored credential undecryptable.
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - DATA_CONNECTION_ALLOW_PRIVATE=${DATA_CONNECTION_ALLOW_PRIVATE:-false}
+      - JWT_EXPIRY_MINUTES=${JWT_EXPIRY_MINUTES:-1440}
 
       # Durable job queue (dispatch/research/summary run in job-worker)
       - USE_JOB_QUEUE=${USE_JOB_QUEUE:-true}
@@ -184,6 +304,8 @@ services:
       - ./logs:/app/logs
       - ./static:/app/static
     depends_on:
+      neo4j:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -217,6 +339,8 @@ services:
     restart: unless-stopped
 
   # Durable job worker (Arq): agent dispatch, research, summaries, nightly cron
+  # Bulk/cold worker — research, summaries, document processing (queue donna:bulk).
+  # Long jobs live here so they can never occupy the slots live dispatch needs.
   job-worker:
     build:
       context: .
@@ -227,6 +351,8 @@ services:
       # Same uploads volume as the backend — document jobs read the files
       # the API saved. Without this, every doc job fails with ENOENT.
       - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
       # The engine builds from POSTGRES_* parts, not DATABASE_URL — set both.
@@ -240,11 +366,105 @@ services:
       - REDIS_PASSWORD=
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - NEO4J_URI=${NEO4J_URI:-}
+      # Neo4j knowledge graph. NEO4J_ENABLED stays configurable so the
+      # PostgreSQL-only fallback remains testable by flipping one variable.
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-voicedoc123}
+      - NEO4J_DATABASE=${NEO4J_DATABASE:-neo4j}
+      - NEO4J_ENABLED=${NEO4J_ENABLED:-true}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # --- Local model fallback (Ollama on the host) ---------------------
+      # host.docker.internal, not localhost: Ollama runs on the host, this
+      # runs in a container. See apps/api/core/llm_provider.py.
+      - LLM_PROVIDER=${LLM_PROVIDER:-auto}
+      # Cloud = chat fallback (large hosted models). No embedding models exist
+      # in the cloud catalogue, so embeddings always use the local instance.
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_CLOUD_BASE_URL=${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      - OLLAMA_CLOUD_CHAT_MODEL=${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:20b}
+      - OLLAMA_CLOUD_CHAT_MODEL_SMART=${OLLAMA_CLOUD_CHAT_MODEL_SMART:-gpt-oss:120b}
+      # Local = embedding fallback, and chat fallback when no cloud key is set.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      - OLLAMA_CHAT_MODEL_SMART=${OLLAMA_CHAT_MODEL_SMART:-qwen2.5:7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OLLAMA_EMBEDDING_DIMENSIONS=${OLLAMA_EMBEDDING_DIMENSIONS:-768}
+      - JWT_SECRET=${JWT_SECRET:-}
+      # Encrypts customer database credentials at rest. Must be forwarded
+      # explicitly (no env_file here), and must be stable across restarts —
+      # a regenerated key makes every stored credential undecryptable.
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - DATA_CONNECTION_ALLOW_PRIVATE=${DATA_CONNECTION_ALLOW_PRIVATE:-false}
       - EXA_API_KEY=${EXA_API_KEY:-}
       - POSTMARK_API_KEY=${POSTMARK_API_KEY:-}
     depends_on:
+      - neo4j
+      - postgres
+      - redis
+      - qdrant
+    networks:
+      - voice-doc-network
+    restart: unless-stopped
+
+  # Hot worker — live meeting agent dispatch ONLY (queue donna:hot).
+  # Separate process so a bulk document batch can never delay a live meeting.
+  # If this is not running while USE_JOB_QUEUE=true, dispatch jobs pile up
+  # unconsumed — /health reports queues.donna:hot depth so that is visible.
+  dispatch-worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: voice-doc-dispatch-worker
+    command: ["uv", "run", "arq", "apps.workers.job_worker.DispatchWorkerSettings"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
+      # The engine builds from POSTGRES_* parts, not DATABASE_URL — set both.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-voicedoc}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-voicedoc123}
+      - POSTGRES_DB=${POSTGRES_DB:-voice_doc_intel}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Neo4j knowledge graph. NEO4J_ENABLED stays configurable so the
+      # PostgreSQL-only fallback remains testable by flipping one variable.
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-voicedoc123}
+      - NEO4J_DATABASE=${NEO4J_DATABASE:-neo4j}
+      - NEO4J_ENABLED=${NEO4J_ENABLED:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # --- Local model fallback (Ollama on the host) ---------------------
+      # host.docker.internal, not localhost: Ollama runs on the host, this
+      # runs in a container. See apps/api/core/llm_provider.py.
+      - LLM_PROVIDER=${LLM_PROVIDER:-auto}
+      # Cloud = chat fallback (large hosted models). No embedding models exist
+      # in the cloud catalogue, so embeddings always use the local instance.
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_CLOUD_BASE_URL=${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      - OLLAMA_CLOUD_CHAT_MODEL=${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:20b}
+      - OLLAMA_CLOUD_CHAT_MODEL_SMART=${OLLAMA_CLOUD_CHAT_MODEL_SMART:-gpt-oss:120b}
+      # Local = embedding fallback, and chat fallback when no cloud key is set.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      - OLLAMA_CHAT_MODEL_SMART=${OLLAMA_CHAT_MODEL_SMART:-qwen2.5:7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OLLAMA_EMBEDDING_DIMENSIONS=${OLLAMA_EMBEDDING_DIMENSIONS:-768}
+      - JWT_SECRET=${JWT_SECRET:-}
+      # Encrypts customer database credentials at rest. Must be forwarded
+      # explicitly (no env_file here), and must be stable across restarts —
+      # a regenerated key makes every stored credential undecryptable.
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - DATA_CONNECTION_ALLOW_PRIVATE=${DATA_CONNECTION_ALLOW_PRIVATE:-false}
+      - EXA_API_KEY=${EXA_API_KEY:-}
+    depends_on:
+      - neo4j
       - postgres
       - redis
       - qdrant
@@ -259,6 +479,8 @@ services:
       dockerfile: apps/worker/Dockerfile
     container_name: voice-doc-assistant-worker
     command: ["uv", "run", "python", "-m", "apps.workers.enhanced_voice_agent_worker", "start"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
@@ -269,6 +491,23 @@ services:
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # --- Local model fallback (Ollama on the host) ---------------------
+      # host.docker.internal, not localhost: Ollama runs on the host, this
+      # runs in a container. See apps/api/core/llm_provider.py.
+      - LLM_PROVIDER=${LLM_PROVIDER:-auto}
+      # Cloud = chat fallback (large hosted models). No embedding models exist
+      # in the cloud catalogue, so embeddings always use the local instance.
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_CLOUD_BASE_URL=${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      - OLLAMA_CLOUD_CHAT_MODEL=${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:20b}
+      - OLLAMA_CLOUD_CHAT_MODEL_SMART=${OLLAMA_CLOUD_CHAT_MODEL_SMART:-gpt-oss:120b}
+      # Local = embedding fallback, and chat fallback when no cloud key is set.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      - OLLAMA_CHAT_MODEL_SMART=${OLLAMA_CHAT_MODEL_SMART:-qwen2.5:7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OLLAMA_EMBEDDING_DIMENSIONS=${OLLAMA_EMBEDDING_DIMENSIONS:-768}
+      - JWT_SECRET=${JWT_SECRET:-}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
     depends_on:
@@ -284,6 +523,8 @@ services:
       context: .
       dockerfile: apps/worker/Dockerfile
     container_name: voice-doc-worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Database
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-voicedoc}:${POSTGRES_PASSWORD:-voicedoc123}@postgres:5432/${POSTGRES_DB:-voice_doc_intel}
@@ -304,6 +545,23 @@ services:
 
       # AI APIs
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # --- Local model fallback (Ollama on the host) ---------------------
+      # host.docker.internal, not localhost: Ollama runs on the host, this
+      # runs in a container. See apps/api/core/llm_provider.py.
+      - LLM_PROVIDER=${LLM_PROVIDER:-auto}
+      # Cloud = chat fallback (large hosted models). No embedding models exist
+      # in the cloud catalogue, so embeddings always use the local instance.
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_CLOUD_BASE_URL=${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+      - OLLAMA_CLOUD_CHAT_MODEL=${OLLAMA_CLOUD_CHAT_MODEL:-gpt-oss:20b}
+      - OLLAMA_CLOUD_CHAT_MODEL_SMART=${OLLAMA_CLOUD_CHAT_MODEL_SMART:-gpt-oss:120b}
+      # Local = embedding fallback, and chat fallback when no cloud key is set.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      - OLLAMA_CHAT_MODEL_SMART=${OLLAMA_CHAT_MODEL_SMART:-qwen2.5:7b}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OLLAMA_EMBEDDING_DIMENSIONS=${OLLAMA_EMBEDDING_DIMENSIONS:-768}
+      - JWT_SECRET=${JWT_SECRET:-}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
 
@@ -326,6 +584,9 @@ networks:
     driver: bridge
 
 volumes:
+  sample_db_data:
+  neo4j_data:
+  neo4j_logs:
   postgres_data:
   redis_data:
   qdrant_data:

@@ -25,3 +25,12 @@
 {"id": "fc-24", "text": "Everyone is switching away from that framework these days.", "label": true}
 {"id": "fc-25", "text": "Thanks everyone, good energy today.", "label": false}
 {"id": "fc-26", "text": "Their NPS is reportedly in the seventies.", "label": true}
+# --- Adversarial batch (2026-08). See the note in scribe_decisions.jsonl.
+{"id": "fc-27", "text": "I think their pricing is somewhere around fifty grand.", "label": true}
+{"id": "fc-28", "text": "I feel like this is the right call for the team.", "label": false}
+{"id": "fc-29", "text": "Churn went from 2.1% to 1.4% after the redesign.", "label": true}
+{"id": "fc-30", "text": "Let's circle back on the numbers next week.", "label": false}
+{"id": "fc-31", "text": "They raised a Series B last year, I'm fairly sure.", "label": true}
+{"id": "fc-32", "text": "That approach feels overengineered to me.", "label": false}
+{"id": "fc-33", "text": "Gartner put them in the leaders quadrant.", "label": true}
+{"id": "fc-34", "text": "Can everyone hear me okay?", "label": false}

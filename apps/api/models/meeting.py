@@ -96,8 +96,15 @@ class Meeting(Base):
     )
 
     # Relationships
+    # order_by + uselist=False makes the newest brief win deterministically.
+    # The pipeline reuses one row per meeting, but rows created before that
+    # fix still exist, and without an explicit order the DB is free to hand
+    # back the oldest — i.e. a stale failure that survives every retry.
     research_brief: Mapped[Optional["ResearchBrief"]] = relationship(
-        back_populates="meeting", uselist=False, cascade="all, delete-orphan"
+        back_populates="meeting",
+        uselist=False,
+        cascade="all, delete-orphan",
+        order_by="desc(ResearchBrief.created_at)",
     )
     transcript: Mapped[Optional["MeetingTranscript"]] = relationship(
         back_populates="meeting", uselist=False, cascade="all, delete-orphan"

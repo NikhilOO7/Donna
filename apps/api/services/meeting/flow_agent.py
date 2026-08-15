@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from apps.api.core.logging import warn_throttled
+
 logger = logging.getLogger(__name__)
 
 # Don't judge the room's balance before it has had a chance to balance.
@@ -158,7 +160,12 @@ class FlowAgent:
                 meeting_id, {"type": "flow_update", "talk_time": stats}
             )
         except Exception as e:
-            logger.debug(f"[Flow] broadcast skipped: {e}")
+            warn_throttled(
+                logger,
+                "flow.broadcast",
+                f"[Flow] talk-time broadcast skipped — the meter will not update "
+                f"in the UI: {e}",
+            )
 
     @staticmethod
     async def _once(key: str, ttl: int = 6 * 3600) -> bool:

@@ -23,6 +23,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket
 
+from apps.api.core.logging import warn_throttled
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class MeetingHub:
     CHANNEL = "meeting:events"
 
     def __init__(self) -> None:
-        # meeting_id -> {websocket: {'role': str, 'name': str|None}}
+        # meeting_id -> {websocket: {'role': str, 'name': str|None, 'email': str|None}}
         self._connections: Dict[str, Dict[WebSocket, Dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
         self._redis = None
@@ -83,7 +85,12 @@ class MeetingHub:
                         envelope["meeting_id"], envelope["payload"]
                     )
                 except Exception as e:
-                    logger.debug(f"[Hub] listener decode error: {e}")
+                    # A decode failure means an event was dropped on the floor.
+                    warn_throttled(
+                        logger,
+                        "hub.listener.decode",
+                        f"[Hub] dropped an inbound event (decode error): {e}",
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -99,12 +106,14 @@ class MeetingHub:
         websocket: WebSocket,
         role: str = "leader",
         my_name: str | None = None,
+        my_email: str | None = None,
     ) -> None:
         await websocket.accept()
         async with self._lock:
             self._connections.setdefault(meeting_id, {})[websocket] = {
                 "role": role,
                 "name": my_name,
+                "email": (my_email or "").lower() or None,
             }
         await self._ensure_listener()
         logger.info(
@@ -135,7 +144,14 @@ class MeetingHub:
                 )
                 return
             except Exception as e:
-                logger.debug(f"[Hub] publish failed, local delivery: {e}")
+                # Cross-replica fan-out is broken: clients connected to other
+                # replicas will silently stop receiving this meeting's events.
+                warn_throttled(
+                    logger,
+                    "hub.publish.fallback",
+                    f"[Hub] Redis publish failed — delivering to local sockets "
+                    f"only. Clients on other replicas will NOT receive events: {e}",
+                )
 
         # Fallback: deliver directly to this replica's sockets
         await self._deliver_local(meeting_id, message)
@@ -149,6 +165,12 @@ class MeetingHub:
         Leaders see every event. Participants see everything EXCEPT
         unshared nudges: only pinned (shared-board) nudges and activation
         nudges addressed to them personally are delivered.
+
+        Addressing is by **email**, not display name. Matching on name meant
+        two attendees called "Chris" each received the other's private
+        expertise nudge. Name matching survives only as a fallback for nudges
+        persisted before ``person_email`` existed, and only when the
+        connection has no email to match on.
         """
         if meta.get("role") != "participant":
             return True
@@ -158,7 +180,15 @@ class MeetingHub:
         if nudge.get("pinned_at"):
             return True
         if nudge.get("type") == "activation":
-            person = ((nudge.get("source_data") or {}).get("person") or "").lower()
+            source = nudge.get("source_data") or {}
+            person_email = (source.get("person_email") or "").lower()
+            my_email = (meta.get("email") or "").lower()
+            if person_email:
+                # Identity is known: it must match, and a connection with no
+                # email can never claim it.
+                return bool(my_email) and person_email == my_email
+            # Legacy nudge with no email recorded — fall back to name.
+            person = (source.get("person") or "").lower()
             name = (meta.get("name") or "").lower()
             return bool(name) and person == name
         return False

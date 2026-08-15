@@ -107,16 +107,23 @@ class SummaryPipeline:
                 # Mirror the completed meeting into the Neo4j knowledge graph as a
                 # typed subgraph (Meeting → Decisions / ActionItems / ResearchTopics /
                 # Transcript). Best-effort: a graph outage must not fail the summary.
+                # Knowledge-graph mirror, via the transactional outbox.
+                #
+                # This used to call Neo4j directly and swallow failures as
+                # "KG sync skipped" — after which Postgres and the graph
+                # disagreed permanently, with nothing detecting or replaying
+                # the divergence. Now the INTENT is committed to Postgres in
+                # this transaction, so it survives a Neo4j outage and drains
+                # when the graph comes back.
                 try:
-                    from apps.api.services.document.knowledge_graph_service import (
-                        knowledge_graph_service,
-                    )
+                    from apps.api.services.document import kg_outbox
 
                     topics = [
                         d.get("decision") or d.get("decision_text") or ""
                         for d in result.get("key_discussion_points", [])
                     ]
-                    await knowledge_graph_service.sync_meeting_to_neo4j(
+                    await kg_outbox.enqueue_meeting_sync(
+                        session,
                         meeting_id=meeting_id,
                         title=meeting_title,
                         status="completed",
@@ -128,8 +135,27 @@ class SummaryPipeline:
                         else 0,
                         owner_id=owner_id,
                     )
+                    await session.commit()
                 except Exception as kg_err:
-                    logger.warning(f"[Summary {meeting_id}] KG sync skipped: {kg_err}")
+                    # Failing to even RECORD the intent is worth shouting about:
+                    # it is the one case that still loses the write.
+                    logger.error(
+                        f"[Summary {meeting_id}] could not enqueue KG sync — "
+                        f"the graph will NOT converge for this meeting: {kg_err}"
+                    )
+
+                # Opportunistic drain so the happy path stays as fast as the
+                # old direct call. A failure here costs nothing: the row is
+                # committed and the periodic drainer will retry it.
+                try:
+                    from apps.api.services.document import kg_outbox
+
+                    await kg_outbox.drain(session, limit=10)
+                except Exception as drain_err:
+                    logger.info(
+                        f"[Summary {meeting_id}] KG outbox drain deferred "
+                        f"(will retry in the background): {drain_err}"
+                    )
 
                 # Long-term memory: distill this meeting into the vector
                 # knowledge base so future meetings, Ask Donna, and the

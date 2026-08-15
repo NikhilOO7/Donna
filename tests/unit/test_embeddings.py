@@ -76,8 +76,14 @@ class TestContextualEmbeddingGenerator:
     ):
         """generate_contextual_embedding should return a flat list of floats."""
         with (
+            # Embeddings now route through the provider layer so they can
+            # fail over to Ollama — patch that, not a direct AsyncOpenAI.
             patch(
-                "apps.api.services.document.embeddings.AsyncOpenAI",
+                "apps.api.core.llm_provider.failover_client",
+                return_value=mock_async_openai_client,
+            ),
+            patch(
+                "apps.api.core.llm_provider.client_for",
                 return_value=mock_async_openai_client,
             ),
             patch("apps.api.services.document.embeddings.SentenceTransformer"),

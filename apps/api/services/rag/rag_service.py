@@ -11,8 +11,9 @@ from typing import Any, Dict, List, Optional
 
 # Original imports
 # Enhanced imports
-from openai import AsyncOpenAI, OpenAI
+from openai import OpenAI
 
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.persona import DONNA_PERSONA
 from apps.api.services.document.embeddings import (
@@ -25,6 +26,31 @@ from apps.api.services.document.vector_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _groundedness_of(answer: str, results: List[Any]) -> Optional[Dict[str, Any]]:
+    """Deterministic groundedness of ``answer`` against the retrieved chunks.
+
+    Best-effort: a failure here must never cost the user their answer, so any
+    exception degrades to None rather than propagating. See
+    ``services/rag/groundedness.py`` for why this is lexical rather than a
+    judge model (it runs inline, on every answer, for free).
+    """
+    try:
+        from apps.api.services.rag.groundedness import assess
+
+        texts = []
+        for r in results or []:
+            if isinstance(r, dict):
+                texts.append(
+                    r.get("content") or r.get("text") or r.get("chunk_text") or ""
+                )
+            else:
+                texts.append(getattr(r, "content", "") or getattr(r, "text", "") or "")
+        return assess(answer, texts).to_dict()
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"Groundedness assessment skipped: {e}")
+        return None
 
 
 def confidence_from_results(results: List[Any]) -> float:
@@ -145,6 +171,12 @@ class RAGService:
                 "conversation_id": conversation_id,
                 "query_enhanced": enhanced_query != query,
                 "confidence": confidence_from_results(search_results),
+                # Is the sentence we are about to say actually supported by the
+                # chunks we are citing? Confidence measures RETRIEVAL quality;
+                # groundedness measures GENERATION fidelity, and a fluent answer
+                # over good sources can still assert a figure none of them
+                # contain. Deterministic, so this costs microseconds.
+                "groundedness": _groundedness_of(answer, search_results),
             }
 
         except Exception as e:
@@ -301,7 +333,7 @@ class ModernRAGService:
     """Enhanced RAG service with multi-agent and contextual processing"""
 
     def __init__(self):
-        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.openai_client = llm_provider.failover_client()
         self.embedding_generator = ContextualEmbeddingGenerator()
         self.vector_store = ModernVectorStore()
         self.conversation_memory = {}
@@ -366,6 +398,7 @@ class ModernRAGService:
                 "query_analysis": query_analysis,
                 "enhanced_processing": True,
                 "confidence": confidence_from_results(ranked_results),
+                "groundedness": _groundedness_of(answer, ranked_results),
             }
 
         except Exception as e:
@@ -403,7 +436,7 @@ class ModernRAGService:
             )
 
             try:
-                return json.loads(response.choices[0].message.content)
+                return json_parse.loads(response.choices[0].message.content)
             except (json.JSONDecodeError, KeyError, TypeError):
                 return {
                     "intent_type": "factual",

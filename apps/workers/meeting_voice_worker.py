@@ -76,6 +76,32 @@ _POST_MAX_ATTEMPTS = 5
 _DEEPGRAM_RECONNECT_BACKOFF = 1.0
 _DEEPGRAM_MAX_BACKOFF = 15.0
 
+# Keyword boosting for Deepgram. The suffix is the boost weight; higher pulls
+# the decoder harder toward that token. "Donna" is weighted most because it is
+# how the assistant knows it is being addressed at all — mishearing it as
+# "Donald" makes her unreachable by voice.
+#
+# DEEPGRAM_KEYWORDS (comma-separated, optional "term:weight") lets a deployment
+# add its own vendor and people names without a code change.
+_DEFAULT_STT_KEYWORDS = [
+    "Donna:3",
+    "Acme:2",
+    "Beacon:2",
+    "CoreScale:2",
+    "Atlas:2",
+]
+
+
+def _stt_keywords() -> list:
+    raw = (os.environ.get("DEEPGRAM_KEYWORDS") or "").strip()
+    if not raw:
+        return list(_DEFAULT_STT_KEYWORDS)
+    extra = [k.strip() for k in raw.split(",") if k.strip()]
+    return list(_DEFAULT_STT_KEYWORDS) + extra
+
+
+_STT_KEYWORDS = _stt_keywords()
+
 # Cartesia output format used for the TTS → LiveKit pipeline.
 _TTS_SAMPLE_RATE = 24000
 _TTS_CHANNELS = 1
@@ -120,6 +146,12 @@ async def _publish_partial(meeting_id: str, speaker: str, text: str) -> None:
         )
     except Exception:
         _partial_redis = None  # rebuild the connection on the next partial
+
+
+# Rooms this worker process is currently transcribing (reported by the
+# heartbeat, so "the worker is alive" and "it is doing anything" are
+# distinguishable in /voice/health).
+_ACTIVE_ROOMS: set = set()
 
 
 def _meeting_id_from_room(room_name: str) -> Optional[str]:
@@ -269,6 +301,24 @@ async def _transcribe_track(
             smart_format=True,
             interim_results=True,
             utterance_end_ms="1000",
+            # Deepgram's default endpointing (10ms) finalizes a segment at the
+            # slightest pause, so one spoken sentence arrives as several
+            # utterances:
+            #
+            #     "Donald,"  /  "we did what did we decide about"  /  "acne?"
+            #
+            # Every downstream agent then sees sentence fragments instead of
+            # thoughts. The reply agent in particular could not match a
+            # question whose name landed in one fragment and whose verb landed
+            # in the next. A few hundred ms lets a speaker breathe mid-sentence
+            # without being cut off, at the cost of a little added latency.
+            endpointing=400,
+            # Domain vocabulary. Without boosting, "Donna" is transcribed as
+            # "Donald" — which means the assistant's own name, the single most
+            # important token for detecting that she is being addressed, is the
+            # one the model gets wrong. Vendor names matter for retrieval:
+            # "Acme" was coming through as "acne".
+            keywords=_STT_KEYWORDS,
             punctuate=True,
             sample_rate=48000,
             channels=1,
@@ -486,6 +536,14 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(f"=== Meeting voice worker joining room: {room_name} ===")
 
+    # Started here rather than in prewarm: this is the first point with a
+    # running event loop to attach the task to. Idempotent per process.
+    _ensure_heartbeat()
+
+    # Track which rooms this worker is serving so the heartbeat can report it.
+    _ACTIVE_ROOMS.add(room_name)
+    ctx.add_shutdown_callback(lambda: _ACTIVE_ROOMS.discard(room_name))
+
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
     # --- TTS output track (so the bot can speak back) ---
@@ -532,10 +590,34 @@ async def entrypoint(ctx: JobContext):
             if track and track.kind == rtc.TrackKind.KIND_AUDIO:
                 on_track_subscribed(track, publication, participant)
 
+    # Hold the job open for the life of the ROOM, not until the first
+    # participant is seen.
+    #
+    # `ctx.wait_for_participant()` returns the moment a participant exists —
+    # and one always does, because the agent is dispatched in response to
+    # somebody joining. So it returned instantly, `finally` fired, and the TTS
+    # subscriber was torn down about three milliseconds after it subscribed:
+    #
+    #     04:35:02.622  [TTS] subscribed to meeting:<id>:speak
+    #     04:35:02.622  [TTS] unsubscribed from meeting:<id>:speak
+    #
+    # Everything downstream still looked healthy — the dispatcher published
+    # spoken replies to a channel with no listener — so Donna was simply
+    # inaudible with nothing reporting an error anywhere.
+    disconnected = asyncio.Event()
+
+    @ctx.room.on("disconnected")
+    def _on_disconnected(*_args) -> None:
+        disconnected.set()
+
     try:
-        await ctx.wait_for_participant()
+        await disconnected.wait()
+    except asyncio.CancelledError:
+        pass
     finally:
         tts_stop.set()
+        for t in stt_tasks:
+            t.cancel()
         try:
             await asyncio.wait_for(tts_task, timeout=2.0)
         except Exception:
@@ -559,11 +641,90 @@ async def request_fnc(req) -> None:
         await req.reject()
 
 
+# ---------------------------------------------------------------------------
+# Liveness heartbeat
+# ---------------------------------------------------------------------------
+# This worker is a separate process with no HTTP surface, so if it dies the
+# meeting keeps "working" — the UI stays up, the WebSocket stays connected —
+# and transcription simply stops. Nothing in the system notices. A heartbeat
+# in Redis with a short TTL turns that silent death into an observable one:
+# /api/v1/voice/health reports the worker stale/absent once the key expires.
+
+_HEARTBEAT_KEY = "worker:voice:heartbeat"
+_HEARTBEAT_INTERVAL = 10  # seconds
+_HEARTBEAT_TTL = 30  # 3 missed beats before it reads as dead
+
+
+async def _heartbeat_loop() -> None:
+    """Stamp liveness into Redis until the process dies."""
+    import json as _json
+    import time as _time
+
+    while True:
+        try:
+            from apps.api.core.connections import get_redis_client
+
+            redis = await get_redis_client()
+            await redis.set(
+                _HEARTBEAT_KEY,
+                _json.dumps(
+                    {
+                        "ts": _time.time(),
+                        "active_rooms": len(_ACTIVE_ROOMS),
+                        "rooms": sorted(_ACTIVE_ROOMS),
+                    }
+                ),
+                ex=_HEARTBEAT_TTL,
+            )
+        except Exception as e:
+            logger.warning(f"[heartbeat] could not publish liveness: {e}")
+        await asyncio.sleep(_HEARTBEAT_INTERVAL)
+
+
+def _prewarm(proc):
+    """Per-process warmup hook.
+
+    Two constraints, both learned the hard way:
+
+    * **Module scope.** LiveKit runs each job in a forked subprocess that
+      re-imports this file as ``apps.workers.meeting_voice_worker`` and
+      resolves ``prewarm_fnc`` by qualified name. Defined inside
+      ``if __name__ == "__main__"`` it exists only in the parent, so every
+      child died with ``AttributeError: Can't get attribute '_prewarm'``
+      before it could accept a room.
+
+    * **Synchronous.** LiveKit calls this directly rather than awaiting it,
+      so an ``async def`` here produces a coroutine that is never run —
+      "RuntimeWarning: coroutine '_prewarm' was never awaited" — and anything
+      it was supposed to start silently doesn't. There is also no running
+      event loop at this point, so ``asyncio.create_task`` would fail even if
+      it were awaited. The heartbeat is therefore started from ``entrypoint``,
+      which is async and does have a loop.
+    """
+    return None
+
+
+_heartbeat_task: Optional[asyncio.Task] = None
+
+
+def _ensure_heartbeat() -> None:
+    """Start the liveness heartbeat once per process, from inside the loop."""
+    global _heartbeat_task
+    if _heartbeat_task is not None and not _heartbeat_task.done():
+        return
+    try:
+        _heartbeat_task = asyncio.create_task(_heartbeat_loop())
+    except RuntimeError:
+        # No running loop — nothing to attach to yet; the next job will retry.
+        pass
+
+
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             request_fnc=request_fnc,
+            prewarm_fnc=_prewarm,
             api_key=settings.livekit_api_key,
             api_secret=settings.livekit_api_secret,
             ws_url=settings.livekit_url,

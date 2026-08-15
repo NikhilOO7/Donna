@@ -16,7 +16,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.core.auth import get_service_or_user, require_user
@@ -100,6 +100,40 @@ def _attendee_entry_for(attendees: list, current_user) -> Optional[dict]:
     return None
 
 
+# Labels that mean "whoever is looking at this", which is exactly what a
+# shared transcript must never store.
+_VIEWER_RELATIVE_SPEAKERS = {"you", "me", "myself", "self", "speaker"}
+
+
+def _display_name_for(attendees: list, current_user) -> Optional[str]:
+    """The name this user should be attributed by in a shared transcript.
+
+    Falls back past the attendee list to the account itself, because the
+    meeting *owner* is usually not in their own attendee list — which left
+    ``my_name`` null for the one person guaranteed to be in the meeting. The
+    client's fallback for a null name was the literal string "You", and that
+    got persisted as the speaker.
+
+    Storing "You" is not merely untidy: it is viewer-relative data written into
+    a shared record. Every other attendee reading that transcript, and every
+    recipient of the summary email, sees "You" referring to someone who is not
+    them. Attribution in a shared artifact has to be absolute.
+    """
+    entry = _attendee_entry_for(attendees, current_user)
+    if entry and (entry.get("name") or "").strip():
+        return entry["name"].strip()
+    if current_user is None:
+        return None
+    full_name = (getattr(current_user, "full_name", "") or "").strip()
+    if full_name:
+        return full_name
+    email = (getattr(current_user, "email", "") or "").strip()
+    if email:
+        # Better a recognisable handle than a pronoun.
+        return email.split("@")[0]
+    return None
+
+
 def _role_of(owner_id, attendees: list, current_user) -> Optional[str]:
     """'leader' | 'participant' | None (no access).
 
@@ -118,10 +152,17 @@ def _role_of(owner_id, attendees: list, current_user) -> Optional[str]:
 class MeetingAccess:
     """Resolved access for a meeting request."""
 
-    def __init__(self, mid: UUID, role: str, my_name: Optional[str]):
+    def __init__(
+        self,
+        mid: UUID,
+        role: str,
+        my_name: Optional[str],
+        my_email: Optional[str] = None,
+    ):
         self.mid = mid
         self.role = role
         self.my_name = my_name
+        self.my_email = my_email
 
 
 async def require_meeting_access(
@@ -141,14 +182,28 @@ async def require_meeting_access(
     if role is None:
         raise HTTPException(404, "Meeting not found")
     entry = _attendee_entry_for(attendees, current_user)
-    return MeetingAccess(mid, role, (entry or {}).get("name"))
+    return MeetingAccess(
+        mid,
+        role,
+        (entry or {}).get("name"),
+        getattr(current_user, "email", None),
+    )
 
 
-def _visible_nudges(nudges: list, role: str, my_name: Optional[str]) -> list:
-    """Server-side nudge visibility.
+def _visible_nudges(
+    nudges: list,
+    role: str,
+    my_name: Optional[str],
+    my_email: Optional[str] = None,
+) -> list:
+    """Server-side nudge visibility (REST twin of MeetingHub._visible_to).
 
     Leaders see everything. Participants see the shared board — nudges the
     leader pinned — plus activation nudges addressed to them personally.
+
+    Addressing is by **email**; display names are not identities. Name
+    matching remains only as a fallback for nudges persisted before
+    ``person_email`` was recorded.
     """
     if role == "leader":
         return list(nudges or [])
@@ -158,10 +213,17 @@ def _visible_nudges(nudges: list, role: str, my_name: Optional[str]) -> list:
             continue
         if n.pinned_at is not None:
             out.append(n)
-        elif n.nudge_type == "activation" and my_name:
-            person = ((n.source_data or {}).get("person") or "").lower()
-            if person == my_name.lower():
-                out.append(n)
+        elif n.nudge_type == "activation":
+            source = n.source_data or {}
+            person_email = (source.get("person_email") or "").lower()
+            if person_email:
+                if my_email and person_email == my_email.lower():
+                    out.append(n)
+            elif my_name:
+                # Legacy nudge with no email recorded.
+                person = (source.get("person") or "").lower()
+                if person == my_name.lower():
+                    out.append(n)
     return out
 
 
@@ -368,6 +430,98 @@ async def list_open_items(
     return {"items": items, "total": len(items)}
 
 
+@router.get("/nudge-acceptance")
+async def nudge_acceptance(
+    days: int = 30,
+    session: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user),
+):
+    """Per-agent nudge acceptance — which agents are actually worth running.
+
+    The data to answer this has always existed (``pinned_at`` / ``dismissed_at``
+    are timestamps, not booleans) but nothing queried it, so the product's
+    central question went unanswered while two agents and an entire datastore
+    were justified by an untested hypothesis.
+
+    Definitions, stated because "acceptance rate" is ambiguous:
+      * **pinned**    — the leader promoted it to the shared board. Strong positive.
+      * **dismissed** — explicitly rejected. Strong negative.
+      * **ignored**   — neither. Weak signal: possibly unread, not necessarily bad.
+      * ``acceptance_rate = pinned / (pinned + dismissed)`` — deliberately
+        excludes ignored, so it measures "when someone acted, did they keep it?"
+      * ``engagement_rate = (pinned + dismissed) / total`` — how often a nudge
+        provoked any action at all. A high acceptance rate on a tiny engagement
+        rate is not a win; it is a rounding error.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+
+    rows = (
+        await session.execute(
+            select(
+                Nudge.nudge_type,
+                Nudge.source_agent,
+                func.count().label("total"),
+                func.count(Nudge.pinned_at).label("pinned"),
+                func.count(Nudge.dismissed_at).label("dismissed"),
+                func.avg(Nudge.relevance_score).label("avg_relevance"),
+            )
+            .join(Meeting, Meeting.id == Nudge.meeting_id)
+            .where(
+                Nudge.created_at >= since,
+                Meeting.deleted_at.is_(None),
+                # Owner-scoped: this is per-user behaviour, not global truth.
+                Meeting.owner_id == current_user.id
+                if current_user is not None
+                else Meeting.owner_id.is_(None),
+            )
+            .group_by(Nudge.nudge_type, Nudge.source_agent)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    agents = []
+    for r in rows:
+        acted = (r.pinned or 0) + (r.dismissed or 0)
+        total = r.total or 0
+        agents.append(
+            {
+                "nudge_type": r.nudge_type,
+                "source_agent": r.source_agent,
+                "total": total,
+                "pinned": r.pinned or 0,
+                "dismissed": r.dismissed or 0,
+                "ignored": total - acted,
+                "acceptance_rate": round((r.pinned or 0) / acted, 3) if acted else None,
+                "engagement_rate": round(acted / total, 3) if total else None,
+                "avg_relevance": round(float(r.avg_relevance), 3)
+                if r.avg_relevance is not None
+                else None,
+                # Enough signal to act on? Below this, the rate is noise.
+                "sufficient_data": acted >= 20,
+            }
+        )
+
+    totals_acted = sum(a["pinned"] + a["dismissed"] for a in agents)
+    return {
+        "window_days": days,
+        "since": since.isoformat(),
+        "total_nudges": sum(a["total"] for a in agents),
+        "overall_acceptance_rate": (
+            round(sum(a["pinned"] for a in agents) / totals_acted, 3)
+            if totals_acted
+            else None
+        ),
+        "agents": agents,
+        "note": (
+            "acceptance_rate excludes ignored nudges; sufficient_data marks rows "
+            "with >=20 explicit actions. Rows below that threshold should not "
+            "drive keep/kill decisions."
+        ),
+    }
+
+
 @router.get("/{meeting_id}")
 async def get_meeting(
     meeting_id: str,
@@ -388,9 +542,13 @@ async def get_meeting(
     )
     if role is None:
         raise HTTPException(404, "Meeting not found")
-    my_entry = _attendee_entry_for(meeting.attendees or [], current_user)
-    my_name = (my_entry or {}).get("name")
-    nudges = _visible_nudges(meeting.nudges or [], role, my_name)
+    my_name = _display_name_for(meeting.attendees or [], current_user)
+    nudges = _visible_nudges(
+        meeting.nudges or [],
+        role,
+        my_name,
+        getattr(current_user, "email", None),
+    )
 
     return {
         "id": str(meeting.id),
@@ -982,7 +1140,9 @@ async def get_nudges(
     if not meeting:
         raise HTTPException(404, "Meeting not found")
 
-    visible = _visible_nudges(meeting.nudges or [], access.role, access.my_name)
+    visible = _visible_nudges(
+        meeting.nudges or [], access.role, access.my_name, access.my_email
+    )
     return {
         "nudges": [
             {
@@ -1000,6 +1160,132 @@ async def get_nudges(
             for n in visible
         ]
     }
+
+
+@router.get("/{meeting_id}/nudges/{nudge_id}/thread")
+async def get_nudge_thread(
+    meeting_id: str,
+    nudge_id: str,
+    session: AsyncSession = Depends(get_db),
+    access: MeetingAccess = Depends(require_meeting_access),
+):
+    """One insight, in full, with the others belonging to the same thread.
+
+    A card is a glance; this is the read. It returns the untruncated passage
+    plus the related nudges, so a finding can be examined without hunting
+    through a flat reverse-chronological list for the two other cards that
+    happen to be about the same thing.
+
+    Relatedness is computed from what we actually know rather than a second
+    embedding pass on the hot path:
+
+      * same source document — different passages from one document are
+        almost always the same thread of discussion
+      * shared salient terms — vendor names, figures, people
+      * temporal proximity — nudges raised in the same few minutes were
+        responding to the same part of the conversation
+
+    The scores are heuristic and deliberately shown to no one; they only order
+    the list.
+    """
+    mid = access.mid
+    meeting = await meeting_service.get_meeting(session, mid)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+
+    visible = _visible_nudges(
+        meeting.nudges or [], access.role, access.my_name, access.my_email
+    )
+    target = next((n for n in visible if str(n.id) == nudge_id), None)
+    if target is None:
+        raise HTTPException(404, "Insight not found")
+
+    related = _related_nudges(target, visible)
+    return {
+        "nudge": _nudge_detail(target),
+        "related": [_nudge_detail(n) for n in related],
+    }
+
+
+def _nudge_detail(n) -> dict:
+    """Serialize a nudge with its full passage restored."""
+    data = n.source_data or {}
+    return {
+        "id": str(n.id),
+        "type": n.nudge_type,
+        "title": n.title,
+        "content": n.content,
+        # The card's text is a 300-char snippet. This is what was actually
+        # retrieved, so the detail view doesn't end mid-sentence.
+        "full_content": data.get("full_content") or n.content,
+        "source_agent": n.source_agent,
+        "source_data": data,
+        "relevance_score": n.relevance_score,
+        "dismissed_at": n.dismissed_at.isoformat() if n.dismissed_at else None,
+        "pinned_at": n.pinned_at.isoformat() if n.pinned_at else None,
+        "created_at": n.created_at.isoformat(),
+    }
+
+
+# Words too common to indicate that two insights are about the same thing.
+_THREAD_STOPWORDS = frozenset(
+    """the a an and or but if then than that this these those of to in on at by for
+    with from as is are was were be been being have has had do does did will would
+    should could can may might must not no yes it its we our you your they their
+    i me my he she his her them us who whom which what when where why how""".split()
+)
+
+
+def _salient_terms(text: str) -> set:
+    """Terms that plausibly identify a topic: names, figures, domain nouns."""
+    import re as _re
+
+    tokens = _re.findall(r"[A-Za-z][\w'-]{2,}|\$?\d[\d,.]*%?", (text or "").lower())
+    return {t for t in tokens if t not in _THREAD_STOPWORDS}
+
+
+def _related_nudges(target, candidates: list, limit: int = 8) -> list:
+    """Rank the other nudges by how likely they belong to the same thread."""
+    from datetime import timedelta as _timedelta
+
+    t_data = target.source_data or {}
+    t_doc = str(t_data.get("document_id") or "") or None
+    t_terms = _salient_terms(f"{target.title} {target.content}")
+    t_time = target.created_at
+
+    scored = []
+    for n in candidates:
+        if str(n.id) == str(target.id) or n.dismissed_at is not None:
+            continue
+        score = 0.0
+        data = n.source_data or {}
+
+        if t_doc and str(data.get("document_id") or "") == t_doc:
+            score += 3.0
+
+        terms = _salient_terms(f"{n.title} {n.content}")
+        overlap = len(t_terms & terms)
+        if overlap:
+            # Normalized so a long passage doesn't dominate purely by length.
+            score += 2.0 * (overlap / max(6, min(len(t_terms), len(terms))))
+
+        if t_time and n.created_at:
+            gap = abs((n.created_at - t_time).total_seconds())
+            if gap <= _timedelta(minutes=5).total_seconds():
+                score += 1.0
+            elif gap <= _timedelta(minutes=15).total_seconds():
+                score += 0.5
+
+        # A reply is an answer to a question about this moment — worth keeping
+        # near whatever prompted it.
+        if n.nudge_type == "reply":
+            score += 0.5
+
+        if score > 0.75:
+            scored.append((score, n))
+
+    scored.sort(key=lambda x: (-x[0], x[1].created_at))
+    return [n for _, n in scored[:limit]]
 
 
 @router.post("/{meeting_id}/nudges/{nudge_id}/dismiss")
@@ -1207,6 +1493,15 @@ async def add_utterance(
     ):
         raise HTTPException(404, "Meeting not found")
 
+    # The transcript is a shared record, so the speaker label must mean the
+    # same thing to everyone who reads it. A client that sends a
+    # viewer-relative placeholder gets overridden with the caller's real name —
+    # the server knows who is authenticated and the browser may not.
+    if speaker.lower() in _VIEWER_RELATIVE_SPEAKERS:
+        resolved = _display_name_for(meeting.attendees or [], principal)
+        if resolved:
+            speaker = resolved
+
     transcript = await meeting_service.append_utterance(
         session=session,
         meeting_id=mid,
@@ -1223,6 +1518,24 @@ async def add_utterance(
             "utterance_count": len(transcript.utterances or []),
         },
     )
+
+    # Start the end-to-end clock here: this is the first moment the system
+    # knows these words exist. Everything downstream (queue hop, state load,
+    # fan-out, persistence, WS delivery) is latency the user experiences, and
+    # none of it was previously measured — only the agent budgets were.
+    import time as _time
+
+    accepted_at = _time.time()
+    try:
+        from apps.api.core.connections import get_redis_client
+
+        redis = await get_redis_client()
+        # Short TTL: this is a stopwatch, not state. If the cycle takes longer
+        # than this the measurement is lost, which is the correct trade — a
+        # stale start time would report a fictional latency.
+        await redis.set(f"utt:accepted:{meeting_id}", str(accepted_at), ex=120)
+    except Exception:
+        pass  # timing is best-effort; never let it cost an utterance
 
     # Run agent dispatcher: durable queue if enabled, else in-process.
     if not await enqueue("dispatch_job", meeting_id):
@@ -1255,6 +1568,7 @@ async def meeting_websocket(
 
     ws_role = "leader"
     ws_name: Optional[str] = None
+    ws_email: Optional[str] = None
     if settings.require_auth:
         from apps.api.core.database import AsyncSessionLocal
         from apps.api.core.security import decode_access_token
@@ -1280,9 +1594,18 @@ async def meeting_websocket(
                 await websocket.close(code=4403)
                 return
             ws_role = role
-            ws_name = (_attendee_entry_for(attendees, user) or {}).get("name")
+            ws_name = _display_name_for(attendees, user)
+            # The authenticated email, not the attendee entry's — this is the
+            # identity activation nudges are addressed to.
+            ws_email = getattr(user, "email", None)
 
-    await meeting_hub.connect(meeting_id, websocket, role=ws_role, my_name=ws_name)
+    await meeting_hub.connect(
+        meeting_id,
+        websocket,
+        role=ws_role,
+        my_name=ws_name,
+        my_email=ws_email,
+    )
     try:
         # Keep the socket alive — client may send pings or be passive.
         while True:

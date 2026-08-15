@@ -1,0 +1,53 @@
+# Multi-replica overlay — for exercising the horizontal-scale path.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.replicas.yml up -d --scale backend=2
+#
+# The design has always ASSUMED horizontal scale — distributed lock instead of
+# a process lock, Redis pub/sub bridging WebSocket fan-out, stateless workers,
+# shared caches — but it had never been RUN above one backend replica. The
+# mechanisms are individually standard; the composition was untested.
+#
+# What to watch once it is up:
+#
+#   1. Duplicate nudges. Dispatch is serialized per meeting by a Redis lock.
+#      If Redis blips, the lock degrades to process-local and each replica
+#      serializes only within itself — so duplicates are the expected symptom
+#      of that degradation, and they should be ACCOMPANIED by a
+#      "[coord] Redis lock error" warning. Duplicates WITHOUT that warning
+#      would be a real bug.
+#
+#   2. WebSocket delivery. A nudge produced on replica B must reach a client
+#      connected to replica A. If it does not, the pub/sub bridge is broken —
+#      look for "[Hub] Redis publish failed".
+#
+#   3. Circuit breakers. `/health` reports per-process state; with shared
+#      breaker state (Redis-backed) one replica tripping should open the
+#      circuit for all of them. Compare `/health` across replicas.
+#
+#   4. Queue depth. Only ONE dispatch-worker is needed regardless of backend
+#      replica count; scaling backends does not require scaling workers.
+#
+# nginx is included because WebSockets need a load balancer that upgrades
+# connections — round-robin DNS will not do it.
+
+services:
+  backend:
+    # A fixed container_name makes --scale impossible (names must be unique),
+    # so it is dropped here with !reset — Compose then generates
+    # <project>-backend-1, -2, … The base file keeps its name for the normal
+    # single-replica path.
+    container_name: !reset null
+    ports: !reset []   # the load balancer owns the published port
+
+  lb:
+    image: nginx:1.27-alpine
+    container_name: voice-doc-lb
+    depends_on:
+      - backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./infrastructure/local/nginx-replicas.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - voice-doc-network
+    restart: unless-stopped

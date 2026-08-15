@@ -6,6 +6,11 @@ global:
   external_labels:
     monitor: voice-doc-local
 
+# Alerting rules mirror docs/SLO.md. An SLO with no alert is a document;
+# an alert with no SLO is noise.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   # Prometheus self-monitoring
   - job_name: prometheus
@@ -16,7 +21,7 @@ scrape_configs:
   # host.docker.internal works on macOS / Windows; on Linux you may need
   # to add `extra_hosts: ['host.docker.internal:host-gateway']` to the
   # prometheus service in docker-compose.yml.
-  - job_name: meeting-assistant-api
+  - job_name: donna-api
     metrics_path: /metrics
     scrape_interval: 10s
     static_configs:

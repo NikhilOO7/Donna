@@ -12,6 +12,8 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
+from apps.api.core.logging import warn_throttled
+
 logger = logging.getLogger(__name__)
 
 _STOPWORDS = {
@@ -129,7 +131,12 @@ class MemoryAgent:
             )
             return [r for r in (rows or []) if r.get("text")]
         except Exception as e:
-            logger.debug(f"[Memory] recall unavailable: {e}")
+            warn_throttled(
+                logger,
+                "memory.recall",
+                f"[Memory] decision recall unavailable — past-decision nudges are "
+                f"silently not firing: {e}",
+            )
             return []
 
 

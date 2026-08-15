@@ -5,13 +5,11 @@ Watches recent utterances for decision/agreement language and produces
 a `decision_prompt` nudge card suggesting the user log the decision.
 """
 
-import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from openai import AsyncOpenAI
-
+from apps.api.core import json_parse, llm_provider
 from apps.api.core.config import settings
 from apps.api.core.resilience import resilient_call
 
@@ -26,16 +24,45 @@ DECISION_PATTERNS = re.compile(
     r"\b(let's go with|we decided|we'll go|agreed|the decision is|"
     r"the plan is|(i'll|i will) (take (the|over)|own)|action item|"
     r"going forward|next step is|let's commit|finalize|approved|"
-    r"consider it done|it'?s settled)\b",
+    r"consider it done|it'?s settled|"
+    # Commitment framings the original set missed (eval cases sd-32, sd-37).
+    r"lock(ing|ed)? (this |it |that )?in|"
+    r"shall we (just )?go with|"
+    r"are we (all )?(agreed|good with)|"
+    r"sign(ing)? off on|"
+    r"we're going with)\b",
     re.IGNORECASE,
 )
+
+# A retrospective reference to an OLD decision is not a new one. Without this,
+# "Last week we decided to use Postgres, just recapping" fires the gate and
+# pays for an LLM call to re-log a decision that already exists (eval sd-33).
+# Checked against the whole utterance, since the marker can precede or follow.
+DECISION_RETROSPECTIVE = re.compile(
+    r"\b(last (week|month|time)|previously|earlier|back in \w+|"
+    r"just recap|recapping|as (we|you) (decided|agreed)|"
+    r"we already (decided|agreed)|to recap|reminder that)\b",
+    re.IGNORECASE,
+)
+
+
+def is_decision_language(text: str) -> bool:
+    """The scribe's free pre-check: is this a NEW decision worth an LLM call?
+
+    Recall-biased by design — a missed decision costs more than a wasted
+    gpt-4o-mini call — but retrospective references are excluded because they
+    are pure cost with no new information.
+    """
+    if not text or not DECISION_PATTERNS.search(text):
+        return False
+    return not DECISION_RETROSPECTIVE.search(text)
 
 
 class ScribeAgent:
     """Detect decisions and action items in meeting utterances."""
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = llm_provider.failover_client()
 
     async def analyze(
         self, recent_utterances: List[Dict[str, Any]]
@@ -46,7 +73,7 @@ class ScribeAgent:
 
         # Pre-filter: cheap regex scan over latest utterance
         latest = recent_utterances[-1].get("text", "")
-        if not DECISION_PATTERNS.search(latest):
+        if not is_decision_language(latest):
             return None
 
         try:
@@ -119,9 +146,7 @@ class ScribeAgent:
         )
 
         content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-        return json.loads(content)
+        return json_parse.loads(content)
 
 
 scribe_agent = ScribeAgent()

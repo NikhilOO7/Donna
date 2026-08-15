@@ -126,3 +126,54 @@ def configure_logging() -> None:
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a structlog logger. Drop-in replacement for logging.getLogger()."""
     return structlog.get_logger(name)
+
+
+# ---------------------------------------------------------------------------
+# Rate-limited warnings for best-effort paths
+# ---------------------------------------------------------------------------
+# Degradation paths (cache miss-on-error, lock falling back to process-local,
+# pub/sub publish failure) must never raise — but logging them at DEBUG means
+# that in production, where the level is INFO, they log *nowhere*. A subsystem
+# silently degrading with no operator signal is exactly the failure shape that
+# has already cost this codebase real debugging time.
+#
+# These paths are also per-request, so an unconditional warning would flood.
+# `warn_throttled` emits at WARNING at most once per interval per key, with a
+# suppression count so the true rate is still visible.
+
+_THROTTLE_STATE: dict[str, tuple[float, int]] = {}
+_DEFAULT_THROTTLE_SECONDS = 60.0
+
+
+def warn_throttled(
+    logger_obj,
+    key: str,
+    message: str,
+    interval_seconds: float = _DEFAULT_THROTTLE_SECONDS,
+) -> None:
+    """Log ``message`` at WARNING at most once per ``interval_seconds`` per ``key``.
+
+    Suppressed occurrences are counted and reported on the next emission, so a
+    persistently failing subsystem reads as
+    ``"... (repeated 412x in the last 60s)"`` rather than either flooding the
+    log or vanishing from it.
+    """
+    import time as _time
+
+    now = _time.monotonic()
+    last, suppressed = _THROTTLE_STATE.get(key, (0.0, 0))
+
+    if now - last < interval_seconds:
+        _THROTTLE_STATE[key] = (last, suppressed + 1)
+        return
+
+    if suppressed:
+        message = (
+            f"{message} (repeated {suppressed}x in the last {interval_seconds:.0f}s)"
+        )
+    _THROTTLE_STATE[key] = (now, 0)
+
+    try:
+        logger_obj.warning(message)
+    except Exception:
+        pass  # logging must never be the thing that breaks a degradation path
